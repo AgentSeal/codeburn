@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/AgentSeal/codeburn/main/assets/logo.png" alt="CodeBurn" width="120" />
+  <img src="https://cdn.jsdelivr.net/gh/AgentSeal/codeburn@main/assets/logo.png" alt="CodeBurn" width="120" />
 </p>
 
 <h1 align="center">CodeBurn</h1>
@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/AgentSeal/codeburn/main/assets/dashboard.jpg" alt="CodeBurn TUI dashboard" width="620" />
+  <img src="https://cdn.jsdelivr.net/gh/AgentSeal/codeburn@main/assets/dashboard.jpg" alt="CodeBurn TUI dashboard" width="620" />
 </p>
 
 By task type, tool, model, MCP server, and project. Interactive TUI dashboard with gradient charts, responsive panels, and keyboard navigation. macOS menu bar widget via SwiftBar. CSV/JSON export.
@@ -55,7 +55,7 @@ Arrow keys switch between Today / 7 Days / Month. Press `q` to quit, `1` `2` `3`
 
 ## Menu Bar
 
-<img src="https://raw.githubusercontent.com/AgentSeal/codeburn/main/assets/menubar.png" alt="CodeBurn SwiftBar menu bar widget" width="260" />
+<img src="https://cdn.jsdelivr.net/gh/AgentSeal/codeburn@main/assets/menubar.png" alt="CodeBurn SwiftBar menu bar widget" width="260" />
 
 ```bash
 codeburn install-menubar    # install SwiftBar/xbar plugin
