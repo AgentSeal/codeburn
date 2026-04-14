@@ -27,6 +27,7 @@ const PANEL_COLORS = {
   activity: '#F5C85B',
   tools: '#5BF5E0',
   mcp: '#F55BE0',
+  bash: '#F5A05B',
 }
 
 const CATEGORY_COLORS: Record<TaskCategory, string> = {
@@ -331,6 +332,36 @@ function McpBreakdown({ projects, pw, bw }: { projects: ProjectSummary[]; pw: nu
   )
 }
 
+function BashBreakdown({ projects, pw, bw }: { projects: ProjectSummary[]; pw: number; bw: number }) {
+  const bashTotals: Record<string, number> = {}
+  for (const project of projects) {
+    for (const session of project.sessions) {
+      for (const [cmd, data] of Object.entries(session.bashBreakdown)) {
+        bashTotals[cmd] = (bashTotals[cmd] ?? 0) + data.calls
+      }
+    }
+  }
+  const sorted = Object.entries(bashTotals).sort(([, a], [, b]) => b - a)
+  if (sorted.length === 0) {
+    return <Panel title="Shell Commands" color={PANEL_COLORS.bash} width={pw}><Text dimColor>No shell commands</Text></Panel>
+  }
+  const maxCalls = sorted[0]?.[1] ?? 0
+  const nw = Math.max(6, pw - bw - 15)
+
+  return (
+    <Panel title="Shell Commands" color={PANEL_COLORS.bash} width={pw}>
+      <Text dimColor wrap="truncate-end">{''.padEnd(bw + 1 + nw)}{'calls'.padStart(7)}</Text>
+      {sorted.slice(0, 10).map(([cmd, calls]) => (
+        <Text key={cmd} wrap="truncate-end">
+          <HBar value={calls} max={maxCalls} width={bw} />
+          <Text> {fit(cmd, nw)}</Text>
+          <Text>{String(calls).padStart(7)}</Text>
+        </Text>
+      ))}
+    </Panel>
+  )
+}
+
 function PeriodTabs({ active }: { active: Period }) {
   return (
     <Box gap={1} paddingX={1}>
@@ -397,6 +428,10 @@ function DashboardContent({ projects, period }: { projects: ProjectSummary[]; pe
       <Row wide={wide} width={dashWidth}>
         <ToolBreakdown projects={projects} pw={pw} bw={barWidth} />
         <McpBreakdown projects={projects} pw={pw} bw={barWidth} />
+      </Row>
+
+      <Row wide={wide} width={dashWidth}>
+        <BashBreakdown projects={projects} pw={pw} bw={barWidth} />
       </Row>
     </Box>
   )
