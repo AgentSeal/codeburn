@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react'
-import { render, Box, Text, useInput, useApp } from 'ink'
+import { render, Box, Text, useInput, useApp, useWindowSize } from 'ink'
 import { CATEGORY_LABELS, type ProjectSummary, type TaskCategory } from './types.js'
 import { formatCost, formatTokens } from './format.js'
 import { parseAllSessions } from './parser.js'
@@ -84,7 +84,7 @@ function getDateRange(period: Period): { start: Date; end: Date } {
 type Layout = { dashWidth: number; wide: boolean; halfWidth: number; barWidth: number }
 
 function getLayout(): Layout {
-  const termWidth = process.stdout.columns || parseInt(process.env['COLUMNS'] ?? '') || 80
+  const termWidth = useWindowSize()?.columns || parseInt(process.env['COLUMNS'] ?? '') || 80
   const dashWidth = Math.min(104, termWidth)
   const wide = dashWidth >= MIN_WIDE
   const halfWidth = wide ? Math.floor(dashWidth / 2) : dashWidth
