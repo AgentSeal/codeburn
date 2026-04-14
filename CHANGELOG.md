@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.4.0 - 2026-04-14
+
+### Added
+- Codex (OpenAI) support. Parses sessions from ~/.codex/sessions/ with full
+  token tracking, cost calculation, task classification, and tool breakdown.
+- Provider plugin system. Adding a new provider (Pi, OpenCode, Amp) is a
+  single file in src/providers/.
+- TUI provider toggle. Press p to cycle All / Claude / Codex. Auto-detects
+  which providers have session data on disk. Hidden when only one is present.
+- --provider flag on all CLI commands: report, today, month, status, export.
+  Values: all (default), claude, codex.
+- Codex tool normalization: exec_command -> Bash, read_file -> Read,
+  write_file/apply_diff/apply_patch -> Edit, spawn_agent -> Agent.
+- Codex model pricing: gpt-5, gpt-5.3-codex, gpt-5.4, gpt-5.4-mini with
+  hardcoded fallbacks to prevent LiteLLM fuzzy matching mispricing.
+- CODEX_HOME environment variable support for custom Codex data directories.
+- Menubar per-provider cost breakdown when multiple providers have data.
+- 1-minute in-memory cache with LRU eviction for instant provider switching.
+- 10 new tests (Codex parser, provider registry, tool/model mapping).
+
+### Fixed
+- Model name fuzzy matching: gpt-5.4-mini no longer mispriced as gpt-5
+  (more specific prefixes checked first).
+
 ## 0.3.1 - 2026-04-14
 
 ### Added

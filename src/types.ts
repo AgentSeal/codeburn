@@ -3,6 +3,8 @@ export type TokenUsage = {
   outputTokens: number
   cacheCreationInputTokens: number
   cacheReadInputTokens: number
+  cachedInputTokens: number
+  reasoningTokens: number
   webSearchRequests: number
 }
 
@@ -64,6 +66,7 @@ export type ParsedTurn = {
 }
 
 export type ParsedApiCall = {
+  provider: string
   model: string
   usage: TokenUsage
   costUSD: number
@@ -74,6 +77,7 @@ export type ParsedApiCall = {
   speed: 'standard' | 'fast'
   timestamp: string
   bashCommands: string[]
+  deduplicationKey: string
 }
 
 export type TaskCategory =

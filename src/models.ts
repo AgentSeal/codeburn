@@ -38,6 +38,10 @@ const FALLBACK_PRICING: Record<string, ModelCosts> = {
   'gpt-4o': { inputCostPerToken: 2.5e-6, outputCostPerToken: 10e-6, cacheWriteCostPerToken: 2.5e-6, cacheReadCostPerToken: 1.25e-6, webSearchCostPerRequest: WEB_SEARCH_COST, fastMultiplier: 1 },
   'gpt-4o-mini': { inputCostPerToken: 0.15e-6, outputCostPerToken: 0.6e-6, cacheWriteCostPerToken: 0.15e-6, cacheReadCostPerToken: 0.075e-6, webSearchCostPerRequest: WEB_SEARCH_COST, fastMultiplier: 1 },
   'gemini-2.5-pro': { inputCostPerToken: 1.25e-6, outputCostPerToken: 10e-6, cacheWriteCostPerToken: 1.25e-6, cacheReadCostPerToken: 0.315e-6, webSearchCostPerRequest: WEB_SEARCH_COST, fastMultiplier: 1 },
+  'gpt-5.3-codex': { inputCostPerToken: 2.5e-6, outputCostPerToken: 10e-6, cacheWriteCostPerToken: 2.5e-6, cacheReadCostPerToken: 1.25e-6, webSearchCostPerRequest: WEB_SEARCH_COST, fastMultiplier: 1 },
+  'gpt-5.4': { inputCostPerToken: 2.5e-6, outputCostPerToken: 10e-6, cacheWriteCostPerToken: 2.5e-6, cacheReadCostPerToken: 1.25e-6, webSearchCostPerRequest: WEB_SEARCH_COST, fastMultiplier: 1 },
+  'gpt-5.4-mini': { inputCostPerToken: 0.4e-6, outputCostPerToken: 1.6e-6, cacheWriteCostPerToken: 0.4e-6, cacheReadCostPerToken: 0.2e-6, webSearchCostPerRequest: WEB_SEARCH_COST, fastMultiplier: 1 },
+  'gpt-5': { inputCostPerToken: 2.5e-6, outputCostPerToken: 10e-6, cacheWriteCostPerToken: 2.5e-6, cacheReadCostPerToken: 1.25e-6, webSearchCostPerRequest: WEB_SEARCH_COST, fastMultiplier: 1 },
 }
 
 let pricingCache: Map<string, ModelCosts> | null = null
@@ -119,6 +123,10 @@ export function getModelCosts(model: string): ModelCosts | null {
 
   if (pricingCache?.has(canonical)) return pricingCache.get(canonical)!
 
+  for (const [key, costs] of Object.entries(FALLBACK_PRICING)) {
+    if (canonical === key || canonical.startsWith(key + '-')) return costs
+  }
+
   for (const [key, costs] of pricingCache ?? new Map()) {
     if (canonical.startsWith(key) || key.startsWith(canonical)) return costs
   }
@@ -167,8 +175,12 @@ export function getShortModelName(model: string): string {
     'claude-3-5-sonnet': 'Sonnet 3.5',
     'claude-haiku-4-5': 'Haiku 4.5',
     'claude-3-5-haiku': 'Haiku 3.5',
-    'gpt-4o': 'GPT-4o',
     'gpt-4o-mini': 'GPT-4o Mini',
+    'gpt-4o': 'GPT-4o',
+    'gpt-5.4-mini': 'GPT-5.4 Mini',
+    'gpt-5.4': 'GPT-5.4',
+    'gpt-5.3-codex': 'GPT-5.3 Codex',
+    'gpt-5': 'GPT-5',
     'gemini-2.5-pro': 'Gemini 2.5 Pro',
   }
   for (const [key, name] of Object.entries(shortNames)) {

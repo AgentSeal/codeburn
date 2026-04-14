@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react'
+import React, { useState, useCallback, useEffect } from 'react'
 import { render, Box, Text, useInput, useApp } from 'ink'
 import { CATEGORY_LABELS, type ProjectSummary, type TaskCategory } from './types.js'
 import { formatCost, formatTokens } from './format.js'
@@ -7,11 +7,15 @@ import { loadPricing } from './models.js'
 import { GLOBAL_CURRENCY, setCurrency } from './cli.js'
 import { saveConfig } from './utils/config.js'
 type Period = 'today' | 'week' | 'month'
+import { providers } from './providers/index.js'
 
-const PERIODS: Period[] = ['today', 'week', 'month']
+type Period = 'today' | 'week' | 'month' | '30days'
+
+const PERIODS: Period[] = ['today', 'week', '30days', 'month']
 const PERIOD_LABELS: Record<Period, string> = {
   today: 'Today',
   week: '7 Days',
+  '30days': '30 Days',
   month: 'This Month',
 }
 
@@ -75,6 +79,7 @@ function getDateRange(period: Period): { start: Date; end: Date } {
   switch (period) {
     case 'today': return { start: new Date(now.getFullYear(), now.getMonth(), now.getDate()), end }
     case 'week': return { start: new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7), end }
+    case '30days': return { start: new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30), end }
     case 'month': return { start: new Date(now.getFullYear(), now.getMonth(), 1), end }
   }
 }
@@ -363,19 +368,38 @@ function BashBreakdown({ projects, pw, bw }: { projects: ProjectSummary[]; pw: n
   )
 }
 
-function PeriodTabs({ active }: { active: Period }) {
+function getProviderDisplayName(name: string): string {
+  if (name === 'all') return 'All'
+  const provider = providers.find(p => p.name === name)
+  return provider?.displayName ?? name
+}
+
+function PeriodTabs({ active, providerName, showProvider }: {
+  active: Period
+  providerName?: string
+  showProvider?: boolean
+}) {
   return (
-    <Box gap={1} paddingX={1}>
-      {PERIODS.map(p => (
-        <Text key={p} bold={active === p} color={active === p ? ORANGE : DIM}>
-          {active === p ? `[ ${PERIOD_LABELS[p]} ]` : `  ${PERIOD_LABELS[p]}  `}
-        </Text>
-      ))}
+    <Box justifyContent="space-between" paddingX={1}>
+      <Box gap={1}>
+        {PERIODS.map(p => (
+          <Text key={p} bold={active === p} color={active === p ? ORANGE : DIM}>
+            {active === p ? `[ ${PERIOD_LABELS[p]} ]` : `  ${PERIOD_LABELS[p]}  `}
+          </Text>
+        ))}
+      </Box>
+      {showProvider && providerName && (
+        <Box>
+          <Text color={DIM}>|  </Text>
+          <Text color={ORANGE} bold>[p]</Text>
+          <Text bold> {getProviderDisplayName(providerName)}</Text>
+        </Box>
+      )}
     </Box>
   )
 }
 
-function StatusBar({ width }: { width: number }) {
+function StatusBar({ width, showProvider }: { width: number; showProvider?: boolean }) {
   return (
     <Box borderStyle="round" borderColor={DIM} width={width} justifyContent="center" paddingX={1}>
       <Text>
@@ -388,9 +412,18 @@ function StatusBar({ width }: { width: number }) {
         <Text color={ORANGE} bold>2</Text>
         <Text dimColor> week   </Text>
         <Text color={ORANGE} bold>3</Text>
+        <Text dimColor> 30 days   </Text>
+        <Text color={ORANGE} bold>4</Text>
         <Text dimColor> month</Text>
         <Text color={ORANGE} bold>c</Text>
 <Text dimColor> currency</Text>
+        {showProvider && (
+          <>
+            <Text dimColor>   </Text>
+            <Text color={ORANGE} bold>p</Text>
+            <Text dimColor> provider</Text>
+          </>
+        )}
       </Text>
     </Box>
   )
@@ -419,7 +452,7 @@ function DashboardContent({ projects, period }: { projects: ProjectSummary[]; pe
       <Overview projects={projects} label={PERIOD_LABELS[period]} width={dashWidth} />
 
       <Row wide={wide} width={dashWidth}>
-        <DailyActivity projects={projects} days={period === 'month' ? 31 : 14} pw={pw} bw={barWidth} />
+        <DailyActivity projects={projects} days={period === 'month' || period === '30days' ? 31 : 14} pw={pw} bw={barWidth} />
         <ProjectBreakdown projects={projects} pw={pw} bw={barWidth} />
       </Row>
 
@@ -438,26 +471,54 @@ function DashboardContent({ projects, period }: { projects: ProjectSummary[]; pe
   )
 }
 
-function InteractiveDashboard({ initialProjects, initialPeriod }: {
+function InteractiveDashboard({ initialProjects, initialPeriod, initialProvider }: {
   initialProjects: ProjectSummary[]
   initialPeriod: Period
+  initialProvider: string
 }) {
   const { exit } = useApp()
   const [period, setPeriod] = useState<Period>(initialPeriod)
   const [projects, setProjects] = useState<ProjectSummary[]>(initialProjects)
   const [loading, setLoading] = useState(false)
   const [, forceUpdate] = useState(0)
+  const [activeProvider, setActiveProvider] = useState(initialProvider)
+  const [detectedProviders, setDetectedProviders] = useState<string[]>([])
   const { dashWidth } = getLayout()
+  const multipleProviders = detectedProviders.length > 1
+
+  useEffect(() => {
+    let cancelled = false
+    async function detect() {
+      const found: string[] = []
+      for (const p of providers) {
+        const sessions = await p.discoverSessions()
+        if (sessions.length > 0) found.push(p.name)
+      }
+      if (!cancelled) {
+        setDetectedProviders(found)
+        if (found.length > 1) {
+          const range = getDateRange(period)
+          for (const name of found) parseAllSessions(range, name).catch(() => {})
+        }
+      }
+    }
+    detect()
+    return () => { cancelled = true }
+  }, [])
+
+  const reloadData = useCallback(async (p: Period, prov: string) => {
+    setLoading(true)
+    const range = getDateRange(p)
+    const data = await parseAllSessions(range, prov)
+    setProjects(data)
+    setLoading(false)
+  }, [])
 
   const switchPeriod = useCallback(async (newPeriod: Period) => {
     if (newPeriod === period) return
-    setLoading(true)
     setPeriod(newPeriod)
-    const range = getDateRange(newPeriod)
-    const data = await parseAllSessions(range)
-    setProjects(data)
-    setLoading(false)
-  }, [period])
+    await reloadData(newPeriod, activeProvider)
+  }, [period, activeProvider, reloadData])
 
   useInput((input, key) => {
       // console.log("KEY PRESSED:", input)
@@ -479,6 +540,16 @@ if (input === 'c') {
 
   return
 }
+
+    if (input === 'p' && multipleProviders) {
+      const options = ['all', ...detectedProviders]
+      const idx = options.indexOf(activeProvider)
+      const next = options[(idx + 1) % options.length]
+      setActiveProvider(next)
+      reloadData(period, next)
+      return
+    }
+
     const idx = PERIODS.indexOf(period)
     if (key.leftArrow) {
       switchPeriod(PERIODS[(idx - 1 + PERIODS.length) % PERIODS.length])
@@ -486,27 +557,28 @@ if (input === 'c') {
       switchPeriod(PERIODS[(idx + 1) % PERIODS.length])
     } else if (input === '1') switchPeriod('today')
     else if (input === '2') switchPeriod('week')
-    else if (input === '3') switchPeriod('month')
+    else if (input === '3') switchPeriod('30days')
+    else if (input === '4') switchPeriod('month')
   })
 
 
   if (loading) {
     return (
       <Box flexDirection="column" width={dashWidth}>
-        <PeriodTabs active={period} />
+        <PeriodTabs active={period} providerName={activeProvider} showProvider={multipleProviders} />
         <Panel title="CodeBurn" color={ORANGE} width={dashWidth}>
           <Text dimColor>Loading {PERIOD_LABELS[period]}...</Text>
         </Panel>
-        <StatusBar width={dashWidth} />
+        <StatusBar width={dashWidth} showProvider={multipleProviders} />
       </Box>
     )
   }
 
   return (
     <Box flexDirection="column" width={dashWidth}>
-      <PeriodTabs active={period} />
+      <PeriodTabs active={period} providerName={activeProvider} showProvider={multipleProviders} />
       <DashboardContent projects={projects} period={period} />
-      <StatusBar width={dashWidth} />
+      <StatusBar width={dashWidth} showProvider={multipleProviders} />
     </Box>
   )
 }
@@ -521,16 +593,16 @@ function StaticDashboard({ projects, period }: { projects: ProjectSummary[]; per
   )
 }
 
-export async function renderDashboard(period: Period = 'week'): Promise<void> {
+export async function renderDashboard(period: Period = 'week', provider: string = 'all'): Promise<void> {
   await loadPricing()
   const range = getDateRange(period)
-  const projects = await parseAllSessions(range)
+  const projects = await parseAllSessions(range, provider)
 
   const isTTY = process.stdin.isTTY && process.stdout.isTTY
 
   if (isTTY) {
     const { waitUntilExit } = render(
-      <InteractiveDashboard initialProjects={projects} initialPeriod={period} />
+      <InteractiveDashboard initialProjects={projects} initialPeriod={period} initialProvider={provider} />
     )
     await waitUntilExit()
   } else {

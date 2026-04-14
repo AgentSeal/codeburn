@@ -1,7 +1,8 @@
 import { readdir, readFile, stat } from 'fs/promises'
 import { basename, join } from 'path'
-import { homedir } from 'os'
 import { calculateCost, getShortModelName } from './models.js'
+import { discoverAllSessions, getProvider } from './providers/index.js'
+import type { ParsedProviderCall } from './providers/types.js'
 import type {
   AssistantMessageContent,
   ClassifiedTurn,
@@ -17,46 +18,6 @@ import type {
 } from './types.js'
 import { classifyTurn, BASH_TOOLS } from './classifier.js'
 import { extractBashCommands } from './bash-utils.js'
-
-function getClaudeDir(): string {
-  return process.env['CLAUDE_CONFIG_DIR'] || join(homedir(), '.claude')
-}
-
-function getProjectsDir(): string {
-  return join(getClaudeDir(), 'projects')
-}
-
-function getDesktopSessionsDir(): string {
-  if (process.platform === 'darwin') return join(homedir(), 'Library', 'Application Support', 'Claude', 'local-agent-mode-sessions')
-  if (process.platform === 'win32') return join(homedir(), 'AppData', 'Roaming', 'Claude', 'local-agent-mode-sessions')
-  return join(homedir(), '.config', 'Claude', 'local-agent-mode-sessions')
-}
-
-async function findDesktopProjectDirs(base: string): Promise<string[]> {
-  const results: string[] = []
-  async function walk(dir: string, depth: number): Promise<void> {
-    if (depth > 8) return
-    const entries = await readdir(dir).catch(() => [])
-    for (const entry of entries) {
-      if (entry === 'node_modules' || entry === '.git') continue
-      const full = join(dir, entry)
-      const s = await stat(full).catch(() => null)
-      if (!s?.isDirectory()) continue
-      if (entry === 'projects') {
-        const projectDirs = await readdir(full).catch(() => [])
-        for (const pd of projectDirs) {
-          const pdFull = join(full, pd)
-          const pdStat = await stat(pdFull).catch(() => null)
-          if (pdStat?.isDirectory()) results.push(pdFull)
-        }
-      } else {
-        await walk(full, depth + 1)
-      }
-    }
-  }
-  await walk(base, 0)
-  return results
-}
 
 function unsanitizePath(dirName: string): string {
   return dirName.replace(/-/g, '/')
@@ -123,6 +84,8 @@ function parseApiCall(entry: JournalEntry): ParsedApiCall | null {
     outputTokens: usage.output_tokens ?? 0,
     cacheCreationInputTokens: usage.cache_creation_input_tokens ?? 0,
     cacheReadInputTokens: usage.cache_read_input_tokens ?? 0,
+    cachedInputTokens: 0,
+    reasoningTokens: 0,
     webSearchRequests: usage.server_tool_use?.web_search_requests ?? 0,
   }
 
@@ -140,6 +103,7 @@ function parseApiCall(entry: JournalEntry): ParsedApiCall | null {
   const bashCmds = extractBashCommandsFromContent(msg.content ?? [])
 
   return {
+    provider: 'claude',
     model: msg.model,
     usage: tokens,
     costUSD,
@@ -150,6 +114,7 @@ function parseApiCall(entry: JournalEntry): ParsedApiCall | null {
     speed: usage.speed ?? 'standard',
     timestamp: entry.timestamp ?? '',
     bashCommands: bashCmds,
+    deduplicationKey: msg.id ?? `claude:${entry.timestamp}`,
   }
 }
 
@@ -245,7 +210,7 @@ function buildSessionSummary(
         modelBreakdown[modelKey] = {
           calls: 0,
           costUSD: 0,
-          tokens: { inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0, webSearchRequests: 0 },
+          tokens: { inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0, cachedInputTokens: 0, reasoningTokens: 0, webSearchRequests: 0 },
         }
       }
       modelBreakdown[modelKey].calls++
@@ -364,26 +329,165 @@ async function scanProjectDirs(dirs: Array<{ path: string; name: string }>, seen
   return projects
 }
 
-export async function parseAllSessions(dateRange?: DateRange): Promise<ProjectSummary[]> {
-  const seenMsgIds = new Set<string>()
-  const allDirs: Array<{ path: string; name: string }> = []
-
-  const projectsDir = getProjectsDir()
-  try {
-    const entries = await readdir(projectsDir)
-    for (const dirName of entries) {
-      const dirPath = join(projectsDir, dirName)
-      const dirStat = await stat(dirPath).catch(() => null)
-      if (dirStat?.isDirectory()) allDirs.push({ path: dirPath, name: dirName })
-    }
-  } catch {}
-
-  const desktopDirs = await findDesktopProjectDirs(getDesktopSessionsDir())
-  for (const dirPath of desktopDirs) {
-    const dirName = basename(dirPath)
-    allDirs.push({ path: dirPath, name: dirName })
+function providerCallToTurn(call: ParsedProviderCall): ParsedTurn {
+  const tools = call.tools
+  const usage: TokenUsage = {
+    inputTokens: call.inputTokens,
+    outputTokens: call.outputTokens,
+    cacheCreationInputTokens: call.cacheCreationInputTokens,
+    cacheReadInputTokens: call.cacheReadInputTokens,
+    cachedInputTokens: call.cachedInputTokens,
+    reasoningTokens: call.reasoningTokens,
+    webSearchRequests: call.webSearchRequests,
   }
 
-  const projects = await scanProjectDirs(allDirs, seenMsgIds, dateRange)
-  return projects.sort((a, b) => b.totalCostUSD - a.totalCostUSD)
+  const apiCall: ParsedApiCall = {
+    provider: call.provider,
+    model: call.model,
+    usage,
+    costUSD: call.costUSD,
+    tools,
+    mcpTools: extractMcpTools(tools),
+    hasAgentSpawn: tools.includes('Agent'),
+    hasPlanMode: tools.includes('EnterPlanMode'),
+    speed: call.speed,
+    timestamp: call.timestamp,
+    bashCommands: [],
+    deduplicationKey: call.deduplicationKey,
+  }
+
+  return {
+    userMessage: call.userMessage,
+    assistantCalls: [apiCall],
+    timestamp: call.timestamp,
+    sessionId: call.sessionId,
+  }
+}
+
+async function parseProviderSources(
+  providerName: string,
+  sources: Array<{ path: string; project: string }>,
+  seenKeys: Set<string>,
+  dateRange?: DateRange,
+): Promise<ProjectSummary[]> {
+  const provider = getProvider(providerName)
+  if (!provider) return []
+
+  const sessionMap = new Map<string, { project: string; turns: ClassifiedTurn[] }>()
+
+  for (const source of sources) {
+    const parser = provider.createSessionParser(
+      { path: source.path, project: source.project, provider: providerName },
+      seenKeys,
+    )
+
+    for await (const call of parser.parse()) {
+      if (dateRange) {
+        if (!call.timestamp) continue
+        const ts = new Date(call.timestamp)
+        if (ts < dateRange.start || ts > dateRange.end) continue
+      }
+
+      const turn = providerCallToTurn(call)
+      const classified = classifyTurn(turn)
+      const key = `${providerName}:${call.sessionId}:${source.project}`
+
+      const existing = sessionMap.get(key)
+      if (existing) {
+        existing.turns.push(classified)
+      } else {
+        sessionMap.set(key, { project: source.project, turns: [classified] })
+      }
+    }
+  }
+
+  const projectMap = new Map<string, SessionSummary[]>()
+  for (const [key, { project, turns }] of sessionMap) {
+    const sessionId = key.split(':')[1] ?? key
+    const session = buildSessionSummary(sessionId, project, turns)
+    if (session.apiCalls > 0) {
+      const existing = projectMap.get(project) ?? []
+      existing.push(session)
+      projectMap.set(project, existing)
+    }
+  }
+
+  const projects: ProjectSummary[] = []
+  for (const [dirName, sessions] of projectMap) {
+    projects.push({
+      project: dirName,
+      projectPath: unsanitizePath(dirName),
+      sessions,
+      totalCostUSD: sessions.reduce((s, sess) => s + sess.totalCostUSD, 0),
+      totalApiCalls: sessions.reduce((s, sess) => s + sess.apiCalls, 0),
+    })
+  }
+
+  return projects
+}
+
+const CACHE_TTL_MS = 60_000
+const MAX_CACHE_ENTRIES = 10
+const sessionCache = new Map<string, { data: ProjectSummary[]; ts: number }>()
+
+function cacheKey(dateRange?: DateRange, providerFilter?: string): string {
+  const s = dateRange ? `${dateRange.start.getTime()}:${dateRange.end.getTime()}` : 'none'
+  return `${s}:${providerFilter ?? 'all'}`
+}
+
+function cachePut(key: string, data: ProjectSummary[]) {
+  const now = Date.now()
+  for (const [k, v] of sessionCache) {
+    if (now - v.ts > CACHE_TTL_MS) sessionCache.delete(k)
+  }
+  if (sessionCache.size >= MAX_CACHE_ENTRIES) {
+    const oldest = [...sessionCache.entries()].sort((a, b) => a[1].ts - b[1].ts)[0]
+    if (oldest) sessionCache.delete(oldest[0])
+  }
+  sessionCache.set(key, { data, ts: now })
+}
+
+export async function parseAllSessions(dateRange?: DateRange, providerFilter?: string): Promise<ProjectSummary[]> {
+  const key = cacheKey(dateRange, providerFilter)
+  const cached = sessionCache.get(key)
+  if (cached && Date.now() - cached.ts < CACHE_TTL_MS) return cached.data
+
+  const seenMsgIds = new Set<string>()
+  const seenKeys = new Set<string>()
+  const allSources = await discoverAllSessions(providerFilter)
+
+  const claudeSources = allSources.filter(s => s.provider === 'claude')
+  const nonClaudeSources = allSources.filter(s => s.provider !== 'claude')
+
+  const claudeDirs = claudeSources.map(s => ({ path: s.path, name: s.project }))
+  const claudeProjects = await scanProjectDirs(claudeDirs, seenMsgIds, dateRange)
+
+  const providerGroups = new Map<string, Array<{ path: string; project: string }>>()
+  for (const source of nonClaudeSources) {
+    const existing = providerGroups.get(source.provider) ?? []
+    existing.push({ path: source.path, project: source.project })
+    providerGroups.set(source.provider, existing)
+  }
+
+  const otherProjects: ProjectSummary[] = []
+  for (const [providerName, sources] of providerGroups) {
+    const projects = await parseProviderSources(providerName, sources, seenKeys, dateRange)
+    otherProjects.push(...projects)
+  }
+
+  const mergedMap = new Map<string, ProjectSummary>()
+  for (const p of [...claudeProjects, ...otherProjects]) {
+    const existing = mergedMap.get(p.project)
+    if (existing) {
+      existing.sessions.push(...p.sessions)
+      existing.totalCostUSD += p.totalCostUSD
+      existing.totalApiCalls += p.totalApiCalls
+    } else {
+      mergedMap.set(p.project, { ...p })
+    }
+  }
+
+  const result = Array.from(mergedMap.values()).sort((a, b) => b.totalCostUSD - a.totalCostUSD)
+  cachePut(key, result)
+  return result
 }

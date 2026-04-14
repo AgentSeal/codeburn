@@ -59,10 +59,16 @@ export type PeriodData = {
   models: Array<{ name: string; cost: number; calls: number }>
 }
 
+export type ProviderCost = {
+  name: string
+  cost: number
+}
+
 export function renderMenubarFormat(
   today: PeriodData,
   week: PeriodData,
   month: PeriodData,
+  todayProviders?: ProviderCost[],
 ): string {
   const lines: string[] = []
 
@@ -71,6 +77,11 @@ export function renderMenubarFormat(
 
   lines.push(`CodeBurn | size=15 color=#FF8C42`)
   lines.push(`AI Coding Cost Tracker | size=11`)
+  if (todayProviders && todayProviders.length > 1) {
+    for (const p of todayProviders) {
+      lines.push(`  ${p.name.padEnd(10)} ${formatCost(p.cost).padStart(10)} | font=Menlo size=11`)
+    }
+  }
   lines.push('---')
 
   lines.push(`Today      ${formatCost(today.cost)}      ${today.calls.toLocaleString()} calls | size=14`)
