@@ -4,7 +4,8 @@ import { CATEGORY_LABELS, type ProjectSummary, type TaskCategory } from './types
 import { formatCost, formatTokens } from './format.js'
 import { parseAllSessions } from './parser.js'
 import { loadPricing } from './models.js'
-
+import { GLOBAL_CURRENCY, setCurrency } from './cli.js'
+import { saveConfig } from './utils/config.js'
 type Period = 'today' | 'week' | 'month'
 
 const PERIODS: Period[] = ['today', 'week', 'month']
@@ -133,7 +134,7 @@ function Overview({ projects, label, width }: { projects: ProjectSummary[]; labe
   return (
     <Box flexDirection="column" borderStyle="round" borderColor={PANEL_COLORS.overview} paddingX={1} width={width}>
       <Text wrap="truncate-end">
-        <Text bold color={ORANGE}>CodeBurn</Text>
+        <Text bold color={ORANGE}>CodeBurn ({GLOBAL_CURRENCY})</Text>
         <Text dimColor>  {label}</Text>
       </Text>
       <Text wrap="truncate-end">
@@ -388,6 +389,8 @@ function StatusBar({ width }: { width: number }) {
         <Text dimColor> week   </Text>
         <Text color={ORANGE} bold>3</Text>
         <Text dimColor> month</Text>
+        <Text color={ORANGE} bold>c</Text>
+<Text dimColor> currency</Text>
       </Text>
     </Box>
   )
@@ -443,6 +446,7 @@ function InteractiveDashboard({ initialProjects, initialPeriod }: {
   const [period, setPeriod] = useState<Period>(initialPeriod)
   const [projects, setProjects] = useState<ProjectSummary[]>(initialProjects)
   const [loading, setLoading] = useState(false)
+  const [, forceUpdate] = useState(0)
   const { dashWidth } = getLayout()
 
   const switchPeriod = useCallback(async (newPeriod: Period) => {
@@ -456,10 +460,25 @@ function InteractiveDashboard({ initialProjects, initialPeriod }: {
   }, [period])
 
   useInput((input, key) => {
+      // console.log("KEY PRESSED:", input)
+
     if (input === 'q') {
       exit()
       return
     }
+if (input === 'c') {
+  const newCurrency = GLOBAL_CURRENCY === 'USD' ? 'INR' : 'USD'
+
+  setCurrency(newCurrency)
+
+  // persist
+  saveConfig({ currency: newCurrency })
+
+  // refresh UI
+  forceUpdate(x => x + 1)
+
+  return
+}
     const idx = PERIODS.indexOf(period)
     if (key.leftArrow) {
       switchPeriod(PERIODS[(idx - 1 + PERIODS.length) % PERIODS.length])
@@ -469,6 +488,7 @@ function InteractiveDashboard({ initialProjects, initialPeriod }: {
     else if (input === '2') switchPeriod('week')
     else if (input === '3') switchPeriod('month')
   })
+
 
   if (loading) {
     return (

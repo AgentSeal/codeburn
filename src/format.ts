@@ -1,10 +1,31 @@
 import chalk from 'chalk'
 import type { ProjectSummary } from './types.js'
+import { GLOBAL_CURRENCY } from './cli.js'
+
+
+const rates: Record<string, number> = {
+  USD: 1,
+  INR: 83
+}
+
+function convert(amount: number): number {
+  const rate = rates[GLOBAL_CURRENCY] || 1
+  return amount * rate
+}
 
 export function formatCost(cost: number): string {
-  if (cost >= 1) return `$${cost.toFixed(2)}`
-  if (cost >= 0.01) return `$${cost.toFixed(3)}`
-  return `$${cost.toFixed(4)}`
+  const converted = convert(cost)
+
+  if (GLOBAL_CURRENCY === 'INR') {
+    if (converted >= 1) return `₹${converted.toFixed(2)}`
+    if (converted >= 0.01) return `₹${converted.toFixed(3)}`
+    return `₹${converted.toFixed(4)}`
+  }
+
+  // fallback USD
+  if (converted >= 1) return `$${converted.toFixed(2)}`
+  if (converted >= 0.01) return `$${converted.toFixed(3)}`
+  return `$${converted.toFixed(4)}`
 }
 
 export function formatTokens(n: number): string {
@@ -34,7 +55,9 @@ export function renderStatusBar(projects: ProjectSummary[]): string {
   }
 
   const lines: string[] = ['']
-  lines.push(`  ${chalk.bold('Today')}  ${chalk.yellowBright(formatCost(todayCost))}  ${chalk.dim(`${todayCalls} calls`)}    ${chalk.bold('Month')}  ${chalk.yellowBright(formatCost(monthCost))}  ${chalk.dim(`${monthCalls} calls`)}`)
+  lines.push(
+    `  ${chalk.bold('Today')}  ${chalk.yellowBright(formatCost(todayCost))}  ${chalk.dim(`${todayCalls} calls`)}    ${chalk.bold('Month')}  ${chalk.yellowBright(formatCost(monthCost))}  ${chalk.dim(`${monthCalls} calls`)}`
+  )
   lines.push('')
 
   return lines.join('\n')

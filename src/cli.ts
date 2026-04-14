@@ -6,6 +6,11 @@ import { renderStatusBar } from './format.js'
 import { installMenubar, renderMenubarFormat, type PeriodData, uninstallMenubar } from './menubar.js'
 import { CATEGORY_LABELS, type DateRange, type ProjectSummary, type TaskCategory } from './types.js'
 import { renderDashboard } from './dashboard.js'
+import { loadConfig, saveConfig } from './utils/config.js'
+export let GLOBAL_CURRENCY = 'USD'
+export function setCurrency(newCurrency: string) {
+  GLOBAL_CURRENCY = newCurrency
+}
 
 function getDateRange(period: string): { range: DateRange; label: string } {
   const now = new Date()
@@ -49,6 +54,9 @@ const program = new Command()
   .name('codeburn')
   .description('See where your AI coding tokens go - by task, tool, model, and project')
   .version('0.3.1')
+
+
+program.option('--currency <type>', 'currency type (USD, INR, etc)', 'USD')
 
 program
   .command('report', { isDefault: true })
@@ -103,6 +111,7 @@ program
   .option('--format <format>', 'Output format: terminal, menubar, json', 'terminal')
   .action(async (opts) => {
     await loadPricing()
+
     if (opts.format === 'menubar') {
       const todayData = buildPeriodData('Today', await parseAllSessions(getDateRange('today').range))
       const weekData = buildPeriodData('7 Days', await parseAllSessions(getDateRange('week').range))
@@ -184,3 +193,13 @@ program
   })
 
 program.parse()
+
+const options = program.opts()
+const config = loadConfig()
+
+GLOBAL_CURRENCY = options.currency || config.currency || 'USD'
+
+// Save preference if user passed flag
+if (options.currency) {
+  saveConfig({ currency: options.currency })
+}
