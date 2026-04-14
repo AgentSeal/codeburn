@@ -1,11 +1,11 @@
 import chalk from 'chalk'
 import type { ProjectSummary } from './types.js'
 
-export function formatCost(cost: number): string {
-  if (cost >= 1) return `$${cost.toFixed(2)}`
-  if (cost >= 0.01) return `$${cost.toFixed(3)}`
-  return `$${cost.toFixed(4)}`
-}
+// Re-exported from currency.ts so existing imports from './format.js' keep working.
+// The currency-aware version applies exchange rate and symbol automatically.
+// Imported locally too since renderStatusBar below uses it directly.
+import { formatCost } from './currency.js'
+export { formatCost }
 
 export function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`

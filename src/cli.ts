@@ -7,6 +7,8 @@ import { installMenubar, renderMenubarFormat, type PeriodData, type ProviderCost
 import { CATEGORY_LABELS, type DateRange, type ProjectSummary, type TaskCategory } from './types.js'
 import { renderDashboard } from './dashboard.js'
 import { providers } from './providers/index.js'
+import { readConfig, saveConfig, getConfigFilePath } from './config.js'
+import { loadCurrency, getCurrency, isValidCurrencyCode } from './currency.js'
 
 function getDateRange(period: string): { range: DateRange; label: string } {
   const now = new Date()
@@ -55,6 +57,12 @@ const program = new Command()
   .name('codeburn')
   .description('See where your AI coding tokens go - by task, tool, model, and project')
   .version('0.4.0')
+
+// Load currency config before any command runs.
+// If no currency is configured, this is a no-op and everything stays USD.
+program.hook('preAction', async () => {
+  await loadCurrency()
+})
 
 program
   .command('report', { isDefault: true })
@@ -130,7 +138,12 @@ program
     if (opts.format === 'json') {
       const todayData = buildPeriodData('today', await parseAllSessions(getDateRange('today').range, pf))
       const monthData = buildPeriodData('month', await parseAllSessions(getDateRange('month').range, pf))
-      console.log(JSON.stringify({ today: { cost: todayData.cost, calls: todayData.calls }, month: { cost: monthData.cost, calls: monthData.calls } }))
+      const { code, rate } = getCurrency()
+      console.log(JSON.stringify({
+        currency: code,
+        today: { cost: Math.round(todayData.cost * rate * 100) / 100, calls: todayData.calls },
+        month: { cost: Math.round(monthData.cost * rate * 100) / 100, calls: monthData.calls },
+      }))
       return
     }
 
@@ -201,6 +214,67 @@ program
   .action(async () => {
     const result = await uninstallMenubar()
     console.log(result)
+  })
+
+// --- Config commands ---
+
+const configCmd = program
+  .command('config')
+  .description('View or set configuration')
+
+configCmd
+  .command('currency [code]')
+  .description('Set display currency (e.g. codeburn config currency AUD)')
+  .option('--symbol <symbol>', 'Override the currency symbol')
+  .option('--reset', 'Reset to USD (removes currency config)')
+  .action(async (code?: string, opts?: { symbol?: string; reset?: boolean }) => {
+    // Reset: remove currency from config
+    if (opts?.reset) {
+      const config = await readConfig()
+      delete config.currency
+      await saveConfig(config)
+      console.log('\n  Currency reset to USD.\n')
+      return
+    }
+
+    // Show: display current setting
+    if (!code) {
+      const { code: activeCode, rate, symbol } = getCurrency()
+      if (activeCode === 'USD' && rate === 1) {
+        console.log('\n  Currency: USD (default)')
+        console.log(`  Config: ${getConfigFilePath()}\n`)
+      } else {
+        console.log(`\n  Currency: ${activeCode}`)
+        console.log(`  Symbol: ${symbol}`)
+        console.log(`  Rate: 1 USD = ${rate} ${activeCode}`)
+        console.log(`  Config: ${getConfigFilePath()}\n`)
+      }
+      return
+    }
+
+    // Set: validate and save
+    const upperCode = code.toUpperCase()
+    if (!isValidCurrencyCode(upperCode)) {
+      console.error(`\n  "${code}" is not a valid ISO 4217 currency code.\n`)
+      process.exitCode = 1
+      return
+    }
+
+    const config = await readConfig()
+    config.currency = {
+      code: upperCode,
+      ...(opts?.symbol ? { symbol: opts.symbol } : {}),
+    }
+    await saveConfig(config)
+
+    // Load the currency to fetch the rate and confirm it works
+    await loadCurrency()
+    const { rate, symbol } = getCurrency()
+
+    console.log(`\n  Currency set to ${upperCode}.`)
+    console.log(`  Symbol: ${symbol}`)
+    console.log(`  Rate: 1 USD = ${rate} ${upperCode}`)
+    console.log(`  Config saved to ${getConfigFilePath()}\n`)
   })
 
 program.parse()

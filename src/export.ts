@@ -1,6 +1,8 @@
 import { writeFile } from 'fs/promises'
 import { resolve } from 'path'
+
 import { CATEGORY_LABELS, type ProjectSummary, type TaskCategory } from './types.js'
+import { getCostColumnHeader, convertCost } from './currency.js'
 
 function escCsv(s: string): string {
   if (s.includes(',') || s.includes('"') || s.includes('\n')) {
@@ -32,7 +34,7 @@ function buildDailyRows(projects: ProjectSummary[]): Array<Record<string, string
 
   return Object.entries(daily).sort().map(([date, d]) => ({
     Date: date,
-    'Cost (USD)': Math.round(d.cost * 100) / 100,
+    [getCostColumnHeader()]: convertCost(d.cost),
     'API Calls': d.calls,
     'Input Tokens': d.input,
     'Output Tokens': d.output,
@@ -56,7 +58,7 @@ function buildActivityRows(projects: ProjectSummary[]): Array<Record<string, str
     .sort(([, a], [, b]) => b.cost - a.cost)
     .map(([cat, d]) => ({
       Activity: CATEGORY_LABELS[cat as TaskCategory] ?? cat,
-      'Cost (USD)': Math.round(d.cost * 100) / 100,
+      [getCostColumnHeader()]: convertCost(d.cost),
       Turns: d.turns,
     }))
 }
@@ -78,7 +80,7 @@ function buildModelRows(projects: ProjectSummary[]): Array<Record<string, string
     .sort(([, a], [, b]) => b.cost - a.cost)
     .map(([model, d]) => ({
       Model: model,
-      'Cost (USD)': Math.round(d.cost * 100) / 100,
+      [getCostColumnHeader()]: convertCost(d.cost),
       'API Calls': d.calls,
       'Input Tokens': d.input,
       'Output Tokens': d.output,
@@ -116,7 +118,7 @@ function buildBashRows(projects: ProjectSummary[]): Array<Record<string, string 
 function buildProjectRows(projects: ProjectSummary[]): Array<Record<string, string | number>> {
   return projects.map(p => ({
     Project: p.projectPath,
-    'Cost (USD)': Math.round(p.totalCostUSD * 100) / 100,
+    [getCostColumnHeader()]: convertCost(p.totalCostUSD),
     'API Calls': p.totalApiCalls,
     Sessions: p.sessions.length,
   }))
@@ -141,7 +143,7 @@ function buildSummaryRow(period: PeriodExport): Record<string, string | number> 
   const cost = period.projects.reduce((s, p) => s + p.totalCostUSD, 0)
   const calls = period.projects.reduce((s, p) => s + p.totalApiCalls, 0)
   const sessions = period.projects.reduce((s, p) => s + p.sessions.length, 0)
-  return { Period: period.label, 'Cost (USD)': Math.round(cost * 100) / 100, 'API Calls': calls, Sessions: sessions }
+  return { Period: period.label, [getCostColumnHeader()]: convertCost(cost), 'API Calls': calls, Sessions: sessions }
 }
 
 export async function exportCsv(periods: PeriodExport[], outputPath: string): Promise<string> {
