@@ -83,8 +83,8 @@ function getDateRange(period: Period): { start: Date; end: Date } {
 
 type Layout = { dashWidth: number; wide: boolean; halfWidth: number; barWidth: number }
 
-function getLayout(): Layout {
-  const termWidth = useWindowSize()?.columns || parseInt(process.env['COLUMNS'] ?? '') || 80
+function getLayout(columns?: number): Layout {
+  const termWidth = columns || parseInt(process.env['COLUMNS'] ?? '') || 80
   const dashWidth = Math.min(104, termWidth)
   const wide = dashWidth >= MIN_WIDE
   const halfWidth = wide ? Math.floor(dashWidth / 2) : dashWidth
@@ -430,7 +430,8 @@ function Row({ wide, width, children }: { wide: boolean; width: number; children
 }
 
 function DashboardContent({ projects, period }: { projects: ProjectSummary[]; period: Period }) {
-  const { dashWidth, wide, halfWidth, barWidth } = getLayout()
+  const { columns } = useWindowSize()
+  const { dashWidth, wide, halfWidth, barWidth } = getLayout(columns)
 
   if (projects.length === 0) {
     return (
@@ -477,7 +478,8 @@ function InteractiveDashboard({ initialProjects, initialPeriod, initialProvider 
   const [loading, setLoading] = useState(false)
   const [activeProvider, setActiveProvider] = useState(initialProvider)
   const [detectedProviders, setDetectedProviders] = useState<string[]>([])
-  const { dashWidth } = getLayout()
+  const { columns } = useWindowSize()
+  const { dashWidth } = getLayout(columns)
   const multipleProviders = detectedProviders.length > 1
 
   useEffect(() => {
@@ -562,7 +564,8 @@ function InteractiveDashboard({ initialProjects, initialPeriod, initialProvider 
 }
 
 function StaticDashboard({ projects, period }: { projects: ProjectSummary[]; period: Period }) {
-  const { dashWidth } = getLayout()
+  const { columns } = useWindowSize()
+  const { dashWidth } = getLayout(columns)
   return (
     <Box flexDirection="column" width={dashWidth}>
       <PeriodTabs active={period} />
