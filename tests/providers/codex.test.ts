@@ -153,7 +153,7 @@ describe('codex provider - JSONL parsing', () => {
     const call = calls[0]!
     expect(call.provider).toBe('codex')
     expect(call.model).toBe('gpt-5.3-codex')
-    expect(call.inputTokens).toBe(500)
+    expect(call.inputTokens).toBe(400)
     expect(call.cachedInputTokens).toBe(100)
     expect(call.cacheReadInputTokens).toBe(100)
     expect(call.outputTokens).toBe(200)

@@ -1,4 +1,4 @@
-import { readdir, readFile, stat } from 'fs/promises'
+import { readdir, readFile } from 'fs/promises'
 import { basename, join } from 'path'
 import { calculateCost, getShortModelName } from './models.js'
 import { discoverAllSessions, getProvider } from './providers/index.js'
@@ -298,15 +298,30 @@ async function parseSessionFile(
   return buildSessionSummary(sessionId, project, classified)
 }
 
+async function collectJsonlFiles(dirPath: string): Promise<string[]> {
+  const files = await readdir(dirPath).catch(() => [])
+  const jsonlFiles = files.filter(f => f.endsWith('.jsonl')).map(f => join(dirPath, f))
+
+  for (const entry of files) {
+    if (entry.endsWith('.jsonl')) continue
+    const subagentsPath = join(dirPath, entry, 'subagents')
+    const subFiles = await readdir(subagentsPath).catch(() => [])
+    for (const sf of subFiles) {
+      if (sf.endsWith('.jsonl')) jsonlFiles.push(join(subagentsPath, sf))
+    }
+  }
+
+  return jsonlFiles
+}
+
 async function scanProjectDirs(dirs: Array<{ path: string; name: string }>, seenMsgIds: Set<string>, dateRange?: DateRange): Promise<ProjectSummary[]> {
   const projectMap = new Map<string, SessionSummary[]>()
 
   for (const { path: dirPath, name: dirName } of dirs) {
-    const files = await readdir(dirPath).catch(() => [])
-    const jsonlFiles = files.filter(f => f.endsWith('.jsonl') && !f.startsWith('agent-'))
+    const jsonlFiles = await collectJsonlFiles(dirPath)
 
-    for (const file of jsonlFiles) {
-      const session = await parseSessionFile(join(dirPath, file), dirName, seenMsgIds, dateRange)
+    for (const filePath of jsonlFiles) {
+      const session = await parseSessionFile(filePath, dirName, seenMsgIds, dateRange)
       if (session && session.apiCalls > 0) {
         const existing = projectMap.get(dirName) ?? []
         existing.push(session)

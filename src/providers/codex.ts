@@ -227,6 +227,10 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
           const totalTokens = inputTokens + cachedInputTokens + outputTokens + reasoningTokens
           if (totalTokens === 0) continue
 
+          // OpenAI includes cached tokens inside input_tokens; Anthropic does not.
+          // Normalize to Anthropic semantics: inputTokens = non-cached only.
+          const uncachedInputTokens = Math.max(0, inputTokens - cachedInputTokens)
+
           const model = resolveModel(entry.payload, sessionModel)
           const timestamp = entry.timestamp ?? ''
           const dedupKey = `codex:${source.path}:${timestamp}:${cumulativeTotal}`
@@ -236,7 +240,7 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
 
           const costUSD = calculateCost(
             model,
-            inputTokens,
+            uncachedInputTokens,
             outputTokens + reasoningTokens,
             0,
             cachedInputTokens,
@@ -246,7 +250,7 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
           yield {
             provider: 'codex',
             model,
-            inputTokens,
+            inputTokens: uncachedInputTokens,
             outputTokens,
             cacheCreationInputTokens: 0,
             cacheReadInputTokens: cachedInputTokens,
