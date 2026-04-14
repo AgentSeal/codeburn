@@ -9,6 +9,7 @@ const DEBUG_KEYWORDS = /\b(fix|bug|error|broken|failing|crash|issue|debug|traceb
 const FEATURE_KEYWORDS = /\b(add|create|implement|new|build|feature|introduce|set\s*up|scaffold|generate)\b/i
 const REFACTOR_KEYWORDS = /\b(refactor|clean\s*up|rename|reorganize|simplify|extract|restructure|move|migrate|split)\b/i
 const BRAINSTORM_KEYWORDS = /\b(brainstorm|idea|what\s+if|explore|think\s+about|approach|strategy|design|consider|how\s+should|what\s+would|opinion|suggest|recommend)\b/i
+const REVIEW_KEYWORDS = /\b(review|critique|audit|verify|improve)\b/i
 const RESEARCH_KEYWORDS = /\b(research|investigate|look\s+into|find\s+out|check|search|analyze|review|understand|explain|how\s+does|what\s+is|show\s+me|list|compare)\b/i
 
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'FileEditTool', 'FileWriteTool', 'NotebookEdit'])
@@ -84,16 +85,17 @@ function classifyByToolPattern(turn: ParsedTurn): TaskCategory | null {
 
   return null
 }
-
 function refineByKeywords(category: TaskCategory, userMessage: string): TaskCategory {
   if (category === 'coding') {
     if (DEBUG_KEYWORDS.test(userMessage)) return 'debugging'
     if (REFACTOR_KEYWORDS.test(userMessage)) return 'refactoring'
+    if (REVIEW_KEYWORDS.test(userMessage)) return 'review'
     if (FEATURE_KEYWORDS.test(userMessage)) return 'feature'
     return 'coding'
   }
 
   if (category === 'exploration') {
+    if (REVIEW_KEYWORDS.test(userMessage)) return 'review'
     if (RESEARCH_KEYWORDS.test(userMessage)) return 'exploration'
     if (DEBUG_KEYWORDS.test(userMessage)) return 'debugging'
     return 'exploration'
@@ -104,6 +106,7 @@ function refineByKeywords(category: TaskCategory, userMessage: string): TaskCate
 
 function classifyConversation(userMessage: string): TaskCategory {
   if (BRAINSTORM_KEYWORDS.test(userMessage)) return 'brainstorming'
+  if (REVIEW_KEYWORDS.test(userMessage)) return 'review'
   if (RESEARCH_KEYWORDS.test(userMessage)) return 'exploration'
   if (DEBUG_KEYWORDS.test(userMessage)) return 'debugging'
   if (FEATURE_KEYWORDS.test(userMessage)) return 'feature'

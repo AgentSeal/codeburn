@@ -94,6 +94,7 @@ export type TaskCategory =
   | 'conversation'
   | 'brainstorming'
   | 'general'
+  | 'review'
 
 export type ClassifiedTurn = ParsedTurn & {
   category: TaskCategory
@@ -147,4 +148,5 @@ export const CATEGORY_LABELS: Record<TaskCategory, string> = {
   conversation: 'Conversation',
   brainstorming: 'Brainstorming',
   general: 'General',
+  review: 'Code Review',
 }
