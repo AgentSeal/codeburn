@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react'
+import React, { useState, useCallback, useEffect } from 'react'
 import { render, Box, Text, useInput, useApp } from 'ink'
 import { CATEGORY_LABELS, type ProjectSummary, type TaskCategory } from './types.js'
 import { formatCost, formatTokens } from './format.js'
@@ -79,14 +79,26 @@ function getDateRange(period: Period): { start: Date; end: Date } {
 
 type Layout = { dashWidth: number; wide: boolean; halfWidth: number; barWidth: number }
 
-function getLayout(): Layout {
+function calcLayout(): Layout {
   const termWidth = process.stdout.columns || parseInt(process.env['COLUMNS'] ?? '') || 80
-  const dashWidth = Math.min(104, termWidth)
+  const dashWidth = termWidth
   const wide = dashWidth >= MIN_WIDE
   const halfWidth = wide ? Math.floor(dashWidth / 2) : dashWidth
   const inner = halfWidth - 4
   const barWidth = Math.max(6, Math.min(10, inner - 30))
   return { dashWidth, wide, halfWidth, barWidth }
+}
+
+function useLayout(): Layout {
+  const [layout, setLayout] = useState(calcLayout)
+
+  useEffect(() => {
+    const onResize = () => setLayout(calcLayout())
+    process.stdout.on('resize', onResize)
+    return () => { process.stdout.off('resize', onResize) }
+  }, [])
+
+  return layout
 }
 
 function HBar({ value, max, width }: { value: number; max: number; width: number }) {
@@ -167,20 +179,12 @@ function DailyActivity({ projects, days = 14, pw, bw }: { projects: ProjectSumma
   }
   const sortedDays = Object.keys(dailyCosts).sort().slice(-days)
   const maxCost = Math.max(...sortedDays.map(d => dailyCosts[d] ?? 0))
-
-  return (
-    <Panel title="Daily Activity" color={PANEL_COLORS.daily} width={pw}>
-      <Text dimColor wrap="truncate-end">{''.padEnd(6 + bw)}{'cost'.padStart(8)}{'calls'.padStart(6)}</Text>
-      {sortedDays.map(day => (
-        <Text key={day} wrap="truncate-end">
-          <Text dimColor>{day.slice(5)} </Text>
-          <HBar value={dailyCosts[day] ?? 0} max={maxCost} width={bw} />
-          <Text color={GOLD}>{formatCost(dailyCosts[day] ?? 0).padStart(8)}</Text>
-          <Text>{String(dailyCalls[day] ?? 0).padStart(6)}</Text>
-        </Text>
-      ))}
-    </Panel>
-  )
+  const rows: BreakdownRow[] = sortedDays.map(day => ({
+    key: day, barValue: dailyCosts[day] ?? 0, label: day.slice(5), labelColor: DIM,
+    values: [formatCost(dailyCosts[day] ?? 0), String(dailyCalls[day] ?? 0)],
+  }))
+  return <Breakdown title="Daily Activity" color={PANEL_COLORS.daily} pw={pw} bw={bw} barMax={maxCost} labelBefore
+    cols={[{ header: 'cost', width: 8, color: GOLD }, { header: 'calls', width: 6 }]} rows={rows} />
 }
 
 function shortProject(project: string): string {
@@ -189,22 +193,45 @@ function shortProject(project: string): string {
   return parts.slice(-2).join('/')
 }
 
-function ProjectBreakdown({ projects, pw, bw }: { projects: ProjectSummary[]; pw: number; bw: number }) {
-  const maxCost = Math.max(...projects.map(p => p.totalCostUSD))
-  const nw = Math.max(8, pw - bw - 23)
+type BreakdownCol = { header: string; width: number; color?: string }
+type BreakdownRow = { key: string; barValue: number; label: string; labelColor?: string; values: string[] }
+
+function Breakdown({ title, color, pw, bw, cols, rows, barMax, emptyText, labelBefore }: {
+  title: string; color: string; pw: number; bw: number
+  cols: BreakdownCol[]; rows: BreakdownRow[]; barMax: number; emptyText?: string; labelBefore?: boolean
+}) {
+  if (rows.length === 0 && emptyText) {
+    return <Panel title={title} color={color} width={pw}><Text dimColor>{emptyText}</Text></Panel>
+  }
+  const colTotal = cols.reduce((s, c) => s + c.width, 0)
+  const nw = Math.max(6, pw - bw - colTotal - 5)
+
   return (
-    <Panel title="By Project" color={PANEL_COLORS.project} width={pw}>
-      <Text dimColor wrap="truncate-end">{''.padEnd(bw + 1 + nw)}{'cost'.padStart(8)}{'sess'.padStart(6)}</Text>
-      {projects.slice(0, 8).map((project, i) => (
-        <Text key={`${project.project}-${i}`} wrap="truncate-end">
-          <HBar value={project.totalCostUSD} max={maxCost} width={bw} />
-          <Text dimColor> {fit(shortProject(project.project), nw)}</Text>
-          <Text color={GOLD}>{formatCost(project.totalCostUSD).padStart(8)}</Text>
-          <Text>{String(project.sessions.length).padStart(6)}</Text>
+    <Panel title={title} color={color} width={pw}>
+      <Text dimColor wrap="truncate-end">{''.padEnd(bw + 1 + nw)}{cols.map(c => c.header.padStart(c.width)).join('')}</Text>
+      {rows.map(row => (
+        <Text key={row.key} wrap="truncate-end">
+          {labelBefore && <Text color={row.labelColor}>{fit(row.label, nw)} </Text>}
+          <HBar value={row.barValue} max={barMax} width={bw} />
+          {!labelBefore && <Text color={row.labelColor}> {fit(row.label, nw)}</Text>}
+          {row.values.map((v, i) => (
+            <Text key={i} color={cols[i]?.color}>{v.padStart(cols[i]?.width ?? 6)}</Text>
+          ))}
         </Text>
       ))}
     </Panel>
   )
+}
+
+function ProjectBreakdown({ projects, pw, bw }: { projects: ProjectSummary[]; pw: number; bw: number }) {
+  const maxCost = Math.max(...projects.map(p => p.totalCostUSD))
+  const rows: BreakdownRow[] = projects.slice(0, 8).map((p, i) => ({
+    key: `${p.project}-${i}`, barValue: p.totalCostUSD,
+    label: shortProject(p.project), labelColor: DIM,
+    values: [formatCost(p.totalCostUSD), String(p.sessions.length)],
+  }))
+  return <Breakdown title="By Project" color={PANEL_COLORS.project} pw={pw} bw={bw} barMax={maxCost}
+    cols={[{ header: 'cost', width: 8, color: GOLD }, { header: 'sess', width: 6 }]} rows={rows} />
 }
 
 function ModelBreakdown({ projects, pw, bw }: { projects: ProjectSummary[]; pw: number; bw: number }) {
@@ -219,22 +246,12 @@ function ModelBreakdown({ projects, pw, bw }: { projects: ProjectSummary[]; pw: 
     }
   }
   const sorted = Object.entries(modelTotals).sort(([, a], [, b]) => b.costUSD - a.costUSD)
-  const maxCost = sorted[0]?.[1]?.costUSD ?? 0
-  const nw = Math.max(6, pw - bw - 25)
-
-  return (
-    <Panel title="By Model" color={PANEL_COLORS.model} width={pw}>
-      <Text dimColor wrap="truncate-end">{''.padEnd(bw + 1 + nw)}{'cost'.padStart(8)}{'calls'.padStart(7)}</Text>
-      {sorted.map(([model, data], i) => (
-        <Text key={`${model}-${i}`} wrap="truncate-end">
-          <HBar value={data.costUSD} max={maxCost} width={bw} />
-          <Text> {fit(model, nw)}</Text>
-          <Text color={GOLD}>{formatCost(data.costUSD).padStart(8)}</Text>
-          <Text>{String(data.calls).padStart(7)}</Text>
-        </Text>
-      ))}
-    </Panel>
-  )
+  const rows: BreakdownRow[] = sorted.map(([model, data], i) => ({
+    key: `${model}-${i}`, barValue: data.costUSD, label: model,
+    values: [formatCost(data.costUSD), String(data.calls)],
+  }))
+  return <Breakdown title="By Model" color={PANEL_COLORS.model} pw={pw} bw={bw} barMax={sorted[0]?.[1]?.costUSD ?? 0}
+    cols={[{ header: 'cost', width: 8, color: GOLD }, { header: 'calls', width: 7 }]} rows={rows} />
 }
 
 function ActivityBreakdown({ projects, pw, bw }: { projects: ProjectSummary[]; pw: number; bw: number }) {
@@ -249,23 +266,14 @@ function ActivityBreakdown({ projects, pw, bw }: { projects: ProjectSummary[]; p
     }
   }
   const sorted = Object.entries(categoryTotals).sort(([, a], [, b]) => b.costUSD - a.costUSD)
-  const maxCost = sorted[0]?.[1]?.costUSD ?? 0
-
-  return (
-    <Panel title="By Activity" color={PANEL_COLORS.activity} width={pw}>
-      <Text dimColor wrap="truncate-end">{''.padEnd(bw + 14)}{'cost'.padStart(8)}{'turns'.padStart(6)}</Text>
-      {sorted.map(([cat, data]) => (
-        <Text key={cat} wrap="truncate-end">
-          <HBar value={data.costUSD} max={maxCost} width={bw} />
-          <Text color={CATEGORY_COLORS[cat as TaskCategory] ?? '#666666'}>
-            {' '}{fit(CATEGORY_LABELS[cat as TaskCategory] ?? cat, 13)}
-          </Text>
-          <Text color={GOLD}>{formatCost(data.costUSD).padStart(8)}</Text>
-          <Text>{String(data.turns).padStart(6)}</Text>
-        </Text>
-      ))}
-    </Panel>
-  )
+  const rows: BreakdownRow[] = sorted.map(([cat, data]) => ({
+    key: cat, barValue: data.costUSD,
+    label: CATEGORY_LABELS[cat as TaskCategory] ?? cat,
+    labelColor: CATEGORY_COLORS[cat as TaskCategory] ?? '#666666',
+    values: [formatCost(data.costUSD), String(data.turns)],
+  }))
+  return <Breakdown title="By Activity" color={PANEL_COLORS.activity} pw={pw} bw={bw} barMax={sorted[0]?.[1]?.costUSD ?? 0}
+    cols={[{ header: 'cost', width: 8, color: GOLD }, { header: 'turns', width: 6 }]} rows={rows} />
 }
 
 function ToolBreakdown({ projects, pw, bw }: { projects: ProjectSummary[]; pw: number; bw: number }) {
@@ -278,21 +286,11 @@ function ToolBreakdown({ projects, pw, bw }: { projects: ProjectSummary[]; pw: n
     }
   }
   const sorted = Object.entries(toolTotals).sort(([, a], [, b]) => b - a)
-  const maxCalls = sorted[0]?.[1] ?? 0
-  const nw = Math.max(6, pw - bw - 15)
-
-  return (
-    <Panel title="Core Tools" color={PANEL_COLORS.tools} width={pw}>
-      <Text dimColor wrap="truncate-end">{''.padEnd(bw + 1 + nw)}{'calls'.padStart(7)}</Text>
-      {sorted.slice(0, 10).map(([tool, calls]) => (
-        <Text key={tool} wrap="truncate-end">
-          <HBar value={calls} max={maxCalls} width={bw} />
-          <Text> {fit(tool, nw)}</Text>
-          <Text>{String(calls).padStart(7)}</Text>
-        </Text>
-      ))}
-    </Panel>
-  )
+  const rows: BreakdownRow[] = sorted.slice(0, 10).map(([tool, calls]) => ({
+    key: tool, barValue: calls, label: tool, values: [String(calls)],
+  }))
+  return <Breakdown title="Core Tools" color={PANEL_COLORS.tools} pw={pw} bw={bw} barMax={sorted[0]?.[1] ?? 0}
+    cols={[{ header: 'calls', width: 7 }]} rows={rows} />
 }
 
 function McpBreakdown({ projects, pw, bw }: { projects: ProjectSummary[]; pw: number; bw: number }) {
@@ -305,24 +303,11 @@ function McpBreakdown({ projects, pw, bw }: { projects: ProjectSummary[]; pw: nu
     }
   }
   const sorted = Object.entries(mcpTotals).sort(([, a], [, b]) => b - a)
-  if (sorted.length === 0) {
-    return <Panel title="MCP Servers" color={PANEL_COLORS.mcp} width={pw}><Text dimColor>No MCP usage</Text></Panel>
-  }
-  const maxCalls = sorted[0]?.[1] ?? 0
-  const nw = Math.max(6, pw - bw - 15)
-
-  return (
-    <Panel title="MCP Servers" color={PANEL_COLORS.mcp} width={pw}>
-      <Text dimColor wrap="truncate-end">{''.padEnd(bw + 1 + nw)}{'calls'.padStart(6)}</Text>
-      {sorted.slice(0, 8).map(([server, calls]) => (
-        <Text key={server} wrap="truncate-end">
-          <HBar value={calls} max={maxCalls} width={bw} />
-          <Text> {fit(server, nw)}</Text>
-          <Text>{String(calls).padStart(6)}</Text>
-        </Text>
-      ))}
-    </Panel>
-  )
+  const rows: BreakdownRow[] = sorted.slice(0, 8).map(([server, calls]) => ({
+    key: server, barValue: calls, label: server, values: [String(calls)],
+  }))
+  return <Breakdown title="MCP Servers" color={PANEL_COLORS.mcp} pw={pw} bw={bw} barMax={sorted[0]?.[1] ?? 0}
+    cols={[{ header: 'calls', width: 6 }]} rows={rows} emptyText="No MCP usage" />
 }
 
 function PeriodTabs({ active }: { active: Period }) {
@@ -362,7 +347,7 @@ function Row({ wide, width, children }: { wide: boolean; width: number; children
 }
 
 function DashboardContent({ projects, period }: { projects: ProjectSummary[]; period: Period }) {
-  const { dashWidth, wide, halfWidth, barWidth } = getLayout()
+  const { dashWidth, wide, halfWidth, barWidth } = useLayout()
 
   if (projects.length === 0) {
     return (
@@ -404,7 +389,7 @@ function InteractiveDashboard({ initialProjects, initialPeriod }: {
   const [period, setPeriod] = useState<Period>(initialPeriod)
   const [projects, setProjects] = useState<ProjectSummary[]>(initialProjects)
   const [loading, setLoading] = useState(false)
-  const { dashWidth } = getLayout()
+  const { dashWidth } = useLayout()
 
   const switchPeriod = useCallback(async (newPeriod: Period) => {
     if (newPeriod === period) return
@@ -453,7 +438,7 @@ function InteractiveDashboard({ initialProjects, initialPeriod }: {
 }
 
 function StaticDashboard({ projects, period }: { projects: ProjectSummary[]; period: Period }) {
-  const { dashWidth } = getLayout()
+  const { dashWidth } = useLayout()
   return (
     <Box flexDirection="column" width={dashWidth}>
       <PeriodTabs active={period} />
