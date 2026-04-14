@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.1 - 2026-04-14
+
+### Added
+- Multi-currency support. `codeburn currency GBP` sets display currency (162 ISO
+  4217 codes). Exchange rates from Frankfurter API (ECB data, 24h cache). Applies
+  to dashboard, status, menubar, and exports. Contributed by @BlairWelsh.
+- 30-day rolling window period (`codeburn report -p 30days`, key `3` in TUI).
+  Distinct from calendar month. Contributed by @oysteinkrog.
+- Menubar currency picker with 17 common currencies.
+
+### Fixed
+- Export "30 Days" period now uses actual 30-day range instead of calendar month.
+
 ## 0.4.0 - 2026-04-14
 
 ### Added

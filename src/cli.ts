@@ -56,7 +56,7 @@ function toPeriod(s: string): 'today' | 'week' | '30days' | 'month' {
 const program = new Command()
   .name('codeburn')
   .description('See where your AI coding tokens go - by task, tool, model, and project')
-  .version('0.4.0')
+  .version('0.4.1')
 
 program.hook('preAction', async () => {
   await loadCurrency()
