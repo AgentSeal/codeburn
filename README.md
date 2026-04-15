@@ -8,7 +8,9 @@
 
 <p align="center">
   <a href="https://www.npmjs.com/package/codeburn"><img src="https://img.shields.io/npm/v/codeburn.svg" alt="npm version" /></a>
-  <a href="https://www.npmjs.com/package/codeburn"><img src="https://img.shields.io/npm/dm/codeburn.svg" alt="npm downloads" /></a>
+  <a href="https://www.npmjs.com/package/codeburn"><img src="https://img.shields.io/npm/dt/codeburn.svg" alt="total downloads" /></a>
+  <a href="https://www.npmjs.com/package/codeburn"><img src="https://img.shields.io/npm/dm/codeburn.svg" alt="monthly downloads" /></a>
+  <a href="https://bundlephobia.com/package/codeburn"><img src="https://img.shields.io/bundlephobia/min/codeburn" alt="install size" /></a>
   <a href="https://github.com/agentseal/codeburn/blob/main/LICENSE"><img src="https://img.shields.io/npm/l/codeburn.svg" alt="license" /></a>
   <a href="https://github.com/agentseal/codeburn"><img src="https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg" alt="node version" /></a>
 </p>
@@ -45,6 +47,7 @@ codeburn                    # interactive dashboard (default: 7 days)
 codeburn today              # today's usage
 codeburn month              # this month's usage
 codeburn report -p 30days   # rolling 30-day window
+codeburn report --refresh 60  # auto-refresh every 60 seconds
 codeburn status             # compact one-liner (today + month)
 codeburn status --format json
 codeburn export             # CSV with today, 7 days, 30 days
