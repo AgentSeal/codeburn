@@ -183,7 +183,7 @@ function createParser(
               outputTokens: tokens.output,
               cacheCreationInputTokens: tokens.cacheWrite,
               cacheReadInputTokens: tokens.cacheRead,
-              cachedInputTokens: 0,
+              cachedInputTokens: tokens.cacheRead,
               reasoningTokens: tokens.reasoning,
               webSearchRequests: 0,
               costUSD,
