@@ -188,6 +188,7 @@ function parseBubbles(db: SqliteDatabase, seenKeys: Set<string>): { calls: Parse
         webSearchRequests: 0,
         costUSD,
         tools: cursorTools,
+        bashCommands: [],
         timestamp,
         speed: 'standard',
         deduplicationKey: dedupKey,

@@ -30,10 +30,12 @@ export function extractBashCommands(command: string): string[] {
     const segment = command.slice(start, end).trim()
     if (!segment) continue
 
-    const firstToken = segment.split(/\s+/)[0]
-    const base = basename(firstToken)
+    const tokens = segment.split(/\s+/)
+    let i = 0
+    while (i < tokens.length && /^\w+=/.test(tokens[i]!)) i++
+    const base = i < tokens.length ? basename(tokens[i]!) : ''
 
-    if (base && base !== 'cd') {
+    if (base && base !== 'cd' && base !== 'true' && base !== 'false') {
       commands.push(base)
     }
   }
