@@ -255,6 +255,9 @@ function discoverFromDb(dbPath: string): SessionSource[] {
   }
 }
 
+// dataDir is the XDG data home root (e.g. ~/.local/share), not the
+// opencode directory itself. The opencode/ subdirectory is appended
+// internally by getDataDir.
 export function createOpenCodeProvider(dataDir?: string): Provider {
   const dir = getDataDir(dataDir)
 

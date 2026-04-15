@@ -607,4 +607,116 @@ describe('opencode provider - session parsing', () => {
     expect(calls).toHaveLength(1)
     expect(calls[0]!.costUSD).toBe(0.42)
   })
+
+  it('handles corrupt JSON in message and part data gracefully', async () => {
+    const dbPath = await createTestDb(tmpDir)
+    const db = new Database(dbPath)
+
+    db.prepare(
+      `
+      INSERT INTO session (id, project_id, slug, directory, title, version, time_created)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `,
+    ).run(
+      'sess-1',
+      'proj-1',
+      'slug-1',
+      '/home/user/myproject',
+      'My Project',
+      '1.0',
+      1700000000000,
+    )
+
+    db.prepare(
+      `
+      INSERT INTO message (id, session_id, time_created, data)
+      VALUES (?, ?, ?, ?)
+    `,
+    ).run(
+      'msg-corrupt',
+      'sess-1',
+      1700000000500,
+      'not valid json at all {]',
+    )
+
+    db.prepare(
+      `
+      INSERT INTO message (id, session_id, time_created, data)
+      VALUES (?, ?, ?, ?)
+    `,
+    ).run(
+      'msg-valid',
+      'sess-1',
+      1700000001000,
+      JSON.stringify({
+        role: 'assistant',
+        modelID: 'claude-opus-4-6',
+        cost: 0.05,
+        tokens: {
+          input: 100,
+          output: 200,
+          reasoning: 0,
+          cache: { read: 0, write: 0 },
+        },
+      }),
+    )
+
+    db.prepare(
+      `
+      INSERT INTO part (id, message_id, session_id, data)
+      VALUES (?, ?, ?, ?)
+    `,
+    ).run(
+      'part-corrupt',
+      'msg-valid',
+      'sess-1',
+      'corrupt part data {[}',
+    )
+
+    db.prepare(
+      `
+      INSERT INTO part (id, message_id, session_id, data)
+      VALUES (?, ?, ?, ?)
+    `,
+    ).run(
+      'part-valid',
+      'msg-valid',
+      'sess-1',
+      JSON.stringify({
+        type: 'tool',
+        callID: 'call-1',
+        tool: 'bash',
+        state: {
+          status: 'completed',
+          input: {},
+          output: 'ok',
+          title: 'bash',
+          metadata: {},
+          time: { start: 1700000001100, end: 1700000001200 },
+        },
+      }),
+    )
+
+    db.close()
+
+    const provider = createOpenCodeProvider(tmpDir)
+    const source = {
+      path: `${dbPath}:sess-1`,
+      project: 'myproject',
+      provider: 'opencode',
+    }
+    const parser = provider.createSessionParser(source, new Set())
+    const calls: ParsedProviderCall[] = []
+    for await (const call of parser.parse()) {
+      calls.push(call)
+    }
+
+    expect(calls).toHaveLength(1)
+    const call = calls[0]!
+    expect(call.provider).toBe('opencode')
+    expect(call.model).toBe('claude-opus-4-6')
+    expect(call.inputTokens).toBe(100)
+    expect(call.outputTokens).toBe(200)
+    expect(call.tools).toEqual(['bash'])
+  })
 })

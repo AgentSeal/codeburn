@@ -36,7 +36,8 @@ npx codeburn
 ### Requirements
 
 - Node.js 20+
-- Claude Code (`~/.claude/projects/`) and/or Codex (`~/.codex/sessions/`)
+- A C/C++ build toolchain for native dependencies (`better-sqlite3` requires compilation; most systems have this by default)
+- Claude Code (`~/.claude/projects/`), Codex (`~/.codex/sessions/`), and/or OpenCode (`~/.local/share/opencode/`)
 
 ## Usage
 
@@ -60,8 +61,9 @@ CodeBurn auto-detects which AI coding tools you use. If both Claude Code and Cod
 ```bash
 codeburn report                    # all providers combined (default)
 codeburn report --provider claude  # Claude Code only
-codeburn report --provider codex   # Codex only
-codeburn today --provider codex    # Codex today
+codeburn report --provider codex     # Codex only
+codeburn report --provider opencode  # OpenCode only
+codeburn today --provider codex      # Codex today
 codeburn export --provider claude  # export Claude data only
 ```
 
