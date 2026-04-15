@@ -1,9 +1,8 @@
-import { existsSync, statSync } from 'fs'
+import { existsSync } from 'fs'
 import { join } from 'path'
 import { homedir } from 'os'
 
 import { calculateCost } from '../models.js'
-import { readCursorCache, writeCursorCache } from '../cursor-cache.js'
 import { isSqliteAvailable, getSqliteLoadError, openDatabase, type SqliteDatabase } from '../sqlite.js'
 import type { Provider, SessionSource, SessionParser, ParsedProviderCall } from './types.js'
 
@@ -80,20 +79,18 @@ function validateSchema(db: SqliteDatabase): boolean {
   }
 }
 
-function parseBubbles(db: SqliteDatabase, seenKeys: Set<string>, afterTimestamp?: string): { calls: ParsedProviderCall[]; maxCreatedAt: string } {
+function parseBubbles(db: SqliteDatabase, seenKeys: Set<string>): { calls: ParsedProviderCall[] } {
   const results: ParsedProviderCall[] = []
   let skipped = 0
-  let maxCreatedAt = afterTimestamp ?? ''
 
   const DEFAULT_LOOKBACK_DAYS = 120
-  const timeFloor = afterTimestamp
-    ?? new Date(Date.now() - DEFAULT_LOOKBACK_DAYS * 24 * 60 * 60 * 1000).toISOString()
+  const timeFloor = new Date(Date.now() - DEFAULT_LOOKBACK_DAYS * 24 * 60 * 60 * 1000).toISOString()
 
   let rows: BubbleRow[]
   try {
     rows = db.query<BubbleRow>(BUBBLE_QUERY_SINCE, [timeFloor])
   } catch {
-    return { calls: results, maxCreatedAt }
+    return { calls: results }
   }
 
   for (const row of rows) {
@@ -103,7 +100,6 @@ function parseBubbles(db: SqliteDatabase, seenKeys: Set<string>, afterTimestamp?
       if (inputTokens === 0 && outputTokens === 0) continue
 
       const createdAt = (row.created_at as string) ?? ''
-      if (createdAt > maxCreatedAt) maxCreatedAt = createdAt
       const conversationId = row.conversation_id ?? 'unknown'
       const dedupKey = `cursor:${conversationId}:${createdAt}:${inputTokens}:${outputTokens}`
 
@@ -144,7 +140,7 @@ function parseBubbles(db: SqliteDatabase, seenKeys: Set<string>, afterTimestamp?
     process.stderr.write(`codeburn: skipped ${skipped} unreadable Cursor entries\n`)
   }
 
-  return { calls: results, maxCreatedAt }
+  return { calls: results }
 }
 
 function createParser(source: SessionSource, seenKeys: Set<string>): SessionParser {
@@ -169,22 +165,9 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
           return
         }
 
-        const cache = await readCursorCache()
-        let dbSize = 0
-        try { dbSize = statSync(source.path).size } catch {}
-        const cacheValid = cache
-          && cache.lastCreatedAt.length > 0
-          && cache.dbSizeBytes > 0
-          && dbSize >= cache.dbSizeBytes
-        const afterTimestamp = cacheValid ? cache.lastCreatedAt : undefined
-
         await new Promise(r => setTimeout(r, 0))
 
-        const { calls, maxCreatedAt } = parseBubbles(db, seenKeys, afterTimestamp)
-
-        if (maxCreatedAt.length > 0) {
-          await writeCursorCache(maxCreatedAt, dbSize).catch(() => {})
-        }
+        const { calls } = parseBubbles(db, seenKeys)
 
         for (const call of calls) {
           yield call
