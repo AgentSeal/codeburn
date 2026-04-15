@@ -325,13 +325,16 @@ function ToolBreakdown({ projects, pw, bw, title, filterPrefix }: { projects: Pr
   return (
     <Panel title={title ?? 'Core Tools'} color={PANEL_COLORS.tools} width={pw}>
       <Text dimColor wrap="truncate-end">{''.padEnd(bw + 1 + nw)}{'calls'.padStart(7)}</Text>
-      {sorted.slice(0, 10).map(([tool, calls]) => (
-        <Text key={tool} wrap="truncate-end">
-          <HBar value={calls} max={maxCalls} width={bw} />
-          <Text> {fit(tool, nw)}</Text>
-          <Text>{String(calls).padStart(7)}</Text>
-        </Text>
-      ))}
+      {sorted.slice(0, 10).map(([tool, calls]) => {
+        const display = filterPrefix ? tool.slice(filterPrefix.length) : tool
+        return (
+          <Text key={tool} wrap="truncate-end">
+            <HBar value={calls} max={maxCalls} width={bw} />
+            <Text> {fit(display, nw)}</Text>
+            <Text>{String(calls).padStart(7)}</Text>
+          </Text>
+        )
+      })}
     </Panel>
   )
 }
