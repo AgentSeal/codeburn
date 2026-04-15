@@ -36,7 +36,6 @@ npx codeburn
 ### Requirements
 
 - Node.js 20+
-- A C/C++ build toolchain for native dependencies (`better-sqlite3` requires compilation; most systems have this by default)
 - Claude Code (`~/.claude/projects/`), Codex (`~/.codex/sessions/`), and/or OpenCode (`~/.local/share/opencode/`)
 
 ## Usage

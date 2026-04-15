@@ -1,14 +1,20 @@
 import { mkdtemp, rm, mkdir } from 'fs/promises'
+import { readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 
-import Database from 'better-sqlite3'
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import initSqlJs, { type SqlJsStatic, type Database } from 'sql.js'
+import { describe, it, expect, beforeEach, afterEach, beforeAll } from 'vitest'
 
 import { createOpenCodeProvider } from '../../src/providers/opencode.js'
 import type { ParsedProviderCall } from '../../src/providers/types.js'
 
 let tmpDir: string
+let SQL: SqlJsStatic
+
+beforeAll(async () => {
+  SQL = await initSqlJs()
+})
 
 beforeEach(async () => {
   tmpDir = await mkdtemp(join(tmpdir(), 'opencode-test-'))
@@ -18,12 +24,21 @@ afterEach(async () => {
   await rm(tmpDir, { recursive: true, force: true })
 })
 
+function withTestDb(dbPath: string, fn: (db: Database) => void): void {
+  const buf = readFileSync(dbPath)
+  const db = new SQL.Database(buf)
+  fn(db)
+  const data = db.export()
+  db.close()
+  writeFileSync(dbPath, Buffer.from(data))
+}
+
 async function createTestDb(dir: string): Promise<string> {
   const ocDir = join(dir, 'opencode')
   await mkdir(ocDir, { recursive: true })
   const dbPath = join(ocDir, 'opencode.db')
-  const db = new Database(dbPath)
-  db.exec(`
+  const db = new SQL.Database()
+  db.run(`
     CREATE TABLE session (
       id TEXT PRIMARY KEY,
       project_id TEXT NOT NULL,
@@ -35,14 +50,18 @@ async function createTestDb(dir: string): Promise<string> {
       time_created INTEGER,
       time_updated INTEGER,
       time_archived INTEGER
-    );
+    )
+  `)
+  db.run(`
     CREATE TABLE message (
       id TEXT PRIMARY KEY,
       session_id TEXT NOT NULL,
       time_created INTEGER,
       time_updated INTEGER,
       data TEXT NOT NULL
-    );
+    )
+  `)
+  db.run(`
     CREATE TABLE part (
       id TEXT PRIMARY KEY,
       message_id TEXT NOT NULL,
@@ -50,9 +69,11 @@ async function createTestDb(dir: string): Promise<string> {
       time_created INTEGER,
       time_updated INTEGER,
       data TEXT NOT NULL
-    );
+    )
   `)
+  const data = db.export()
   db.close()
+  writeFileSync(dbPath, Buffer.from(data))
   return dbPath
 }
 
@@ -103,22 +124,23 @@ describe('opencode provider - tool display names', () => {
 describe('opencode provider - session discovery', () => {
   it('discovers sessions from database', async () => {
     const dbPath = await createTestDb(tmpDir)
-    const db = new Database(dbPath)
-    db.prepare(
-      `
-      INSERT INTO session (id, project_id, slug, directory, title, version, time_created)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `,
-    ).run(
-      'sess-1',
-      'proj-1',
-      'slug-1',
-      '/home/user/myproject',
-      'My Project',
-      '1.0',
-      1700000000000,
-    )
-    db.close()
+    withTestDb(dbPath, (db) => {
+      db.run(
+        `
+        INSERT INTO session (id, project_id, slug, directory, title, version, time_created)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `,
+        [
+          'sess-1',
+          'proj-1',
+          'slug-1',
+          '/home/user/myproject',
+          'My Project',
+          '1.0',
+          1700000000000,
+        ],
+      )
+    })
 
     const provider = createOpenCodeProvider(tmpDir)
     const sessions = await provider.discoverSessions()
@@ -131,23 +153,24 @@ describe('opencode provider - session discovery', () => {
 
   it('excludes archived sessions', async () => {
     const dbPath = await createTestDb(tmpDir)
-    const db = new Database(dbPath)
-    db.prepare(
-      `
-      INSERT INTO session (id, project_id, slug, directory, title, version, time_created, time_archived)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `,
-    ).run(
-      'sess-archived',
-      'proj-1',
-      'slug-1',
-      '/home/user/myproject',
-      'My Project',
-      '1.0',
-      1700000000000,
-      1700000001000,
-    )
-    db.close()
+    withTestDb(dbPath, (db) => {
+      db.run(
+        `
+        INSERT INTO session (id, project_id, slug, directory, title, version, time_created, time_archived)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+        [
+          'sess-archived',
+          'proj-1',
+          'slug-1',
+          '/home/user/myproject',
+          'My Project',
+          '1.0',
+          1700000000000,
+          1700000001000,
+        ],
+      )
+    })
 
     const provider = createOpenCodeProvider(tmpDir)
     const sessions = await provider.discoverSessions()
@@ -157,23 +180,24 @@ describe('opencode provider - session discovery', () => {
 
   it('excludes child sessions', async () => {
     const dbPath = await createTestDb(tmpDir)
-    const db = new Database(dbPath)
-    db.prepare(
-      `
-      INSERT INTO session (id, project_id, parent_id, slug, directory, title, version, time_created)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `,
-    ).run(
-      'sess-child',
-      'proj-1',
-      'parent-id',
-      'slug-1',
-      '/home/user/myproject',
-      'My Project',
-      '1.0',
-      1700000000000,
-    )
-    db.close()
+    withTestDb(dbPath, (db) => {
+      db.run(
+        `
+        INSERT INTO session (id, project_id, parent_id, slug, directory, title, version, time_created)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+        [
+          'sess-child',
+          'proj-1',
+          'parent-id',
+          'slug-1',
+          '/home/user/myproject',
+          'My Project',
+          '1.0',
+          1700000000000,
+        ],
+      )
+    })
 
     const provider = createOpenCodeProvider(tmpDir)
     const sessions = await provider.discoverSessions()
@@ -201,33 +225,40 @@ describe('opencode provider - session discovery', () => {
     // Create two channel databases with one session each
     for (const file of ['opencode.db', 'opencode-dev.db']) {
       const dbPath = join(ocDir, file)
-      const db = new Database(dbPath)
-      db.exec(`
+      const db = new SQL.Database()
+      db.run(`
         CREATE TABLE session (
           id TEXT PRIMARY KEY, project_id TEXT NOT NULL, parent_id TEXT,
           slug TEXT NOT NULL, directory TEXT NOT NULL, title TEXT NOT NULL,
           version TEXT NOT NULL, time_created INTEGER, time_updated INTEGER,
           time_archived INTEGER
-        );
+        )
+      `)
+      db.run(`
         CREATE TABLE message (id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
-          time_created INTEGER, time_updated INTEGER, data TEXT NOT NULL);
+          time_created INTEGER, time_updated INTEGER, data TEXT NOT NULL)
+      `)
+      db.run(`
         CREATE TABLE part (id TEXT PRIMARY KEY, message_id TEXT NOT NULL,
           session_id TEXT NOT NULL, time_created INTEGER, time_updated INTEGER,
-          data TEXT NOT NULL);
+          data TEXT NOT NULL)
       `)
-      db.prepare(
+      db.run(
         `INSERT INTO session (id, project_id, slug, directory, title, version, time_created)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      ).run(
-        `sess-${file}`,
-        'proj-1',
-        'slug-1',
-        '/home/user/myproject',
-        'My Project',
-        '1.0',
-        1700000000000,
+        [
+          `sess-${file}`,
+          'proj-1',
+          'slug-1',
+          '/home/user/myproject',
+          'My Project',
+          '1.0',
+          1700000000000,
+        ],
       )
+      const data = db.export()
       db.close()
+      writeFileSync(dbPath, Buffer.from(data))
     }
 
     const provider = createOpenCodeProvider(tmpDir)
@@ -244,22 +275,23 @@ describe('opencode provider - session discovery', () => {
 
   it('uses title when directory is empty', async () => {
     const dbPath = await createTestDb(tmpDir)
-    const db = new Database(dbPath)
-    db.prepare(
-      `
-      INSERT INTO session (id, project_id, slug, directory, title, version, time_created)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `,
-    ).run(
-      'sess-1',
-      'proj-1',
-      'slug-1',
-      '',
-      'My Session Title',
-      '1.0',
-      1700000000000,
-    )
-    db.close()
+    withTestDb(dbPath, (db) => {
+      db.run(
+        `
+        INSERT INTO session (id, project_id, slug, directory, title, version, time_created)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `,
+        [
+          'sess-1',
+          'proj-1',
+          'slug-1',
+          '',
+          'My Session Title',
+          '1.0',
+          1700000000000,
+        ],
+      )
+    })
 
     const provider = createOpenCodeProvider(tmpDir)
     const sessions = await provider.discoverSessions()
@@ -271,130 +303,134 @@ describe('opencode provider - session discovery', () => {
 describe('opencode provider - session parsing', () => {
   it('parses assistant messages with tokens and tools', async () => {
     const dbPath = await createTestDb(tmpDir)
-    const db = new Database(dbPath)
+    withTestDb(dbPath, (db) => {
+      db.run(
+        `
+        INSERT INTO session (id, project_id, slug, directory, title, version, time_created)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `,
+        [
+          'sess-1',
+          'proj-1',
+          'slug-1',
+          '/home/user/myproject',
+          'My Project',
+          '1.0',
+          1700000000000,
+        ],
+      )
 
-    db.prepare(
-      `
-      INSERT INTO session (id, project_id, slug, directory, title, version, time_created)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `,
-    ).run(
-      'sess-1',
-      'proj-1',
-      'slug-1',
-      '/home/user/myproject',
-      'My Project',
-      '1.0',
-      1700000000000,
-    )
+      db.run(
+        `
+        INSERT INTO message (id, session_id, time_created, data)
+        VALUES (?, ?, ?, ?)
+      `,
+        [
+          'msg-1',
+          'sess-1',
+          1700000000000,
+          JSON.stringify({
+            role: 'user',
+            time: { created: 1700000000000 },
+            agent: 'default',
+            model: { providerID: 'anthropic', modelID: 'claude-opus-4-6' },
+            format: 'text',
+          }),
+        ],
+      )
 
-    db.prepare(
-      `
-      INSERT INTO message (id, session_id, time_created, data)
-      VALUES (?, ?, ?, ?)
-    `,
-    ).run(
-      'msg-1',
-      'sess-1',
-      1700000000000,
-      JSON.stringify({
-        role: 'user',
-        time: { created: 1700000000000 },
-        agent: 'default',
-        model: { providerID: 'anthropic', modelID: 'claude-opus-4-6' },
-        format: 'text',
-      }),
-    )
+      db.run(
+        `
+        INSERT INTO part (id, message_id, session_id, data)
+        VALUES (?, ?, ?, ?)
+      `,
+        [
+          'part-1',
+          'msg-1',
+          'sess-1',
+          JSON.stringify({ type: 'text', text: 'fix the login bug' }),
+        ],
+      )
 
-    db.prepare(
-      `
-      INSERT INTO part (id, message_id, session_id, data)
-      VALUES (?, ?, ?, ?)
-    `,
-    ).run(
-      'part-1',
-      'msg-1',
-      'sess-1',
-      JSON.stringify({ type: 'text', text: 'fix the login bug' }),
-    )
+      db.run(
+        `
+        INSERT INTO message (id, session_id, time_created, data)
+        VALUES (?, ?, ?, ?)
+      `,
+        [
+          'msg-2',
+          'sess-1',
+          1700000001000,
+          JSON.stringify({
+            role: 'assistant',
+            time: { created: 1700000001000, completed: 1700000002000 },
+            parentID: 'msg-1',
+            modelID: 'claude-opus-4-6',
+            providerID: 'anthropic',
+            mode: 'code',
+            agent: 'default',
+            path: { cwd: '/tmp', root: '/tmp' },
+            cost: 0.05,
+            tokens: {
+              input: 100,
+              output: 200,
+              reasoning: 50,
+              cache: { read: 500, write: 300 },
+            },
+          }),
+        ],
+      )
 
-    db.prepare(
-      `
-      INSERT INTO message (id, session_id, time_created, data)
-      VALUES (?, ?, ?, ?)
-    `,
-    ).run(
-      'msg-2',
-      'sess-1',
-      1700000001000,
-      JSON.stringify({
-        role: 'assistant',
-        time: { created: 1700000001000, completed: 1700000002000 },
-        parentID: 'msg-1',
-        modelID: 'claude-opus-4-6',
-        providerID: 'anthropic',
-        mode: 'code',
-        agent: 'default',
-        path: { cwd: '/tmp', root: '/tmp' },
-        cost: 0.05,
-        tokens: {
-          input: 100,
-          output: 200,
-          reasoning: 50,
-          cache: { read: 500, write: 300 },
-        },
-      }),
-    )
+      db.run(
+        `
+        INSERT INTO part (id, message_id, session_id, data)
+        VALUES (?, ?, ?, ?)
+      `,
+        [
+          'part-2',
+          'msg-2',
+          'sess-1',
+          JSON.stringify({
+            type: 'tool',
+            callID: 'call-1',
+            tool: 'bash',
+            state: {
+              status: 'completed',
+              input: { command: 'npm test && git push' },
+              output: 'ok',
+              title: 'bash',
+              metadata: {},
+              time: { start: 1700000001100, end: 1700000001200 },
+            },
+          }),
+        ],
+      )
 
-    db.prepare(
-      `
-      INSERT INTO part (id, message_id, session_id, data)
-      VALUES (?, ?, ?, ?)
-    `,
-    ).run(
-      'part-2',
-      'msg-2',
-      'sess-1',
-      JSON.stringify({
-        type: 'tool',
-        callID: 'call-1',
-        tool: 'bash',
-        state: {
-          status: 'completed',
-          input: { command: 'npm test && git push' },
-          output: 'ok',
-          title: 'bash',
-          metadata: {},
-          time: { start: 1700000001100, end: 1700000001200 },
-        },
-      }),
-    )
-
-    db.prepare(
-      `
-      INSERT INTO part (id, message_id, session_id, data)
-      VALUES (?, ?, ?, ?)
-    `,
-    ).run(
-      'part-3',
-      'msg-2',
-      'sess-1',
-      JSON.stringify({
-        type: 'tool',
-        callID: 'call-2',
-        tool: 'edit',
-        state: {
-          status: 'completed',
-          input: {},
-          output: 'ok',
-          title: 'edit',
-          metadata: {},
-          time: { start: 1700000001300, end: 1700000001400 },
-        },
-      }),
-    )
-
-    db.close()
+      db.run(
+        `
+        INSERT INTO part (id, message_id, session_id, data)
+        VALUES (?, ?, ?, ?)
+      `,
+        [
+          'part-3',
+          'msg-2',
+          'sess-1',
+          JSON.stringify({
+            type: 'tool',
+            callID: 'call-2',
+            tool: 'edit',
+            state: {
+              status: 'completed',
+              input: {},
+              output: 'ok',
+              title: 'edit',
+              metadata: {},
+              time: { start: 1700000001300, end: 1700000001400 },
+            },
+          }),
+        ],
+      )
+    })
 
     const provider = createOpenCodeProvider(tmpDir)
     const source = {
@@ -427,46 +463,46 @@ describe('opencode provider - session parsing', () => {
 
   it('skips zero-token messages with zero cost', async () => {
     const dbPath = await createTestDb(tmpDir)
-    const db = new Database(dbPath)
+    withTestDb(dbPath, (db) => {
+      db.run(
+        `
+        INSERT INTO session (id, project_id, slug, directory, title, version, time_created)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `,
+        [
+          'sess-1',
+          'proj-1',
+          'slug-1',
+          '/home/user/myproject',
+          'My Project',
+          '1.0',
+          1700000000000,
+        ],
+      )
 
-    db.prepare(
-      `
-      INSERT INTO session (id, project_id, slug, directory, title, version, time_created)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `,
-    ).run(
-      'sess-1',
-      'proj-1',
-      'slug-1',
-      '/home/user/myproject',
-      'My Project',
-      '1.0',
-      1700000000000,
-    )
-
-    db.prepare(
-      `
-      INSERT INTO message (id, session_id, time_created, data)
-      VALUES (?, ?, ?, ?)
-    `,
-    ).run(
-      'msg-1',
-      'sess-1',
-      1700000001000,
-      JSON.stringify({
-        role: 'assistant',
-        modelID: 'claude-opus-4-6',
-        cost: 0,
-        tokens: {
-          input: 0,
-          output: 0,
-          reasoning: 0,
-          cache: { read: 0, write: 0 },
-        },
-      }),
-    )
-
-    db.close()
+      db.run(
+        `
+        INSERT INTO message (id, session_id, time_created, data)
+        VALUES (?, ?, ?, ?)
+      `,
+        [
+          'msg-1',
+          'sess-1',
+          1700000001000,
+          JSON.stringify({
+            role: 'assistant',
+            modelID: 'claude-opus-4-6',
+            cost: 0,
+            tokens: {
+              input: 0,
+              output: 0,
+              reasoning: 0,
+              cache: { read: 0, write: 0 },
+            },
+          }),
+        ],
+      )
+    })
 
     const provider = createOpenCodeProvider(tmpDir)
     const source = {
@@ -485,46 +521,46 @@ describe('opencode provider - session parsing', () => {
 
   it('deduplicates messages', async () => {
     const dbPath = await createTestDb(tmpDir)
-    const db = new Database(dbPath)
+    withTestDb(dbPath, (db) => {
+      db.run(
+        `
+        INSERT INTO session (id, project_id, slug, directory, title, version, time_created)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `,
+        [
+          'sess-1',
+          'proj-1',
+          'slug-1',
+          '/home/user/myproject',
+          'My Project',
+          '1.0',
+          1700000000000,
+        ],
+      )
 
-    db.prepare(
-      `
-      INSERT INTO session (id, project_id, slug, directory, title, version, time_created)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `,
-    ).run(
-      'sess-1',
-      'proj-1',
-      'slug-1',
-      '/home/user/myproject',
-      'My Project',
-      '1.0',
-      1700000000000,
-    )
-
-    db.prepare(
-      `
-      INSERT INTO message (id, session_id, time_created, data)
-      VALUES (?, ?, ?, ?)
-    `,
-    ).run(
-      'msg-1',
-      'sess-1',
-      1700000001000,
-      JSON.stringify({
-        role: 'assistant',
-        modelID: 'claude-opus-4-6',
-        cost: 0.05,
-        tokens: {
-          input: 100,
-          output: 200,
-          reasoning: 0,
-          cache: { read: 0, write: 0 },
-        },
-      }),
-    )
-
-    db.close()
+      db.run(
+        `
+        INSERT INTO message (id, session_id, time_created, data)
+        VALUES (?, ?, ?, ?)
+      `,
+        [
+          'msg-1',
+          'sess-1',
+          1700000001000,
+          JSON.stringify({
+            role: 'assistant',
+            modelID: 'claude-opus-4-6',
+            cost: 0.05,
+            tokens: {
+              input: 100,
+              output: 200,
+              reasoning: 0,
+              cache: { read: 0, write: 0 },
+            },
+          }),
+        ],
+      )
+    })
 
     const provider = createOpenCodeProvider(tmpDir)
     const source = {
@@ -552,46 +588,46 @@ describe('opencode provider - session parsing', () => {
 
   it('uses pre-calculated cost for unknown models', async () => {
     const dbPath = await createTestDb(tmpDir)
-    const db = new Database(dbPath)
+    withTestDb(dbPath, (db) => {
+      db.run(
+        `
+        INSERT INTO session (id, project_id, slug, directory, title, version, time_created)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `,
+        [
+          'sess-1',
+          'proj-1',
+          'slug-1',
+          '/home/user/myproject',
+          'My Project',
+          '1.0',
+          1700000000000,
+        ],
+      )
 
-    db.prepare(
-      `
-      INSERT INTO session (id, project_id, slug, directory, title, version, time_created)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `,
-    ).run(
-      'sess-1',
-      'proj-1',
-      'slug-1',
-      '/home/user/myproject',
-      'My Project',
-      '1.0',
-      1700000000000,
-    )
-
-    db.prepare(
-      `
-      INSERT INTO message (id, session_id, time_created, data)
-      VALUES (?, ?, ?, ?)
-    `,
-    ).run(
-      'msg-1',
-      'sess-1',
-      1700000001000,
-      JSON.stringify({
-        role: 'assistant',
-        modelID: 'totally-unknown-model-xyz',
-        cost: 0.42,
-        tokens: {
-          input: 100,
-          output: 200,
-          reasoning: 0,
-          cache: { read: 0, write: 0 },
-        },
-      }),
-    )
-
-    db.close()
+      db.run(
+        `
+        INSERT INTO message (id, session_id, time_created, data)
+        VALUES (?, ?, ?, ?)
+      `,
+        [
+          'msg-1',
+          'sess-1',
+          1700000001000,
+          JSON.stringify({
+            role: 'assistant',
+            modelID: 'totally-unknown-model-xyz',
+            cost: 0.42,
+            tokens: {
+              input: 100,
+              output: 200,
+              reasoning: 0,
+              cache: { read: 0, write: 0 },
+            },
+          }),
+        ],
+      )
+    })
 
     const provider = createOpenCodeProvider(tmpDir)
     const source = {
@@ -611,94 +647,97 @@ describe('opencode provider - session parsing', () => {
 
   it('handles corrupt JSON in message and part data gracefully', async () => {
     const dbPath = await createTestDb(tmpDir)
-    const db = new Database(dbPath)
+    withTestDb(dbPath, (db) => {
+      db.run(
+        `
+        INSERT INTO session (id, project_id, slug, directory, title, version, time_created)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `,
+        [
+          'sess-1',
+          'proj-1',
+          'slug-1',
+          '/home/user/myproject',
+          'My Project',
+          '1.0',
+          1700000000000,
+        ],
+      )
 
-    db.prepare(
-      `
-      INSERT INTO session (id, project_id, slug, directory, title, version, time_created)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `,
-    ).run(
-      'sess-1',
-      'proj-1',
-      'slug-1',
-      '/home/user/myproject',
-      'My Project',
-      '1.0',
-      1700000000000,
-    )
+      db.run(
+        `
+        INSERT INTO message (id, session_id, time_created, data)
+        VALUES (?, ?, ?, ?)
+      `,
+        [
+          'msg-corrupt',
+          'sess-1',
+          1700000000500,
+          'not valid json at all {]',
+        ],
+      )
 
-    db.prepare(
-      `
-      INSERT INTO message (id, session_id, time_created, data)
-      VALUES (?, ?, ?, ?)
-    `,
-    ).run(
-      'msg-corrupt',
-      'sess-1',
-      1700000000500,
-      'not valid json at all {]',
-    )
+      db.run(
+        `
+        INSERT INTO message (id, session_id, time_created, data)
+        VALUES (?, ?, ?, ?)
+      `,
+        [
+          'msg-valid',
+          'sess-1',
+          1700000001000,
+          JSON.stringify({
+            role: 'assistant',
+            modelID: 'claude-opus-4-6',
+            cost: 0.05,
+            tokens: {
+              input: 100,
+              output: 200,
+              reasoning: 0,
+              cache: { read: 0, write: 0 },
+            },
+          }),
+        ],
+      )
 
-    db.prepare(
-      `
-      INSERT INTO message (id, session_id, time_created, data)
-      VALUES (?, ?, ?, ?)
-    `,
-    ).run(
-      'msg-valid',
-      'sess-1',
-      1700000001000,
-      JSON.stringify({
-        role: 'assistant',
-        modelID: 'claude-opus-4-6',
-        cost: 0.05,
-        tokens: {
-          input: 100,
-          output: 200,
-          reasoning: 0,
-          cache: { read: 0, write: 0 },
-        },
-      }),
-    )
+      db.run(
+        `
+        INSERT INTO part (id, message_id, session_id, data)
+        VALUES (?, ?, ?, ?)
+      `,
+        [
+          'part-corrupt',
+          'msg-valid',
+          'sess-1',
+          'corrupt part data {[}',
+        ],
+      )
 
-    db.prepare(
-      `
-      INSERT INTO part (id, message_id, session_id, data)
-      VALUES (?, ?, ?, ?)
-    `,
-    ).run(
-      'part-corrupt',
-      'msg-valid',
-      'sess-1',
-      'corrupt part data {[}',
-    )
-
-    db.prepare(
-      `
-      INSERT INTO part (id, message_id, session_id, data)
-      VALUES (?, ?, ?, ?)
-    `,
-    ).run(
-      'part-valid',
-      'msg-valid',
-      'sess-1',
-      JSON.stringify({
-        type: 'tool',
-        callID: 'call-1',
-        tool: 'bash',
-        state: {
-          status: 'completed',
-          input: {},
-          output: 'ok',
-          title: 'bash',
-          metadata: {},
-          time: { start: 1700000001100, end: 1700000001200 },
-        },
-      }),
-    )
-
-    db.close()
+      db.run(
+        `
+        INSERT INTO part (id, message_id, session_id, data)
+        VALUES (?, ?, ?, ?)
+      `,
+        [
+          'part-valid',
+          'msg-valid',
+          'sess-1',
+          JSON.stringify({
+            type: 'tool',
+            callID: 'call-1',
+            tool: 'bash',
+            state: {
+              status: 'completed',
+              input: {},
+              output: 'ok',
+              title: 'bash',
+              metadata: {},
+              time: { start: 1700000001100, end: 1700000001200 },
+            },
+          }),
+        ],
+      )
+    })
 
     const provider = createOpenCodeProvider(tmpDir)
     const source = {
@@ -723,70 +762,71 @@ describe('opencode provider - session parsing', () => {
 
   it('converts seconds-epoch timestamps to milliseconds', async () => {
     const dbPath = await createTestDb(tmpDir)
-    const db = new Database(dbPath)
+    withTestDb(dbPath, (db) => {
+      db.run(
+        `
+        INSERT INTO session (id, project_id, slug, directory, title, version, time_created)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `,
+        [
+          'sess-1',
+          'proj-1',
+          'slug-1',
+          '/home/user/myproject',
+          'My Project',
+          '1.0',
+          1700000000000,
+        ],
+      )
 
-    db.prepare(
-      `
-      INSERT INTO session (id, project_id, slug, directory, title, version, time_created)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `,
-    ).run(
-      'sess-1',
-      'proj-1',
-      'slug-1',
-      '/home/user/myproject',
-      'My Project',
-      '1.0',
-      1700000000000,
-    )
+      db.run(
+        `
+        INSERT INTO message (id, session_id, time_created, data)
+        VALUES (?, ?, ?, ?)
+      `,
+        [
+          'msg-1',
+          'sess-1',
+          1700000001,
+          JSON.stringify({
+            role: 'assistant',
+            modelID: 'claude-opus-4-6',
+            cost: 0.05,
+            tokens: {
+              input: 100,
+              output: 200,
+              reasoning: 0,
+              cache: { read: 0, write: 0 },
+            },
+          }),
+        ],
+      )
 
-    db.prepare(
-      `
-      INSERT INTO message (id, session_id, time_created, data)
-      VALUES (?, ?, ?, ?)
-    `,
-    ).run(
-      'msg-1',
-      'sess-1',
-      1700000001,
-      JSON.stringify({
-        role: 'assistant',
-        modelID: 'claude-opus-4-6',
-        cost: 0.05,
-        tokens: {
-          input: 100,
-          output: 200,
-          reasoning: 0,
-          cache: { read: 0, write: 0 },
-        },
-      }),
-    )
-
-    db.prepare(
-      `
-      INSERT INTO part (id, message_id, session_id, data)
-      VALUES (?, ?, ?, ?)
-    `,
-    ).run(
-      'part-1',
-      'msg-1',
-      'sess-1',
-      JSON.stringify({
-        type: 'tool',
-        callID: 'call-1',
-        tool: 'bash',
-        state: {
-          status: 'completed',
-          input: {},
-          output: 'ok',
-          title: 'bash',
-          metadata: {},
-          time: { start: 1700000001100, end: 1700000001200 },
-        },
-      }),
-    )
-
-    db.close()
+      db.run(
+        `
+        INSERT INTO part (id, message_id, session_id, data)
+        VALUES (?, ?, ?, ?)
+      `,
+        [
+          'part-1',
+          'msg-1',
+          'sess-1',
+          JSON.stringify({
+            type: 'tool',
+            callID: 'call-1',
+            tool: 'bash',
+            state: {
+              status: 'completed',
+              input: {},
+              output: 'ok',
+              title: 'bash',
+              metadata: {},
+              time: { start: 1700000001100, end: 1700000001200 },
+            },
+          }),
+        ],
+      )
+    })
 
     const provider = createOpenCodeProvider(tmpDir)
     const source = {

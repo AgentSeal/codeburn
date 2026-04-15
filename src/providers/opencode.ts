@@ -1,8 +1,9 @@
 import { readdir } from 'fs/promises'
+import { readFileSync } from 'fs'
 import { join } from 'path'
 import { homedir } from 'os'
 
-import Database from 'better-sqlite3'
+import initSqlJs, { type SqlJsStatic, type Database } from 'sql.js'
 
 import { calculateCost, getShortModelName } from '../models.js'
 import { extractBashCommands } from '../bash-utils.js'
@@ -57,6 +58,30 @@ function getDataDir(dataDir?: string): string {
   return join(base, 'opencode')
 }
 
+let sqlPromise: Promise<SqlJsStatic> | null = null
+function getSql(): Promise<SqlJsStatic> {
+  if (!sqlPromise) sqlPromise = initSqlJs()
+  return sqlPromise
+}
+
+function openDb(SQL: SqlJsStatic, filePath: string): Database | null {
+  try {
+    const buffer = readFileSync(filePath)
+    return new SQL.Database(buffer)
+  } catch {
+    return null
+  }
+}
+
+function queryAll<T>(db: Database, sql: string, params?: (string | number | null)[]): T[] {
+  const results = db.exec(sql, params)
+  if (results.length === 0) return []
+  const { columns, values } = results[0]
+  return values.map(
+    row => Object.fromEntries(columns.map((col, i) => [col, row[i]])) as T
+  )
+}
+
 async function findDbFiles(dir: string): Promise<string[]> {
   try {
     const entries = await readdir(dir)
@@ -81,29 +106,28 @@ function createParser(
       const sessionId = segments[segments.length - 1]!
       const dbPath = segments.slice(0, -1).join(':')
 
-      let db: Database.Database
-      try {
-        db = new Database(dbPath, { readonly: true, fileMustExist: true })
-      } catch {
-        return
-      }
+      const SQL = await getSql()
+      let db: Database
+      const maybeDb = openDb(SQL, dbPath)
+      if (!maybeDb) return
+      db = maybeDb
 
       try {
-        const messages = db
-          .prepare(
-            'SELECT id, time_created, data FROM message WHERE session_id = ? ORDER BY time_created ASC',
-          )
-          .all(sessionId) as Array<{
+        const messages = queryAll<{
           id: string
           time_created: number
           data: string
-        }>
+        }>(
+          db,
+          'SELECT id, time_created, data FROM message WHERE session_id = ? ORDER BY time_created ASC',
+          [sessionId],
+        )
 
-        const parts = db
-          .prepare(
-            'SELECT message_id, data FROM part WHERE session_id = ? ORDER BY message_id, id',
-          )
-          .all(sessionId) as Array<{ message_id: string; data: string }>
+        const parts = queryAll<{ message_id: string; data: string }>(
+          db,
+          'SELECT message_id, data FROM part WHERE session_id = ? ORDER BY message_id, id',
+          [sessionId],
+        )
 
         const partsByMsg = new Map<
           string,
@@ -230,25 +254,21 @@ function createParser(
   }
 }
 
-function discoverFromDb(dbPath: string): SessionSource[] {
-  let db: Database.Database
-  try {
-    db = new Database(dbPath, { readonly: true, fileMustExist: true })
-  } catch {
-    return []
-  }
+async function discoverFromDb(dbPath: string): Promise<SessionSource[]> {
+  const SQL = await getSql()
+  const db = openDb(SQL, dbPath)
+  if (!db) return []
 
   try {
-    const rows = db
-      .prepare(
-        'SELECT id, directory, title, time_created FROM session WHERE time_archived IS NULL AND parent_id IS NULL ORDER BY time_created DESC',
-      )
-      .all() as Array<{
+    const rows = queryAll<{
       id: string
       directory: string
       title: string
       time_created: number
-    }>
+    }>(
+      db,
+      'SELECT id, directory, title, time_created FROM session WHERE time_archived IS NULL AND parent_id IS NULL ORDER BY time_created DESC',
+    )
 
     return rows.map((row) => ({
       path: `${dbPath}:${row.id}`,
@@ -289,7 +309,7 @@ export function createOpenCodeProvider(dataDir?: string): Provider {
 
       const sessions: SessionSource[] = []
       for (const dbPath of dbPaths) {
-        sessions.push(...discoverFromDb(dbPath))
+        sessions.push(...await discoverFromDb(dbPath))
       }
       return sessions
     },

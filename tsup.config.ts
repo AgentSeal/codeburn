@@ -5,7 +5,7 @@ export default defineConfig({
   format: ['esm'],
   target: 'node20',
   outDir: 'dist',
-  external: ['better-sqlite3'],
+  external: ['sql.js'],
   clean: true,
   splitting: false,
   sourcemap: true,
