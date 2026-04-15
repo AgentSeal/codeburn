@@ -32,3 +32,4 @@ npm-debug.log*
 
 # Build artifacts
 *.tsbuildinfo
+.worktrees/
