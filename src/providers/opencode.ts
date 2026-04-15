@@ -1,9 +1,10 @@
 import { access } from 'fs/promises'
-import Database from 'better-sqlite3'
 import { join } from 'path'
 import { homedir } from 'os'
 
-import { calculateCost } from '../models.js'
+import Database from 'better-sqlite3'
+
+import { calculateCost, getShortModelName } from '../models.js'
 import type {
   Provider,
   SessionSource,
@@ -21,32 +22,6 @@ type MessageData = {
     reasoning?: number
     cache?: { read?: number; write?: number }
   }
-}
-
-type PartData = {
-  type: string
-  text?: string
-  tool?: string
-}
-
-const modelDisplayNames: Record<string, string> = {
-  'claude-opus-4-6': 'Opus 4.6',
-  'claude-opus-4-5': 'Opus 4.5',
-  'claude-opus-4-1': 'Opus 4.1',
-  'claude-opus-4': 'Opus 4',
-  'claude-sonnet-4-6': 'Sonnet 4.6',
-  'claude-sonnet-4-5': 'Sonnet 4.5',
-  'claude-sonnet-4': 'Sonnet 4',
-  'claude-3-7-sonnet': 'Sonnet 3.7',
-  'claude-3-5-sonnet': 'Sonnet 3.5',
-  'claude-haiku-4-5': 'Haiku 4.5',
-  'claude-3-5-haiku': 'Haiku 3.5',
-  'gpt-4o': 'GPT-4o',
-  'gpt-4o-mini': 'GPT-4o Mini',
-  'gpt-5': 'GPT-5',
-  'gpt-5.4': 'GPT-5.4',
-  'gpt-5.4-mini': 'GPT-5.4 Mini',
-  'gemini-2.5-pro': 'Gemini 2.5 Pro',
 }
 
 const toolNameMap: Record<string, string> = {
@@ -87,6 +62,9 @@ function createParser(
 ): SessionParser {
   return {
     async *parse(): AsyncGenerator<ParsedProviderCall> {
+      // Path is encoded as `${dbPath}:${sessionId}`. Rejoin on ':'
+      // handles Windows drive letters (C:\...). Session IDs are UUIDs,
+      // so they never contain colons.
       const segments = source.path.split(':')
       const sessionId = segments[segments.length - 1]!
       const dbPath = segments.slice(0, -1).join(':')
@@ -126,7 +104,9 @@ function createParser(
               partsByMsg.set(part.message_id, [])
             }
             partsByMsg.get(part.message_id)!.push(parsed)
-          } catch {}
+          } catch {
+            // Corrupt part data is non-fatal; skip and continue with remaining parts
+          }
         }
 
         let currentUserMessage = ''
@@ -136,13 +116,14 @@ function createParser(
           try {
             data = JSON.parse(msg.data)
           } catch {
+            // Corrupt message data is non-fatal; skip to next message
             continue
           }
 
           if (data.role === 'user') {
             const textParts = (partsByMsg.get(msg.id) ?? [])
-              .filter((p: PartData) => p.type === 'text')
-              .map((p: PartData) => p.text ?? '')
+              .filter((p) => p.type === 'text')
+              .map((p) => p.text ?? '')
               .filter(Boolean)
             if (textParts.length > 0) {
               currentUserMessage = textParts.join(' ')
@@ -170,8 +151,8 @@ function createParser(
             }
 
             const tools = (partsByMsg.get(msg.id) ?? [])
-              .filter((p: PartData) => p.type === 'tool')
-              .map((p: PartData) => p.tool ?? '')
+              .filter((p) => p.type === 'tool')
+              .map((p) => p.tool ?? '')
               .filter(Boolean)
 
             const dedupKey = `opencode:${sessionId}:${msg.id}`
@@ -239,11 +220,10 @@ export function createOpenCodeProvider(dataDir?: string): Provider {
     displayName: 'OpenCode',
 
     modelDisplayName(model: string): string {
-      const stripped = model
-        .replace(/^[^/]+\//, '')
-        .replace(/@.*$/, '')
-        .replace(/-\d{8}$/, '')
-      return modelDisplayNames[stripped] ?? stripped
+      // Strip provider prefix (e.g. "anthropic/" or "google/") before
+      // delegating to the shared short-name lookup
+      const stripped = model.replace(/^[^/]+\//, '')
+      return getShortModelName(stripped)
     },
 
     toolDisplayName(rawTool: string): string {

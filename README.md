@@ -146,7 +146,7 @@ Requires [SwiftBar](https://github.com/swiftbar/SwiftBar) (`brew install --cask 
 
 **OpenCode** stores sessions in a SQLite database at `~/.local/share/opencode/opencode.db`. CodeBurn queries the `session`, `message`, and `part` tables read-only, extracts token counts and tool usage, deduplicates by message ID, and recalculates cost using CodeBurn's pricing engine. Only top-level sessions are included (subtask sessions are excluded to avoid double-counting).
 
-CodeBurn reads these files, deduplicates messages (by API message ID for Claude, by cumulative token cross-check for Codex), filters by date range per entry, and classifies each turn.
+CodeBurn reads these files and databases, deduplicates messages (by API message ID for Claude, by cumulative token cross-check for Codex), filters by date range per entry, and classifies each turn.
 
 ## Environment variables
 
@@ -176,6 +176,7 @@ src/
     index.ts      Provider registry
     claude.ts     Claude Code session discovery
     codex.ts      Codex session discovery and JSONL parsing
+    opencode.ts   OpenCode SQLite session discovery and parsing
 ```
 
 ## License
