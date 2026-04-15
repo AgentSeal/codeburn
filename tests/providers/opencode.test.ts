@@ -194,6 +194,54 @@ describe('opencode provider - session discovery', () => {
     expect(sessions).toEqual([])
   })
 
+  it('discovers sessions across multiple channel databases', async () => {
+    const ocDir = join(tmpDir, 'opencode')
+    await mkdir(ocDir, { recursive: true })
+
+    // Create two channel databases with one session each
+    for (const file of ['opencode.db', 'opencode-dev.db']) {
+      const dbPath = join(ocDir, file)
+      const db = new Database(dbPath)
+      db.exec(`
+        CREATE TABLE session (
+          id TEXT PRIMARY KEY, project_id TEXT NOT NULL, parent_id TEXT,
+          slug TEXT NOT NULL, directory TEXT NOT NULL, title TEXT NOT NULL,
+          version TEXT NOT NULL, time_created INTEGER, time_updated INTEGER,
+          time_archived INTEGER
+        );
+        CREATE TABLE message (id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
+          time_created INTEGER, time_updated INTEGER, data TEXT NOT NULL);
+        CREATE TABLE part (id TEXT PRIMARY KEY, message_id TEXT NOT NULL,
+          session_id TEXT NOT NULL, time_created INTEGER, time_updated INTEGER,
+          data TEXT NOT NULL);
+      `)
+      db.prepare(
+        `INSERT INTO session (id, project_id, slug, directory, title, version, time_created)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        `sess-${file}`,
+        'proj-1',
+        'slug-1',
+        '/home/user/myproject',
+        'My Project',
+        '1.0',
+        1700000000000,
+      )
+      db.close()
+    }
+
+    const provider = createOpenCodeProvider(tmpDir)
+    const sessions = await provider.discoverSessions()
+
+    expect(sessions).toHaveLength(2)
+    expect(sessions.map((s) => s.path)).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('opencode.db:sess-opencode.db'),
+        expect.stringContaining('opencode-dev.db:sess-opencode-dev.db'),
+      ]),
+    )
+  })
+
   it('uses title when directory is empty', async () => {
     const dbPath = await createTestDb(tmpDir)
     const db = new Database(dbPath)

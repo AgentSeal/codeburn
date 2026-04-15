@@ -1,4 +1,4 @@
-import { access } from 'fs/promises'
+import { readdir } from 'fs/promises'
 import { join } from 'path'
 import { homedir } from 'os'
 
@@ -48,12 +48,23 @@ function sanitize(dir: string): string {
   return dir.replace(/^\//, '').replace(/\//g, '-')
 }
 
-function getDbPath(dataDir?: string): string {
+function getDataDir(dataDir?: string): string {
   const base =
     dataDir ??
     process.env['XDG_DATA_HOME'] ??
     join(homedir(), '.local', 'share')
-  return join(base, 'opencode', 'opencode.db')
+  return join(base, 'opencode')
+}
+
+async function findDbFiles(dir: string): Promise<string[]> {
+  try {
+    const entries = await readdir(dir)
+    return entries
+      .filter((f) => f.startsWith('opencode') && f.endsWith('.db'))
+      .map((f) => join(dir, f))
+  } catch {
+    return []
+  }
 }
 
 function createParser(
@@ -212,8 +223,40 @@ function createParser(
   }
 }
 
+function discoverFromDb(dbPath: string): SessionSource[] {
+  let db: Database.Database
+  try {
+    db = new Database(dbPath, { readonly: true, fileMustExist: true })
+  } catch {
+    return []
+  }
+
+  try {
+    const rows = db
+      .prepare(
+        'SELECT id, directory, title, time_created FROM session WHERE time_archived IS NULL AND parent_id IS NULL ORDER BY time_created DESC',
+      )
+      .all() as Array<{
+      id: string
+      directory: string
+      title: string
+      time_created: number
+    }>
+
+    return rows.map((row) => ({
+      path: `${dbPath}:${row.id}`,
+      project: row.directory ? sanitize(row.directory) : row.title,
+      provider: 'opencode',
+    }))
+  } catch {
+    return []
+  } finally {
+    db.close()
+  }
+}
+
 export function createOpenCodeProvider(dataDir?: string): Provider {
-  const dbPath = getDbPath(dataDir)
+  const dir = getDataDir(dataDir)
 
   return {
     name: 'opencode',
@@ -231,41 +274,14 @@ export function createOpenCodeProvider(dataDir?: string): Provider {
     },
 
     async discoverSessions(): Promise<SessionSource[]> {
-      try {
-        await access(dbPath)
-      } catch {
-        return []
-      }
+      const dbPaths = await findDbFiles(dir)
+      if (dbPaths.length === 0) return []
 
-      let db: Database.Database
-      try {
-        db = new Database(dbPath, { readonly: true, fileMustExist: true })
-      } catch {
-        return []
+      const sessions: SessionSource[] = []
+      for (const dbPath of dbPaths) {
+        sessions.push(...discoverFromDb(dbPath))
       }
-
-      try {
-        const rows = db
-          .prepare(
-            'SELECT id, directory, title, time_created FROM session WHERE time_archived IS NULL AND parent_id IS NULL ORDER BY time_created DESC',
-          )
-          .all() as Array<{
-          id: string
-          directory: string
-          title: string
-          time_created: number
-        }>
-
-        return rows.map((row) => ({
-          path: `${dbPath}:${row.id}`,
-          project: row.directory ? sanitize(row.directory) : row.title,
-          provider: 'opencode',
-        }))
-      } catch {
-        return []
-      } finally {
-        db.close()
-      }
+      return sessions
     },
 
     createSessionParser(
