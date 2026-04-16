@@ -286,7 +286,7 @@ program
       const monthData = buildPeriodData('Month', fp(await parseAllSessions(getDateRange('month').range, pf)))
       const todayProviders: ProviderCost[] = []
       for (const p of await getAllProviders()) {
-        const data = await parseAllSessions(todayRange, p.name)
+        const data = fp(await parseAllSessions(todayRange, p.name))
         const cost = data.reduce((s, proj) => s + proj.totalCostUSD, 0)
         if (cost > 0) todayProviders.push({ name: p.displayName, cost })
       }
