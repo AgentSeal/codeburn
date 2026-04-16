@@ -124,14 +124,38 @@ export async function loadPricing(): Promise<void> {
   }
 }
 
+// Known model name variants that providers emit but LiteLLM/fallback don't index under.
+// OMP emits 'anthropic--claude-4.6-opus' (double-dash, dot version, tier-last).
+// getCanonicalName strips any 'provider/' prefix first, so only the post-strip
+// forms need to be listed here.
+const BUILTIN_ALIASES: Record<string, string> = {
+  'anthropic--claude-4.6-opus':    'claude-opus-4-6',
+  'anthropic--claude-4.6-sonnet':  'claude-sonnet-4-6',
+  'anthropic--claude-4.5-opus':    'claude-opus-4-5',
+  'anthropic--claude-4.5-sonnet':  'claude-sonnet-4-5',
+  'anthropic--claude-4.5-haiku':   'claude-haiku-4-5',
+}
+
+let userAliases: Record<string, string> = {}
+
+// Called once during CLI startup after config is loaded.
+// User aliases take precedence over built-ins.
+export function setModelAliases(aliases: Record<string, string>): void {
+  userAliases = aliases
+}
+
+function resolveAlias(model: string): string {
+  return userAliases[model] ?? BUILTIN_ALIASES[model] ?? model
+}
 function getCanonicalName(model: string): string {
   return model
-    .replace(/@.*$/, '')
-    .replace(/-\d{8}$/, '')
+    .replace(/@.*$/, '')       // strip pin: claude-sonnet-4-6@20250929 -> claude-sonnet-4-6
+    .replace(/-\d{8}$/, '')   // strip date: claude-sonnet-4-20250514 -> claude-sonnet-4
+    .replace(/^[^/]+\//, '') // strip provider prefix: anthropic/foo -> foo
 }
 
 export function getModelCosts(model: string): ModelCosts | null {
-  const canonical = getCanonicalName(model)
+  const canonical = resolveAlias(getCanonicalName(model))
 
   if (pricingCache?.has(canonical)) return pricingCache.get(canonical)!
 
@@ -174,7 +198,7 @@ export function calculateCost(
 }
 
 export function getShortModelName(model: string): string {
-  const canonical = getCanonicalName(model)
+  const canonical = resolveAlias(getCanonicalName(model))
   const shortNames: Record<string, string> = {
     'claude-opus-4-7': 'Opus 4.7',
     'claude-opus-4-6': 'Opus 4.6',

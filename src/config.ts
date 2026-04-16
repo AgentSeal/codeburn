@@ -19,6 +19,7 @@ export type CodeburnConfig = {
     symbol?: string
   }
   plan?: Plan
+  modelAliases?: Record<string, string>
 }
 
 function getConfigDir(): string {
