@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.7.0 - 2026-04-16
+
+### Added
+- **`codeburn optimize` command.** Scans your sessions and your `~/.claude/`
+  setup for 11 common waste patterns and hands back exact copy-paste fixes.
+  Detection-only, never writes to user files. Supports `--period` (today,
+  week, 30days, month, all) and `--provider` (all, claude, codex, cursor).
+- **Setup health grade (A-F).** Urgency-weighted rollup of all findings, with
+  impact scored against observed waste so the most expensive issues rank
+  first. High findings penalise more, medium less, low least.
+- **Trend tracking.** Repeat runs classify each finding as new, improving,
+  or resolved against a 48-hour recent window, so fixed issues disappear
+  instead of lingering as noise.
+- **11 detectors:** files Claude re-reads across sessions, low Read:Edit
+  ratio, projects missing `.claudeignore`, uncapped `BASH_MAX_OUTPUT_LENGTH`,
+  unused MCP servers, ghost agents, ghost skills, ghost slash commands,
+  bloated `CLAUDE.md` files (with `@-import` expansion counted), cache
+  creation overhead, and junk directory reads.
+- **Copy-paste fixes.** Each finding comes with a ready-to-paste remedy: a
+  `CLAUDE.md` line, a `.claudeignore` template, an environment variable, or
+  a `mv` command to archive unused items.
+- **In-TUI optimize view.** Press `o` in the dashboard when the status bar
+  shows a finding count, `b` to return. Same engine as the standalone
+  command, scoped to the current period and provider.
+- **Per-project context budget column.** By Project panel now shows the
+  estimated per-session context overhead for each project (system prompt +
+  tools + `CLAUDE.md` + skills).
+- **34 filesystem-mocking tests.** Tmpdir fixtures with `os.homedir` mocked
+  via `vi.mock` cover the detector surface end to end. Total suite: 198
+  tests across 13 files.
+
+### Performance
+- **mtime pre-filter + parallel reads + 60s result cache** cut a cold scan
+  from 12-17s to 6-7s on a 10k-session history.
+
 ## 0.6.1 - 2026-04-16
 
 ### Added

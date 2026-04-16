@@ -75,3 +75,10 @@ gh pr comment <number> --body "Merged, thanks!"
 - NEVER include personal names or usernames in commits
 - Small, focused commits. One feature per commit
 - Test locally before every commit
+
+### Public-facing language (commits, PRs, release notes, README)
+- Commits and release notes are public. Write like you'd publish them.
+- NEVER use words like "steal", "stealing", "copy", "rip off", "inspired by" in commit messages
+- Describe what the code does, not where ideas came from
+- If you must credit prior art, do it in code comments or docs, not commit messages
+- No snark, no filler, no self-deprecation. Treat each commit as a product statement

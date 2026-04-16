@@ -55,6 +55,8 @@ codeburn status                 # compact one-liner (today + month)
 codeburn status --format json
 codeburn export                 # CSV with today, 7 days, 30 days
 codeburn export -f json         # JSON export
+codeburn optimize               # find waste, get copy-paste fixes
+codeburn optimize -p week       # scope the scan to last 7 days
 ```
 
 Arrow keys switch between Today / 7 Days / 30 Days / Month / All Time. Press `q` to quit, `1` `2` `3` `4` `5` as shortcuts. The dashboard also shows average cost per session and the five most expensive sessions across all projects.
@@ -205,6 +207,36 @@ CodeBurn surfaces the data, you read the story. A few patterns worth knowing:
 | Conversation category dominant | Agent talking instead of doing |
 
 These are starting points, not verdicts. A 60% cache hit on a single experimental session is fine. A persistent 60% cache hit across weeks of work is a config issue.
+
+## Optimize
+
+Once you know what to look for, `codeburn optimize` scans your sessions and your `~/.claude/` setup for the most common waste patterns and hands back exact, copy-paste fixes. It never writes to your files.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/AgentSeal/codeburn/main/assets/optimize.jpg" alt="CodeBurn optimize output" width="720" />
+</p>
+
+```bash
+codeburn optimize                       # scan the last 30 days
+codeburn optimize -p today              # today only
+codeburn optimize -p week               # last 7 days
+codeburn optimize --provider claude     # restrict to one provider
+```
+
+**What it detects**
+
+- Files Claude re-reads across sessions (same content, same context, over and over)
+- Low Read:Edit ratio (editing without reading leads to retries and wasted tokens)
+- Projects missing a `.claudeignore` (Claude wanders into `node_modules`, `.git`, build dirs)
+- Wasted bash output (uncapped `BASH_MAX_OUTPUT_LENGTH`, trailing noise)
+- Unused MCP servers still paying their tool-schema overhead every session
+- Ghost agents, skills, and slash commands defined in `~/.claude/` but never invoked
+- Bloated `CLAUDE.md` files (with `@-import` expansion counted)
+- Cache creation overhead and junk directory reads
+
+Each finding shows the estimated token and dollar savings plus a ready-to-paste fix: a `CLAUDE.md` line, a `.claudeignore` template, an environment variable, or a `mv` command to archive unused items. Findings are ranked by urgency (impact weighted against observed waste) and rolled up into an A-F setup health grade. Repeat runs classify each finding as new, improving, or resolved against a 48-hour recent window.
+
+You can also open it inline from the dashboard: press `o` when a finding count appears in the status bar, `b` to return.
 
 ## How it reads data
 
