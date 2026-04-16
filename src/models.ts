@@ -42,6 +42,12 @@ const FALLBACK_PRICING: Record<string, ModelCosts> = {
   'gpt-5.4': { inputCostPerToken: 2.5e-6, outputCostPerToken: 10e-6, cacheWriteCostPerToken: 2.5e-6, cacheReadCostPerToken: 1.25e-6, webSearchCostPerRequest: WEB_SEARCH_COST, fastMultiplier: 1 },
   'gpt-5.4-mini': { inputCostPerToken: 0.4e-6, outputCostPerToken: 1.6e-6, cacheWriteCostPerToken: 0.4e-6, cacheReadCostPerToken: 0.2e-6, webSearchCostPerRequest: WEB_SEARCH_COST, fastMultiplier: 1 },
   'gpt-5': { inputCostPerToken: 2.5e-6, outputCostPerToken: 10e-6, cacheWriteCostPerToken: 2.5e-6, cacheReadCostPerToken: 1.25e-6, webSearchCostPerRequest: WEB_SEARCH_COST, fastMultiplier: 1 },
+  'gpt-5-mini': { inputCostPerToken: 0.4e-6, outputCostPerToken: 1.6e-6, cacheWriteCostPerToken: 0.4e-6, cacheReadCostPerToken: 0.2e-6, webSearchCostPerRequest: WEB_SEARCH_COST, fastMultiplier: 1 },
+  'gpt-4.1': { inputCostPerToken: 2e-6, outputCostPerToken: 8e-6, cacheWriteCostPerToken: 2e-6, cacheReadCostPerToken: 0.5e-6, webSearchCostPerRequest: WEB_SEARCH_COST, fastMultiplier: 1 },
+  'gpt-4.1-mini': { inputCostPerToken: 0.4e-6, outputCostPerToken: 1.6e-6, cacheWriteCostPerToken: 0.4e-6, cacheReadCostPerToken: 0.1e-6, webSearchCostPerRequest: WEB_SEARCH_COST, fastMultiplier: 1 },
+  'gpt-4.1-nano': { inputCostPerToken: 0.1e-6, outputCostPerToken: 0.4e-6, cacheWriteCostPerToken: 0.1e-6, cacheReadCostPerToken: 0.025e-6, webSearchCostPerRequest: WEB_SEARCH_COST, fastMultiplier: 1 },
+  'o3': { inputCostPerToken: 10e-6, outputCostPerToken: 40e-6, cacheWriteCostPerToken: 10e-6, cacheReadCostPerToken: 2.5e-6, webSearchCostPerRequest: WEB_SEARCH_COST, fastMultiplier: 1 },
+  'o4-mini': { inputCostPerToken: 1.1e-6, outputCostPerToken: 4.4e-6, cacheWriteCostPerToken: 1.1e-6, cacheReadCostPerToken: 0.275e-6, webSearchCostPerRequest: WEB_SEARCH_COST, fastMultiplier: 1 },
 }
 
 let pricingCache: Map<string, ModelCosts> | null = null
@@ -182,11 +188,17 @@ export function getShortModelName(model: string): string {
     'claude-3-5-haiku': 'Haiku 3.5',
     'gpt-4o-mini': 'GPT-4o Mini',
     'gpt-4o': 'GPT-4o',
+    'gpt-4.1-nano': 'GPT-4.1 Nano',
+    'gpt-4.1-mini': 'GPT-4.1 Mini',
+    'gpt-4.1': 'GPT-4.1',
     'gpt-5.4-mini': 'GPT-5.4 Mini',
     'gpt-5.4': 'GPT-5.4',
     'gpt-5.3-codex': 'GPT-5.3 Codex',
+    'gpt-5-mini': 'GPT-5 Mini',
     'gpt-5': 'GPT-5',
     'gemini-2.5-pro': 'Gemini 2.5 Pro',
+    'o4-mini': 'o4-mini',
+    'o3': 'o3',
   }
   for (const [key, name] of Object.entries(shortNames)) {
     if (canonical.startsWith(key)) return name
