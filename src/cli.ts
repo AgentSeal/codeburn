@@ -2,7 +2,7 @@ import { Command } from 'commander'
 import { exportCsv, exportJson, type PeriodExport } from './export.js'
 import { loadPricing } from './models.js'
 import { parseAllSessions } from './parser.js'
-import { getCostColumnHeader, convertCost } from './currency.js'
+import { convertCost } from './currency.js'
 import { renderStatusBar } from './format.js'
 import { installMenubar, renderMenubarFormat, type PeriodData, type ProviderCost, uninstallMenubar } from './menubar.js'
 import { CATEGORY_LABELS, type DateRange, type ProjectSummary, type TaskCategory } from './types.js'
@@ -51,12 +51,21 @@ function getDateRange(period: string): { range: DateRange; label: string } {
   }
 }
 
-function toPeriod(s: string): 'today' | 'week' | '30days' | 'month' | 'all' {
+type Period = 'today' | 'week' | '30days' | 'month' | 'all'
+
+function toPeriod(s: string): Period {
   if (s === 'today') return 'today'
   if (s === 'month') return 'month'
   if (s === '30days') return '30days'
   if (s === 'all') return 'all'
   return 'week'
+}
+
+async function runJsonReport(period: Period, provider: string): Promise<void> {
+  await loadPricing()
+  const { range, label } = getDateRange(period)
+  const projects = await parseAllSessions(range, provider)
+  console.log(JSON.stringify(buildJsonReport(projects, label, period), null, 2))
 }
 
 const program = new Command()
@@ -206,10 +215,7 @@ program
   .action(async (opts) => {
     const period = toPeriod(opts.period)
     if (opts.format === 'json') {
-      await loadPricing()
-      const { range, label } = getDateRange(period)
-      const projects = await parseAllSessions(range, opts.provider)
-      console.log(JSON.stringify(buildJsonReport(projects, label, period), null, 2))
+      await runJsonReport(period, opts.provider)
       return
     }
     await renderDashboard(period, opts.provider, opts.refresh)
@@ -302,10 +308,7 @@ program
   .option('--refresh <seconds>', 'Auto-refresh interval in seconds', parseInt)
   .action(async (opts) => {
     if (opts.format === 'json') {
-      await loadPricing()
-      const { range, label } = getDateRange('today')
-      const projects = await parseAllSessions(range, opts.provider)
-      console.log(JSON.stringify(buildJsonReport(projects, label, 'today'), null, 2))
+      await runJsonReport('today', opts.provider)
       return
     }
     await renderDashboard('today', opts.provider, opts.refresh)
@@ -319,10 +322,7 @@ program
   .option('--refresh <seconds>', 'Auto-refresh interval in seconds', parseInt)
   .action(async (opts) => {
     if (opts.format === 'json') {
-      await loadPricing()
-      const { range, label } = getDateRange('month')
-      const projects = await parseAllSessions(range, opts.provider)
-      console.log(JSON.stringify(buildJsonReport(projects, label, 'month'), null, 2))
+      await runJsonReport('month', opts.provider)
       return
     }
     await renderDashboard('month', opts.provider, opts.refresh)
