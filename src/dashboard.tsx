@@ -396,7 +396,9 @@ function TopSessions({ projects, pw, bw }: { projects: ProjectSummary[]; pw: num
     <Panel title="Top Sessions" color={PANEL_COLORS.sessions} width={pw}>
       <Text dimColor wrap="truncate-end">{''.padEnd(bw + 1 + nw)}{'cost'.padStart(TOP_SESSIONS_COST_COL)}{'calls'.padStart(TOP_SESSIONS_CALLS_COL)}</Text>
       {top.map((session, i) => {
-        const date = session.firstTimestamp.slice(0, TOP_SESSIONS_DATE_LEN)
+        const date = session.firstTimestamp
+          ? session.firstTimestamp.slice(0, TOP_SESSIONS_DATE_LEN)
+          : '----------'
         const label = `${date} ${shortProject(session.projectName)}`
         return (
           <Text key={`${session.sessionId}-${i}`} wrap="truncate-end">
@@ -557,6 +559,7 @@ function DashboardContent({ projects, period, columns, activeProvider }: { proje
   }
 
   const pw = wide ? halfWidth : dashWidth
+  // undefined = no cutoff (show all days); 31 for month/30-day ranges; 14 for shorter periods
   const days = period === 'all' ? undefined : (period === 'month' || period === '30days' ? 31 : 14)
 
   return (
