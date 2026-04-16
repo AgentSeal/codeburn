@@ -1,5 +1,5 @@
 import chalk from 'chalk'
-import { readdir, readFile } from 'fs/promises'
+import { readdir, readFile, stat } from 'fs/promises'
 import { existsSync, readFileSync, statSync } from 'fs'
 import { basename, join } from 'path'
 import { homedir } from 'os'
@@ -147,6 +147,9 @@ type ScanData = {
 // JSONL scanner
 // ============================================================================
 
+const FILE_READ_CONCURRENCY = 16
+const RESULT_CACHE_TTL_MS = 60_000
+
 async function collectJsonlFiles(dirPath: string): Promise<string[]> {
   const files = await readdir(dirPath).catch(() => [])
   const result = files.filter(f => f.endsWith('.jsonl')).map(f => join(dirPath, f))
@@ -159,6 +162,29 @@ async function collectJsonlFiles(dirPath: string): Promise<string[]> {
     }
   }
   return result
+}
+
+async function isFileStaleForRange(filePath: string, range: DateRange | undefined): Promise<boolean> {
+  if (!range) return false
+  try {
+    const s = await stat(filePath)
+    return s.mtimeMs < range.start.getTime()
+  } catch { return false }
+}
+
+async function runWithConcurrency<T>(
+  items: T[],
+  limit: number,
+  worker: (item: T) => Promise<void>,
+): Promise<void> {
+  let idx = 0
+  async function next(): Promise<void> {
+    while (idx < items.length) {
+      const current = idx++
+      await worker(items[current])
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => next()))
 }
 
 type ScanFileResult = {
@@ -258,17 +284,23 @@ async function scanSessions(dateRange?: DateRange): Promise<ScanData> {
   const allVersions = new Set<string>()
   const allUserMessages: string[] = []
 
+  const tasks: Array<{ file: string; project: string }> = []
   for (const source of sources) {
     const files = await collectJsonlFiles(source.path)
     for (const file of files) {
-      const { calls, cwds, apiCalls, versions, userMessages } = await scanJsonlFile(file, source.project, dateRange)
-      allCalls.push(...calls)
-      for (const cwd of cwds) allCwds.add(cwd)
-      allApiCalls.push(...apiCalls)
-      for (const v of versions) if (v) allVersions.add(v)
-      allUserMessages.push(...userMessages)
+      if (await isFileStaleForRange(file, dateRange)) continue
+      tasks.push({ file, project: source.project })
     }
   }
+
+  await runWithConcurrency(tasks, FILE_READ_CONCURRENCY, async ({ file, project }) => {
+    const { calls, cwds, apiCalls, versions, userMessages } = await scanJsonlFile(file, project, dateRange)
+    allCalls.push(...calls)
+    for (const cwd of cwds) allCwds.add(cwd)
+    allApiCalls.push(...apiCalls)
+    for (const v of versions) if (v) allVersions.add(v)
+    allUserMessages.push(...userMessages)
+  })
 
   return { toolCalls: allCalls, projectCwds: allCwds, apiCalls: allApiCalls, versions: allVersions, userMessages: allUserMessages }
 }
@@ -852,10 +884,27 @@ function computeInputCostRate(projects: ProjectSummary[]): number {
 // Main entry points
 // ============================================================================
 
+type CacheEntry = { data: OptimizeResult; ts: number }
+const resultCache = new Map<string, CacheEntry>()
+
+function cacheKey(projects: ProjectSummary[], dateRange: DateRange | undefined): string {
+  const dr = dateRange ? `${dateRange.start.getTime()}-${dateRange.end.getTime()}` : 'all'
+  const fingerprint = projects.length + ':' + projects.reduce((s, p) => s + p.totalApiCalls, 0)
+  return `${dr}:${fingerprint}`
+}
+
 export async function scanAndDetect(
   projects: ProjectSummary[],
   dateRange?: DateRange,
 ): Promise<OptimizeResult> {
+  if (projects.length === 0) {
+    return { findings: [], costRate: 0, healthScore: 100, healthGrade: 'A' }
+  }
+
+  const key = cacheKey(projects, dateRange)
+  const cached = resultCache.get(key)
+  if (cached && Date.now() - cached.ts < RESULT_CACHE_TTL_MS) return cached.data
+
   const costRate = computeInputCostRate(projects)
   const { toolCalls, projectCwds, apiCalls, userMessages } = await scanSessions(dateRange)
 
@@ -884,7 +933,9 @@ export async function scanAndDetect(
 
   findings.sort((a, b) => urgencyScore(b) - urgencyScore(a))
   const { score, grade } = computeHealth(findings)
-  return { findings, costRate, healthScore: score, healthGrade: grade }
+  const result: OptimizeResult = { findings, costRate, healthScore: score, healthGrade: grade }
+  resultCache.set(key, { data: result, ts: Date.now() })
+  return result
 }
 
 // ============================================================================
