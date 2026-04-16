@@ -14,6 +14,20 @@ const modelDisplayNames: Record<string, string> = {
   'gpt-4o-mini': 'GPT-4o Mini',
 }
 
+const toolNameMap: Record<string, string> = {
+  bash: 'Bash',
+  read: 'Read',
+  edit: 'Edit',
+  write: 'Write',
+  glob: 'Glob',
+  grep: 'Grep',
+  task: 'Agent',
+  fetch: 'WebFetch',
+  search: 'WebSearch',
+  todo: 'TodoWrite',
+  patch: 'Patch',
+}
+
 type PiEntry = {
   type: string
   id?: string
@@ -141,7 +155,7 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
         seenKeys.add(dedupKey)
 
         const toolCalls = (msg.content ?? []).filter(c => c.type === 'toolCall' && c.name)
-        const tools = toolCalls.map(c => c.name!)
+        const tools = toolCalls.map(c => toolNameMap[c.name!] ?? c.name!)
         const bashCommands = toolCalls
           .filter(c => c.name === 'bash')
           .flatMap(c => {
@@ -194,7 +208,7 @@ export function createPiProvider(sessionsDir?: string): Provider {
     },
 
     toolDisplayName(rawTool: string): string {
-      return rawTool
+      return toolNameMap[rawTool] ?? rawTool
     },
 
     async discoverSessions(): Promise<SessionSource[]> {

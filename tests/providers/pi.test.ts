@@ -209,7 +209,7 @@ describe('pi provider - JSONL parsing', () => {
       calls.push(call)
     }
 
-    expect(calls[0]!.tools).toEqual(['read', 'edit', 'bash'])
+    expect(calls[0]!.tools).toEqual(['Read', 'Edit', 'Bash'])
   })
 
   it('extracts bash commands from bash tool arguments', async () => {
@@ -328,8 +328,9 @@ describe('pi provider - display names', () => {
     expect(provider.modelDisplayName('some-future-model')).toBe('some-future-model')
   })
 
-  it('returns tool name as-is', () => {
-    expect(provider.toolDisplayName('bash')).toBe('bash')
-    expect(provider.toolDisplayName('read')).toBe('read')
+  it('normalizes tool names to capitalized form', () => {
+    expect(provider.toolDisplayName('bash')).toBe('Bash')
+    expect(provider.toolDisplayName('read')).toBe('Read')
+    expect(provider.toolDisplayName('unknown_tool')).toBe('unknown_tool')
   })
 })
