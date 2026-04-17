@@ -78,8 +78,12 @@ const program = new Command()
   .name('codeburn')
   .description('See where your AI coding tokens go - by task, tool, model, and project')
   .version(version)
+  .option('--verbose', 'print warnings to stderr on read failures and skipped files')
 
-program.hook('preAction', async () => {
+program.hook('preAction', async (thisCommand) => {
+  if (thisCommand.opts<{ verbose?: boolean }>().verbose) {
+    process.env['CODEBURN_VERBOSE'] = '1'
+  }
   await loadCurrency()
 })
 
