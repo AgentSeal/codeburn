@@ -10,6 +10,16 @@ const PLUGIN_REFRESH = '5m'
 const SWIFTBAR_PREFERENCES_DOMAIN = 'com.ameba.SwiftBar'
 const SWIFTBAR_PLUGIN_DIRECTORY_KEY = 'PluginDirectory'
 
+const MENUBAR_LABEL_MAX_LENGTH = 14
+const MENUBAR_LABEL_ALLOWLIST = /[^A-Za-z0-9 ._/-]/g
+
+// SwiftBar/xbar parse `|` as the metadata separator and interpret ANSI escapes
+// on some paths. Replace anything outside a conservative allowlist with `?`
+// and truncate before padEnd.
+function sanitizeMenubarLabel(name: string): string {
+  return name.replace(MENUBAR_LABEL_ALLOWLIST, '?').slice(0, MENUBAR_LABEL_MAX_LENGTH)
+}
+
 function getSwiftBarPluginDir(): string {
   return join(homedir(), 'Library', 'Application Support', 'SwiftBar', 'plugins')
 }
@@ -138,7 +148,7 @@ export function renderMenubarFormat(
   lines.push(`Activity - Today | size=12 color=#FF8C42`)
   for (const cat of today.categories.slice(0, 8)) {
     const bar = miniBar(cat.cost, maxCat)
-    const name = cat.name.padEnd(14)
+    const name = sanitizeMenubarLabel(cat.name).padEnd(14)
     lines.push(`${bar}  ${name} ${formatCost(cat.cost).padStart(8)}  ${String(cat.turns).padStart(4)} turns | font=Menlo size=11`)
   }
   lines.push('---')
@@ -148,7 +158,7 @@ export function renderMenubarFormat(
   for (const model of today.models.slice(0, 5)) {
     if (model.name === '<synthetic>') continue
     const bar = miniBar(model.cost, maxModel)
-    const name = model.name.padEnd(14)
+    const name = sanitizeMenubarLabel(model.name).padEnd(14)
     lines.push(`${bar}  ${name} ${formatCost(model.cost).padStart(8)}  ${String(model.calls).padStart(5)} calls | font=Menlo size=11`)
   }
 
@@ -164,7 +174,7 @@ export function renderMenubarFormat(
   lines.push(`--Activity | size=12 color=#FF8C42`)
   for (const cat of week.categories.slice(0, 8)) {
     const bar = miniBar(cat.cost, weekMaxCat)
-    const name = cat.name.padEnd(14)
+    const name = sanitizeMenubarLabel(cat.name).padEnd(14)
     lines.push(`--${bar}  ${name} ${formatCost(cat.cost).padStart(8)}  ${String(cat.turns).padStart(4)} turns | font=Menlo size=11`)
   }
   lines.push(`-----`)
@@ -172,7 +182,7 @@ export function renderMenubarFormat(
   for (const model of week.models.slice(0, 5)) {
     if (model.name === '<synthetic>') continue
     const bar = miniBar(model.cost, weekMaxModel)
-    const name = model.name.padEnd(14)
+    const name = sanitizeMenubarLabel(model.name).padEnd(14)
     lines.push(`--${bar}  ${name} ${formatCost(model.cost).padStart(8)}  ${String(model.calls).padStart(5)} calls | font=Menlo size=11`)
   }
 
@@ -182,7 +192,7 @@ export function renderMenubarFormat(
   lines.push(`--Activity | size=12 color=#FF8C42`)
   for (const cat of thirtyDays.categories.slice(0, 8)) {
     const bar = miniBar(cat.cost, tdMaxCat)
-    const name = cat.name.padEnd(14)
+    const name = sanitizeMenubarLabel(cat.name).padEnd(14)
     lines.push(`--${bar}  ${name} ${formatCost(cat.cost).padStart(8)}  ${String(cat.turns).padStart(4)} turns | font=Menlo size=11`)
   }
   lines.push(`-----`)
@@ -190,7 +200,7 @@ export function renderMenubarFormat(
   for (const model of thirtyDays.models.slice(0, 5)) {
     if (model.name === '<synthetic>') continue
     const bar = miniBar(model.cost, tdMaxModel)
-    const name = model.name.padEnd(14)
+    const name = sanitizeMenubarLabel(model.name).padEnd(14)
     lines.push(`--${bar}  ${name} ${formatCost(model.cost).padStart(8)}  ${String(model.calls).padStart(5)} calls | font=Menlo size=11`)
   }
 
@@ -200,7 +210,7 @@ export function renderMenubarFormat(
   lines.push(`--Activity | size=12 color=#FF8C42`)
   for (const cat of month.categories.slice(0, 8)) {
     const bar = miniBar(cat.cost, monthMaxCat)
-    const name = cat.name.padEnd(14)
+    const name = sanitizeMenubarLabel(cat.name).padEnd(14)
     lines.push(`--${bar}  ${name} ${formatCost(cat.cost).padStart(8)}  ${String(cat.turns).padStart(4)} turns | font=Menlo size=11`)
   }
   lines.push(`-----`)
@@ -208,7 +218,7 @@ export function renderMenubarFormat(
   for (const model of month.models.slice(0, 5)) {
     if (model.name === '<synthetic>') continue
     const bar = miniBar(model.cost, monthMaxModel)
-    const name = model.name.padEnd(14)
+    const name = sanitizeMenubarLabel(model.name).padEnd(14)
     lines.push(`--${bar}  ${name} ${formatCost(model.cost).padStart(8)}  ${String(model.calls).padStart(5)} calls | font=Menlo size=11`)
   }
 
