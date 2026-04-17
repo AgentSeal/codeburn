@@ -168,10 +168,10 @@ function buildSessionSummary(
   project: string,
   turns: ClassifiedTurn[],
 ): SessionSummary {
-  const modelBreakdown: SessionSummary['modelBreakdown'] = {}
-  const toolBreakdown: SessionSummary['toolBreakdown'] = {}
-  const mcpBreakdown: SessionSummary['mcpBreakdown'] = {}
-  const bashBreakdown: SessionSummary['bashBreakdown'] = {}
+  const modelBreakdown: SessionSummary['modelBreakdown'] = Object.create(null)
+  const toolBreakdown: SessionSummary['toolBreakdown'] = Object.create(null)
+  const mcpBreakdown: SessionSummary['mcpBreakdown'] = Object.create(null)
+  const bashBreakdown: SessionSummary['bashBreakdown'] = Object.create(null)
   const categoryBreakdown: SessionSummary['categoryBreakdown'] = {} as SessionSummary['categoryBreakdown']
 
   let totalCost = 0
