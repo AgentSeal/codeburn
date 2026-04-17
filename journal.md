@@ -174,3 +174,12 @@ Cold start (Phase 2, no cache) is already ~1.5x faster than v0.5.0 for json/menu
 **Self-correction**: N/A.
 
 ---
+
+## 2026-04-17 -- create-pr (performance-optimization-v2)
+
+**Action**: Committed all remaining untracked files (Phase 2 spec folder: spec.md, requirements.md, acceptance-criteria.md, constraints.md, design-decisions.md, tasks.md). Updated existing PR gosswi/codeburn#72 with a full description -- Why/What/How sections, benchmark results table, and filled checklist.
+**Value**: PR now carries full context for reviewers: motivation (repeated disk parse cost, unintentional userMessage storage), technical approach (cache-full-then-filter design decision, ordering invariant), and concrete benchmark numbers. All 5 commits on the branch are included.
+**Limitations**: Remote trigger (journal-agent) unavailable due to authentication state -- journal updated manually.
+**Self-correction**: N/A.
+
+---
