@@ -81,6 +81,11 @@ function getCodeburnBin(): string {
 
 function generatePlugin(bin: string): string {
   const home = homedir()
+  // Resolve the directory of the node binary used at install time so the
+  // plugin uses the same Node version codeburn was installed with — even
+  // when SwiftBar/xbar launch with a minimal PATH that finds an older
+  // system Node first.  Fixes #63.
+  const nodeBinDir = join(process.execPath, '..')
   return `#!/bin/bash
 # <xbar.title>CodeBurn</xbar.title>
 # <xbar.version>v0.1.0</xbar.version>
@@ -91,7 +96,8 @@ function generatePlugin(bin: string): string {
 # <xbar.abouturl>https://github.com/agentseal/codeburn</xbar.abouturl>
 # <xbar.dependencies>node</xbar.dependencies>
 
-export PATH="/usr/local/bin:/opt/homebrew/bin:$HOME/.local/bin:$HOME/.npm-global/bin:$PATH"
+export HOME="${home}"
+export PATH="${nodeBinDir}:$HOME/.local/bin:$HOME/.npm-global/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 
 ${bin} status --format menubar 2>/dev/null || echo "-- | sfimage=flame.fill"
 `
