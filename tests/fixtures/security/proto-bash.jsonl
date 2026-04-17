@@ -1,0 +1,1 @@
+{"type":"assistant","sessionId":"security-test","timestamp":"2026-04-16T00:00:00Z","message":{"id":"pwn-bash","type":"message","role":"assistant","model":"claude-opus-4-6","content":[{"type":"tool_use","id":"b1","name":"Bash","input":{"command":"/x/__proto__"}}],"usage":{"input_tokens":1,"output_tokens":1}}}

@@ -1,0 +1,1 @@
+{"type":"assistant","sessionId":"security-test","timestamp":"2026-04-16T00:00:00Z","message":{"id":"pwn-model","type":"message","role":"assistant","model":"__proto__","content":[{"type":"text","text":"x"}],"usage":{"input_tokens":1,"output_tokens":1}}}
