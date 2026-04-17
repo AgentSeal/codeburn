@@ -6,7 +6,6 @@ import {
   detectLowReadEditRatio,
   detectCacheBloat,
   detectBloatedClaudeMd,
-  detectMissingClaudeignore,
   computeHealth,
   computeTrend,
   type ToolCall,
@@ -77,13 +76,14 @@ describe('detectJunkReads', () => {
     expect(detectJunkReads(calls)).toBeNull()
   })
 
-  it('builds .claudeignore content from detected + common extras', () => {
+  it('suggests CLAUDE.md advice listing detected and common junk dirs', () => {
     const calls = Array.from({ length: 5 }, () => call('Read', { file_path: '/x/node_modules/a.js' }))
     const finding = detectJunkReads(calls)!
-    expect(finding.fix.type).toBe('file-content')
-    if (finding.fix.type === 'file-content') {
-      expect(finding.fix.content).toContain('node_modules')
+    expect(finding.fix.type).toBe('paste')
+    if (finding.fix.type === 'paste') {
+      expect(finding.fix.text).toContain('node_modules')
     }
+    expect(finding.fix.label).toContain('CLAUDE.md')
   })
 })
 
@@ -204,16 +204,6 @@ describe('detectBloatedClaudeMd', () => {
   it('returns null for empty project set', () => {
     const result = detectBloatedClaudeMd(new Set())
     expect(result).toBeNull()
-  })
-})
-
-describe('detectMissingClaudeignore', () => {
-  it('returns null for empty set', () => {
-    expect(detectMissingClaudeignore(new Set())).toBeNull()
-  })
-
-  it('returns null for non-existent cwds', () => {
-    expect(detectMissingClaudeignore(new Set(['/does/not/exist']))).toBeNull()
   })
 })
 

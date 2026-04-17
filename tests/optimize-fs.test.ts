@@ -15,7 +15,6 @@ vi.mock('os', async () => {
 const FAKE_HOME_FOR_MOCK = process.env['CODEBURN_TEST_FAKE_HOME']!
 
 import {
-  detectMissingClaudeignore,
   detectBloatedClaudeMd,
   detectUnusedMcp,
   detectBashBloat,
@@ -58,48 +57,6 @@ afterAll(() => {
   for (const dir of FIXTURE_ROOTS) {
     rmSync(dir, { recursive: true, force: true })
   }
-})
-
-// ============================================================================
-// detectMissingClaudeignore
-// ============================================================================
-
-describe('detectMissingClaudeignore', () => {
-  it('flags a project with node_modules but no .claudeignore', () => {
-    const root = makeFixtureRoot()
-    const projectDir = join(root, 'myapp')
-    mkdirSync(join(projectDir, 'node_modules'), { recursive: true })
-    const finding = detectMissingClaudeignore(new Set([projectDir]))
-    expect(finding).not.toBeNull()
-    expect(finding!.impact).toBe('medium')
-  })
-
-  it('does not flag when .claudeignore exists', () => {
-    const root = makeFixtureRoot()
-    const projectDir = join(root, 'myapp')
-    mkdirSync(join(projectDir, 'node_modules'), { recursive: true })
-    writeFile(join(projectDir, '.claudeignore'), 'node_modules\n')
-    expect(detectMissingClaudeignore(new Set([projectDir]))).toBeNull()
-  })
-
-  it('does not flag project without junk dirs', () => {
-    const root = makeFixtureRoot()
-    const projectDir = join(root, 'myapp')
-    mkdirSync(join(projectDir, 'src'), { recursive: true })
-    expect(detectMissingClaudeignore(new Set([projectDir]))).toBeNull()
-  })
-
-  it('escalates to high when three or more projects need it', () => {
-    const root = makeFixtureRoot()
-    const cwds = new Set<string>()
-    for (let i = 0; i < 3; i++) {
-      const p = join(root, `proj-${i}`)
-      mkdirSync(join(p, 'node_modules'), { recursive: true })
-      cwds.add(p)
-    }
-    const finding = detectMissingClaudeignore(cwds)
-    expect(finding!.impact).toBe('high')
-  })
 })
 
 // ============================================================================

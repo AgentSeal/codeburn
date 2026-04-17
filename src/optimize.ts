@@ -32,7 +32,6 @@ const TOKENS_PER_SKILL_DEF = 80
 const TOKENS_PER_COMMAND_DEF = 60
 const CLAUDEMD_TOKENS_PER_LINE = 13
 const BASH_TOKENS_PER_CHAR = 0.25
-const ESTIMATED_READS_PER_MISSING_IGNORE = 10
 
 // ============================================================================
 // Detector thresholds
@@ -52,7 +51,6 @@ const LOW_RATIO_HIGH_THRESHOLD = 2
 const LOW_RATIO_MEDIUM_THRESHOLD = 3
 const MIN_API_CALLS_FOR_CACHE = 10
 const CACHE_EXCESS_HIGH_THRESHOLD = 15000
-const MISSING_IGNORE_HIGH_THRESHOLD = 3
 const UNUSED_MCP_HIGH_THRESHOLD = 3
 const GHOST_AGENTS_HIGH_THRESHOLD = 5
 const GHOST_AGENTS_MEDIUM_THRESHOLD = 2
@@ -97,8 +95,6 @@ const JUNK_PATTERN = new RegExp(`/(?:${JUNK_DIRS.join('|')})/`)
 const SHELL_PROFILES = ['.zshrc', '.bashrc', '.bash_profile', '.profile']
 
 const TOP_ITEMS_PREVIEW = 3
-const MISSING_IGNORE_PATHS_PREVIEW = 2
-const JUNK_DIRS_IGNORE_PREVIEW = 8
 const GHOST_NAMES_PREVIEW = 5
 const GHOST_CLEANUP_COMMANDS_LIMIT = 10
 
@@ -408,18 +404,17 @@ export function detectJunkReads(calls: ToolCall[], dateRange?: DateRange): Waste
   const detected = sorted.map(([d]) => d)
   const commonDefaults = ['node_modules', '.git', 'dist', '__pycache__']
   const extras = commonDefaults.filter(d => !dirCounts.has(d)).slice(0, Math.max(0, 6 - detected.length))
-  const ignoreContent = [...detected, ...extras].join('\n')
+  const dirsToAvoid = [...detected, ...extras].join(', ')
 
   return {
     title: 'Claude is reading build/dependency folders',
-    explanation: `Claude read into ${dirList} (${totalJunkReads} reads). These are generated or dependency directories, not your code. A .claudeignore tells Claude to skip them.`,
+    explanation: `Claude read into ${dirList} (${totalJunkReads} reads). These are generated or dependency directories, not your code. Tell Claude in CLAUDE.md to avoid them.`,
     impact: totalJunkReads > JUNK_READS_HIGH_THRESHOLD ? 'high' : totalJunkReads > JUNK_READS_MEDIUM_THRESHOLD ? 'medium' : 'low',
     tokensSaved,
     fix: {
-      type: 'file-content',
-      label: 'Create .claudeignore in your project root:',
-      path: '.claudeignore',
-      content: ignoreContent,
+      type: 'paste',
+      label: 'Append to your project CLAUDE.md:',
+      text: `Do not read or search files under these directories unless I explicitly ask: ${dirsToAvoid}.`,
     },
     trend,
   }
@@ -527,43 +522,6 @@ export function detectUnusedMcp(
       type: 'command',
       label: `Remove unused server${unused.length > 1 ? 's' : ''}:`,
       text: unused.map(s => `claude mcp remove ${s}`).join('\n'),
-    },
-  }
-}
-
-export function detectMissingClaudeignore(projectCwds: Set<string>): WasteFinding | null {
-  const missing: string[] = []
-
-  for (const cwd of projectCwds) {
-    if (!existsSync(cwd)) continue
-    if (existsSync(join(cwd, '.claudeignore'))) continue
-    for (const dir of JUNK_DIRS) {
-      if (existsSync(join(cwd, dir))) {
-        missing.push(cwd)
-        break
-      }
-    }
-  }
-
-  if (missing.length === 0) return null
-
-  const shortPaths = missing.map(shortHomePath)
-  const display = shortPaths.length <= MISSING_IGNORE_PATHS_PREVIEW + 1
-    ? shortPaths.join(', ')
-    : `${shortPaths.slice(0, MISSING_IGNORE_PATHS_PREVIEW).join(', ')} + ${shortPaths.length - MISSING_IGNORE_PATHS_PREVIEW} more`
-
-  const tokensSaved = missing.length * ESTIMATED_READS_PER_MISSING_IGNORE * AVG_TOKENS_PER_READ
-
-  return {
-    title: `Add .claudeignore to ${missing.length} project${missing.length > 1 ? 's' : ''}`,
-    explanation: `${missing.length} project${missing.length > 1 ? 's have' : ' has'} build/dependency folders (node_modules, .git, etc.) but no .claudeignore: ${display}. Without it, Claude can wander into them.`,
-    impact: missing.length >= MISSING_IGNORE_HIGH_THRESHOLD ? 'high' : 'medium',
-    tokensSaved,
-    fix: {
-      type: 'file-content',
-      label: 'Create .claudeignore in each project root:',
-      path: '.claudeignore',
-      content: JUNK_DIRS.slice(0, JUNK_DIRS_IGNORE_PREVIEW).join('\n'),
     },
   }
 }
@@ -1018,7 +976,6 @@ export async function scanAndDetect(
     () => detectJunkReads(toolCalls, dateRange),
     () => detectDuplicateReads(toolCalls, dateRange),
     () => detectUnusedMcp(toolCalls, projects, projectCwds),
-    () => detectMissingClaudeignore(projectCwds),
     () => detectBloatedClaudeMd(projectCwds),
     () => detectBashBloat(),
   ]
