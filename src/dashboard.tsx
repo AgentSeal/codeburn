@@ -3,6 +3,7 @@ import { homedir } from 'os'
 import React, { useState, useCallback, useEffect, useRef } from 'react'
 import { render, Box, Text, useInput, useApp, useWindowSize } from 'ink'
 import { CATEGORY_LABELS, type ProjectSummary, type TaskCategory } from './types.js'
+import { computeOutlierSessions, computeModelOneShotRates, TOP_OUTLIER_COUNT } from './analytics.js'
 import { formatCost, formatTokens } from './format.js'
 import { parseAllSessions, filterProjectsByName } from './parser.js'
 import { loadPricing } from './models.js'
@@ -378,6 +379,17 @@ const TOP_SESSIONS_DATE_LEN = 10
 const TOP_SESSIONS_COST_COL = 8
 const TOP_SESSIONS_CALLS_COL = 6
 
+const OUTLIER_COST_COL = 8
+const OUTLIER_ACT_COL = 13
+const OUTLIER_FLAG = '!'
+
+const MODEL_ONESHOT_NAME_WIDTH = 14
+const MODEL_ONESHOT_RATE_COL = 7
+const MODEL_ONESHOT_SESS_COL = 6
+const MODEL_ONESHOT_COST_COL = 8
+const MODEL_ONESHOT_HIGH_THRESHOLD = 0.9
+const MODEL_ONESHOT_MID_THRESHOLD = 0.7
+
 function TopSessions({ projects, pw, bw }: { projects: ProjectSummary[]; pw: number; bw: number }) {
   const allSessions = projects.flatMap(p =>
     p.sessions.map(s => ({ ...s, projectName: p.project }))
@@ -405,6 +417,70 @@ function TopSessions({ projects, pw, bw }: { projects: ProjectSummary[]; pw: num
             <Text dimColor> {fit(label, nw - 1)}</Text>
             <Text color={GOLD}>{formatCost(session.totalCostUSD).padStart(TOP_SESSIONS_COST_COL)}</Text>
             <Text>{String(session.apiCalls).padStart(TOP_SESSIONS_CALLS_COL)}</Text>
+          </Text>
+        )
+      })}
+    </Panel>
+  )
+}
+
+function OutlierSessions({ projects, pw, bw }: { projects: ProjectSummary[]; pw: number; bw: number }) {
+  const rows = computeOutlierSessions(projects)
+
+  if (rows.length === 0) {
+    return <Panel title={`Top ${TOP_OUTLIER_COUNT} Sessions by Cost`} color={PANEL_COLORS.sessions} width={pw}><Text dimColor>No sessions</Text></Panel>
+  }
+
+  const maxCost = rows[0].totalCostUSD
+  const nw = Math.max(8, pw - bw - OUTLIER_COST_COL - OUTLIER_ACT_COL - 3 - PANEL_CHROME)
+
+  return (
+    <Panel title={`Top ${TOP_OUTLIER_COUNT} Sessions by Cost`} color={PANEL_COLORS.sessions} width={pw}>
+      <Text dimColor wrap="truncate-end">{''.padEnd(bw + 1 + nw)}{'cost'.padStart(OUTLIER_COST_COL)}{' activity'.padEnd(OUTLIER_ACT_COL + 1)}</Text>
+      {rows.map((row, i) => {
+        const label = `${row.date} ${shortProject(row.project)}`
+        return (
+          <Text key={`${row.sessionId}-${i}`} wrap="truncate-end">
+            <HBar value={row.totalCostUSD} max={maxCost} width={bw} />
+            <Text dimColor> {fit(label, nw - 1)}</Text>
+            <Text color={GOLD}>{formatCost(row.totalCostUSD).padStart(OUTLIER_COST_COL)}</Text>
+            <Text dimColor> {fit(row.dominantActivity, OUTLIER_ACT_COL)}</Text>
+            <Text color={row.isOutlier ? '#F55B5B' : DIM}> {row.isOutlier ? OUTLIER_FLAG : ' '}</Text>
+          </Text>
+        )
+      })}
+    </Panel>
+  )
+}
+
+function ModelOneShotBreakdown({ projects, pw, bw }: { projects: ProjectSummary[]; pw: number; bw: number }) {
+  const rows = computeModelOneShotRates(projects)
+
+  if (rows.length === 0) {
+    return <Panel title="One-Shot Rate by Model" color={PANEL_COLORS.model} width={pw}><Text dimColor>No model data</Text></Panel>
+  }
+
+  const maxCost = Math.max(...rows.map(r => r.costUSD))
+
+  return (
+    <Panel title="One-Shot Rate by Model" color={PANEL_COLORS.model} width={pw}>
+      <Text dimColor wrap="truncate-end">{''.padEnd(bw + 1 + MODEL_ONESHOT_NAME_WIDTH)}{'cost'.padStart(MODEL_ONESHOT_COST_COL)}{'sess'.padStart(MODEL_ONESHOT_SESS_COL)}{'1-shot'.padStart(MODEL_ONESHOT_RATE_COL)}</Text>
+      {rows.map((row, i) => {
+        const rateLabel = row.oneShotRate !== null ? `${Math.round(row.oneShotRate * 100)}%` : '-'
+        const rateColor = row.oneShotRate === null
+          ? DIM
+          : row.oneShotRate >= MODEL_ONESHOT_HIGH_THRESHOLD
+            ? '#5BF58C'
+            : row.oneShotRate >= MODEL_ONESHOT_MID_THRESHOLD
+              ? ORANGE
+              : '#F55B5B'
+        return (
+          <Text key={`${row.model}-${i}`} wrap="truncate-end">
+            <HBar value={row.costUSD} max={maxCost} width={bw} />
+            <Text> {fit(row.model, MODEL_ONESHOT_NAME_WIDTH)}</Text>
+            <Text color={GOLD}>{formatCost(row.costUSD).padStart(MODEL_ONESHOT_COST_COL)}</Text>
+            <Text>{String(row.sessions).padStart(MODEL_ONESHOT_SESS_COL)}</Text>
+            <Text color={rateColor}>{rateLabel.padStart(MODEL_ONESHOT_RATE_COL)}</Text>
           </Text>
         )
       })}
@@ -564,7 +640,9 @@ function DashboardContent({ projects, period, columns, activeProvider, budgets }
       <Overview projects={projects} label={PERIOD_LABELS[period]} width={dashWidth} />
       <Row wide={wide} width={dashWidth}><DailyActivity projects={projects} days={days} pw={pw} bw={barWidth} /><ProjectBreakdown projects={projects} pw={pw} bw={barWidth} budgets={budgets} /></Row>
       <TopSessions projects={projects} pw={dashWidth} bw={barWidth} />
+      <OutlierSessions projects={projects} pw={dashWidth} bw={barWidth} />
       <Row wide={wide} width={dashWidth}><ActivityBreakdown projects={projects} pw={pw} bw={barWidth} /><ModelBreakdown projects={projects} pw={pw} bw={barWidth} /></Row>
+      <ModelOneShotBreakdown projects={projects} pw={dashWidth} bw={barWidth} />
       {isCursor ? (
         <ToolBreakdown projects={projects} pw={dashWidth} bw={barWidth} title="Languages" filterPrefix="lang:" />
       ) : (
