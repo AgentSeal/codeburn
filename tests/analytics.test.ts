@@ -1,11 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import {
   computeOutlierSessions,
+  computeModelOneShotRates,
   dominantActivity,
   TOP_OUTLIER_COUNT,
   OUTLIER_MULTIPLIER,
 } from '../src/analytics.js'
-import type { ProjectSummary, SessionSummary } from '../src/types.js'
+import type { ClassifiedTurn, ParsedApiCall, ProjectSummary, SessionSummary, TokenUsage } from '../src/types.js'
 
 const EMPTY_CATS: SessionSummary['categoryBreakdown'] = {
   coding: { turns: 0, costUSD: 0, retries: 0, editTurns: 0, oneShotTurns: 0 },
@@ -96,21 +97,51 @@ describe('computeOutlierSessions', () => {
   })
 })
 
-import { computeModelOneShotRates } from '../src/analytics.js'
+function makeTokenUsage(): TokenUsage {
+  return {
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheCreationInputTokens: 0,
+    cacheReadInputTokens: 0,
+    cachedInputTokens: 0,
+    reasoningTokens: 0,
+    webSearchRequests: 0,
+  }
+}
+
+function makeApiCall(model: string): ParsedApiCall {
+  return {
+    provider: 'claude',
+    model,
+    usage: makeTokenUsage(),
+    costUSD: 0,
+    tools: [],
+    mcpTools: [],
+    hasAgentSpawn: false,
+    hasPlanMode: false,
+    speed: 'standard',
+    timestamp: '2026-04-10T10:00:00Z',
+    bashCommands: [],
+    deduplicationKey: `${model}-0`,
+  }
+}
+
+function makeTurn(model: string, hasEdits: boolean, retries: number): ClassifiedTurn {
+  return {
+    userMessage: '',
+    assistantCalls: [makeApiCall(model)],
+    timestamp: '2026-04-10T10:00:00Z',
+    sessionId: 's1',
+    category: 'coding',
+    retries,
+    hasEdits,
+  }
+}
 
 describe('computeModelOneShotRates', () => {
-  function makeTurn(model: string, hasEdits: boolean, retries: number): SessionSummary['turns'][number] {
-    return {
-      category: 'coding',
-      hasEdits,
-      retries,
-      assistantCalls: [{ model, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, costUSD: 0 }],
-    } as unknown as SessionSummary['turns'][number]
-  }
-
   it('returns one-shot rate per model', () => {
     const s = makeSession('s1', 10)
-    s.modelBreakdown = { 'Sonnet 4.5': { calls: 3, costUSD: 10, tokens: 100 as unknown as SessionSummary['modelBreakdown'][string]['tokens'] } }
+    s.modelBreakdown = { 'Sonnet 4.5': { calls: 3, costUSD: 10, tokens: makeTokenUsage() } }
     s.turns = [
       makeTurn('claude-sonnet-4-5', true, 0),
       makeTurn('claude-sonnet-4-5', true, 1),
@@ -126,7 +157,7 @@ describe('computeModelOneShotRates', () => {
 
   it('null oneShotRate when no edit turns', () => {
     const s = makeSession('s1', 5)
-    s.modelBreakdown = { 'Haiku': { calls: 1, costUSD: 5, tokens: 50 as unknown as SessionSummary['modelBreakdown'][string]['tokens'] } }
+    s.modelBreakdown = { 'Haiku': { calls: 1, costUSD: 5, tokens: makeTokenUsage() } }
     s.turns = []
     const rows = computeModelOneShotRates([makeProject('p', [s])])
     expect(rows[0]?.oneShotRate).toBeNull()
