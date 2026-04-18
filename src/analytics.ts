@@ -26,7 +26,7 @@ export type ModelOneShotRow = {
 
 export function dominantActivity(session: SessionSummary): string {
   let best: TaskCategory | null = null
-  let bestCost = -1
+  let bestCost = 0
   for (const [cat, data] of Object.entries(session.categoryBreakdown)) {
     if (data.costUSD > bestCost) {
       bestCost = data.costUSD
