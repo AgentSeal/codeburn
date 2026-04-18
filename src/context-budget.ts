@@ -61,15 +61,33 @@ async function countMcpTools(projectPath?: string, calledServers?: Set<string>):
   const normalizedSeen = new Set<string>()
   const serverNames: string[] = []
 
-  for (const p of configPaths) {
-    const config = await readConfigFile(p)
-    if (!config) continue
-    const mcpServers = (config.mcpServers ?? {}) as Record<string, unknown>
-    for (const name of Object.keys(mcpServers)) {
+  const pushServers = (serversObj: Record<string, unknown>): void => {
+    for (const name of Object.keys(serversObj)) {
       const normalized = name.replace(/:/g, '_')
       if (normalizedSeen.has(normalized)) continue
       normalizedSeen.add(normalized)
       serverNames.push(name)
+    }
+  }
+
+  for (const p of configPaths) {
+    const config = await readConfigFile(p)
+    if (!config) continue
+    pushServers((config.mcpServers ?? {}) as Record<string, unknown>)
+  }
+
+  // `claude mcp add` writes to ~/.claude.json (top-level for user-scope,
+  // projects[cwd].mcpServers for project-local scope). This is the common config
+  // path and was missed by settings.json-only discovery.
+  const claudeJson = await readConfigFile(join(home, '.claude.json'))
+  if (claudeJson) {
+    pushServers((claudeJson.mcpServers ?? {}) as Record<string, unknown>)
+    if (projectPath) {
+      const projects = (claudeJson.projects ?? {}) as Record<string, { mcpServers?: Record<string, unknown> }>
+      const projectEntry = projects[projectPath] ?? projects[projectPath.replace(/\\/g, '/')]
+      if (projectEntry?.mcpServers) {
+        pushServers(projectEntry.mcpServers)
+      }
     }
   }
 
