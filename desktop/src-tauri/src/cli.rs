@@ -159,7 +159,7 @@ pub fn spawn_in_terminal(_app: &AppHandle, subcommand: &[&str]) -> Result<()> {
                 // followed by `bash -lc`. The allowlist guarantees no quoting is needed.
                 let composite = command_parts.join(" ");
                 let mut cmd = std::process::Command::new(program);
-                cmd.args(*extras);
+                cmd.args(extras);
                 cmd.arg(&composite);
                 cmd.spawn().with_context(|| format!("failed to launch {}", program))?;
                 return Ok(());
