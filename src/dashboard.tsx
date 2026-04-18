@@ -258,7 +258,7 @@ function ProjectBreakdown({ projects, pw, bw, budgets }: { projects: ProjectSumm
             <Text color={GOLD}>{formatCost(project.totalCostUSD).padStart(8)}</Text>
             <Text color={GOLD}>{avgCost.padStart(PROJECT_COL_AVG)}</Text>
             <Text>{String(project.sessions.length).padStart(6)}</Text>
-            {hasBudgets && <Text color="#7B9EF5">{(budget ? formatTokens(budget.total) : '-').padStart(10)}</Text>}
+            {hasBudgets && <Text color={budget?.mcpTools.unused.length ? ORANGE : '#7B9EF5'}>{(budget ? formatTokens(budget.total) : '-').padStart(10)}</Text>}
           </Text>
         )
       })}
