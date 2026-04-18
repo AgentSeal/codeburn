@@ -400,3 +400,54 @@ describe('discoverProjectCwd', () => {
     expect(await discoverProjectCwd(root)).toBe('/Users/test/project')
   })
 })
+
+// ============================================================================
+// estimateContextBudget with calledServers
+// ============================================================================
+
+describe('estimateContextBudget with calledServers', () => {
+  it('reports unused servers when calledServers provided', async () => {
+    const root = makeFixtureRoot()
+    writeFile(join(root, '.mcp.json'), JSON.stringify({
+      mcpServers: { used: { command: 'x' }, ghost: { command: 'y' } },
+    }))
+    const budget = await estimateContextBudget(root, 1_000_000, new Set(['used']))
+    expect(budget.mcpTools.declared).toBe(2)
+    expect(budget.mcpTools.used).toBe(1)
+    expect(budget.mcpTools.unused).toEqual(['ghost'])
+    expect(budget.mcpTools.unusedTokens).toBe(1 * 5 * 400)
+  })
+
+  it('reports zero unused when all called', async () => {
+    const root = makeFixtureRoot()
+    writeFile(join(root, '.mcp.json'), JSON.stringify({
+      mcpServers: { a: { command: 'x' }, b: { command: 'y' } },
+    }))
+    const budget = await estimateContextBudget(root, 1_000_000, new Set(['a', 'b']))
+    expect(budget.mcpTools.unused).toEqual([])
+    expect(budget.mcpTools.unusedTokens).toBe(0)
+  })
+
+  it('treats calledServers=undefined as no usage data (backward compat)', async () => {
+    const root = makeFixtureRoot()
+    writeFile(join(root, '.mcp.json'), JSON.stringify({
+      mcpServers: { x: { command: 'x' } },
+    }))
+    const budget = await estimateContextBudget(root)
+    expect(budget.mcpTools.declared).toBe(1)
+    expect(budget.mcpTools.used).toBe(0)
+    expect(budget.mcpTools.unused).toEqual([])
+    expect(budget.mcpTools.count).toBe(5)
+    expect(budget.mcpTools.tokens).toBe(2000)
+  })
+
+  it('normalizes plugin:foo:bar names before comparison', async () => {
+    const root = makeFixtureRoot()
+    writeFile(join(root, '.mcp.json'), JSON.stringify({
+      mcpServers: { 'plugin:context7:context7': { command: 'ctx' } },
+    }))
+    const budget = await estimateContextBudget(root, 1_000_000, new Set(['plugin_context7_context7']))
+    expect(budget.mcpTools.used).toBe(1)
+    expect(budget.mcpTools.unused).toEqual([])
+  })
+})
