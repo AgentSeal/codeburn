@@ -141,6 +141,9 @@ function buildJsonReport(projects: ProjectSummary[], period: string, periodKey: 
     name: p.project,
     path: p.projectPath,
     cost: convertCost(p.totalCostUSD),
+    avgCostPerSession: p.sessions.length > 0
+      ? convertCost(p.totalCostUSD / p.sessions.length)
+      : null,
     calls: p.totalApiCalls,
     sessions: p.sessions.length,
   }))
