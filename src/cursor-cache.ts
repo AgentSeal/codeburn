@@ -1,4 +1,5 @@
-import { readFile, writeFile, mkdir, stat } from 'fs/promises'
+import { randomBytes } from 'crypto'
+import { mkdir, open, readFile, rename, stat, unlink } from 'fs/promises'
 import { join } from 'path'
 import { homedir } from 'os'
 
@@ -11,6 +12,8 @@ type ResultCache = {
 }
 
 const CACHE_FILE = 'cursor-results.json'
+const CACHE_DIR_MODE = 0o700
+const CACHE_FILE_MODE = 0o600
 
 function getCacheDir(): string {
   return join(homedir(), '.cache', 'codeburn')
@@ -52,12 +55,27 @@ export async function writeCachedResults(dbPath: string, calls: ParsedProviderCa
     if (!fp) return
 
     const dir = getCacheDir()
-    await mkdir(dir, { recursive: true })
+    await mkdir(dir, { recursive: true, mode: CACHE_DIR_MODE })
     const cache: ResultCache = {
       dbMtimeMs: fp.mtimeMs,
       dbSizeBytes: fp.size,
       calls,
     }
-    await writeFile(getCachePath(), JSON.stringify(cache), 'utf-8')
+    const finalPath = getCachePath()
+    const tempPath = `${finalPath}.${randomBytes(8).toString('hex')}.tmp`
+    const payload = JSON.stringify(cache)
+    const handle = await open(tempPath, 'w', CACHE_FILE_MODE)
+    try {
+      await handle.writeFile(payload, { encoding: 'utf-8' })
+      await handle.sync()
+    } finally {
+      await handle.close()
+    }
+    try {
+      await rename(tempPath, finalPath)
+    } catch (err) {
+      try { await unlink(tempPath) } catch { /* ignore */ }
+      throw err
+    }
   } catch {}
 }
