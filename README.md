@@ -21,6 +21,15 @@
 
 *Screenshot predates 1.0.0 and will be updated.*
 
+## Project Status
+
+**Version:** 1.0.0
+**Tests:** 172 passing (168 TypeScript, 4 Swift)
+**Dependencies:** 0 vulnerabilities (npm audit)
+
+See [AUDIT_REPORT.md](./AUDIT_REPORT.md) for the full security and quality audit.
+See [CHANGELOG.md](./CHANGELOG.md) for version history.
+
 A usage dashboard for Auggie (the Augment Code CLI). Tracks cost by task type, tool, model, MCP server, and project. Shows one-shot success rate per activity type so you can see where the AI nails it first try vs. burns tokens on edit/test/fix retries. Interactive TUI dashboard with gradient charts, responsive panels, and keyboard navigation. Native macOS menubar app in `mac/`. CSV/JSON export.
 
 Works by reading Auggie session data directly from disk. No wrapper, no proxy, no API keys. Pricing from LiteLLM (auto-cached, all models supported).
