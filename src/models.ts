@@ -20,6 +20,7 @@ type LiteLLMEntry = {
 }
 
 const LITELLM_URL = 'https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json'
+const FETCH_TIMEOUT_MS = 10_000
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000
 const WEB_SEARCH_COST = 0.01
 
@@ -74,7 +75,7 @@ function parseLiteLLMEntry(entry: LiteLLMEntry): ModelCosts | null {
 }
 
 async function fetchAndCachePricing(): Promise<Map<string, ModelCosts>> {
-  const response = await fetch(LITELLM_URL)
+  const response = await fetch(LITELLM_URL, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })
   if (!response.ok) throw new Error(`HTTP ${response.status}`)
   const data = await response.json() as Record<string, LiteLLMEntry>
   const pricing = new Map<string, ModelCosts>()
