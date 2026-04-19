@@ -1,5 +1,5 @@
 import { randomBytes } from 'crypto'
-import { mkdir, open, readFile, rename, stat, unlink } from 'fs/promises'
+import { chmod, mkdir, open, readFile, rename, stat, unlink } from 'fs/promises'
 import { join } from 'path'
 import { homedir } from 'os'
 
@@ -56,6 +56,10 @@ export async function writeCachedResults(dbPath: string, calls: ParsedProviderCa
 
     const dir = getCacheDir()
     await mkdir(dir, { recursive: true, mode: CACHE_DIR_MODE })
+    // mkdir's `mode` is only honoured for newly-created directories. A user upgrading from a
+    // pre-hardening build will already have ~/.cache/codeburn at 0755; chmod on every write
+    // tightens the permission without breaking anyone whose directory is already 0700.
+    await chmod(dir, CACHE_DIR_MODE).catch(() => {})
     const cache: ResultCache = {
       dbMtimeMs: fp.mtimeMs,
       dbSizeBytes: fp.size,

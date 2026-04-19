@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 /// Single entry point for spawning the `codeburn` CLI. All callers route through here so the
@@ -58,13 +59,19 @@ enum CodeburnCLI {
     }
 
     /// True only when `path` is absolute, free of `..` traversal, and lives under one of the
-    /// `allowedBinaryPrefixes`. Symlinks are left to resolve at exec time -- the prefix check
-    /// is the user-controlled boundary.
+    /// `allowedBinaryPrefixes` AFTER symlinks are resolved. Without realpath() the prefix check
+    /// is bypassable: an attacker who can write `/usr/local/bin/codeburn -> /tmp/evil` would
+    /// pass the textual prefix check but execve() would still run `/tmp/evil`.
+    /// `realpath` requires the path to exist; non-existent paths are rejected, which matches
+    /// the security stance (CODEBURN_BIN must point at a real binary in an allow-listed prefix).
     static func isAllowedProgramPath(_ path: String) -> Bool {
         guard path.hasPrefix("/") else { return false }
         let normalized = (path as NSString).standardizingPath
         if normalized.contains("/../") || normalized.hasSuffix("/..") { return false }
-        return allowedBinaryPrefixes.contains { normalized.hasPrefix($0) }
+        var buffer = [CChar](repeating: 0, count: Int(PATH_MAX))
+        guard realpath(normalized, &buffer) != nil else { return false }
+        let resolved = String(cString: buffer)
+        return allowedBinaryPrefixes.contains { resolved.hasPrefix($0) }
     }
 
     /// Builds a `Process` that runs the CLI with the given subcommand args. Uses `/usr/bin/env`
