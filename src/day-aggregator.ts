@@ -20,8 +20,9 @@ function emptyEntry(date: string): DailyEntry {
   }
 }
 
-function dateKey(iso: string): string {
-  return iso.slice(0, 10)
+export function dateKey(iso: string): string {
+  const d = new Date(iso)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 export function aggregateProjectsIntoDays(projects: ProjectSummary[]): DailyEntry[] {

@@ -9,6 +9,7 @@ import { loadPricing } from './models.js'
 import { getAllProviders } from './providers/index.js'
 import { scanAndDetect, type WasteFinding, type WasteAction, type OptimizeResult } from './optimize.js'
 import { estimateContextBudget, discoverProjectCwd, type ContextBudget } from './context-budget.js'
+import { dateKey } from './day-aggregator.js'
 import { join } from 'path'
 
 type Period = 'today' | 'week' | '30days' | 'month' | 'all'
@@ -195,7 +196,7 @@ function DailyActivity({ projects, days = 14, pw, bw }: { projects: ProjectSumma
     for (const session of project.sessions) {
       for (const turn of session.turns) {
         if (!turn.timestamp) continue
-        const day = turn.timestamp.slice(0, 10)
+        const day = dateKey(turn.timestamp)
         dailyCosts[day] = (dailyCosts[day] ?? 0) + turn.assistantCalls.reduce((s, c) => s + c.costUSD, 0)
         dailyCalls[day] = (dailyCalls[day] ?? 0) + turn.assistantCalls.length
       }

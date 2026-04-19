@@ -8,7 +8,7 @@ import { renderStatusBar } from './format.js'
 import { type PeriodData, type ProviderCost } from './menubar-json.js'
 import { buildMenubarPayload } from './menubar-json.js'
 import { addNewDays, getDaysInRange, loadDailyCache, saveDailyCache, withDailyCacheLock } from './daily-cache.js'
-import { aggregateProjectsIntoDays, buildPeriodDataFromDays } from './day-aggregator.js'
+import { aggregateProjectsIntoDays, buildPeriodDataFromDays, dateKey } from './day-aggregator.js'
 import { CATEGORY_LABELS, type DateRange, type ProjectSummary, type TaskCategory } from './types.js'
 import { renderDashboard } from './dashboard.js'
 import { parseDateRangeFlags } from './cli-date.js'
@@ -25,7 +25,7 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000
 const BACKFILL_DAYS = 365
 
 function toDateString(date: Date): string {
-  return date.toISOString().slice(0, 10)
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
 
 function getDateRange(period: string): { range: DateRange; label: string } {
@@ -35,12 +35,12 @@ function getDateRange(period: string): { range: DateRange; label: string } {
   switch (period) {
     case 'today': {
       const start = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-      return { range: { start, end }, label: `Today (${start.toISOString().slice(0, 10)})` }
+      return { range: { start, end }, label: `Today (${toDateString(start)})` }
     }
     case 'yesterday': {
       const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1)
       const yesterdayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 23, 59, 59, 999)
-      return { range: { start, end: yesterdayEnd }, label: `Yesterday (${start.toISOString().slice(0, 10)})` }
+      return { range: { start, end: yesterdayEnd }, label: `Yesterday (${toDateString(start)})` }
     }
     case 'week': {
       const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7)
@@ -123,7 +123,7 @@ function buildJsonReport(projects: ProjectSummary[], period: string, periodKey: 
   for (const sess of sessions) {
     for (const turn of sess.turns) {
       if (!turn.timestamp) { continue }
-      const day = turn.timestamp.slice(0, 10)
+      const day = dateKey(turn.timestamp)
       if (!dailyMap[day]) { dailyMap[day] = { cost: 0, calls: 0 } }
       for (const call of turn.assistantCalls) {
         dailyMap[day].cost += call.costUSD
@@ -204,7 +204,7 @@ function buildJsonReport(projects: ProjectSummary[], period: string, periodKey: 
     Object.entries(m).sort(([, a], [, b]) => b - a).map(([name, calls]) => ({ name, calls }))
 
   const topSessions = projects
-    .flatMap(p => p.sessions.map(s => ({ project: p.project, sessionId: s.sessionId, date: s.firstTimestamp?.slice(0, 10) ?? null, cost: convertCost(s.totalCostUSD), calls: s.apiCalls })))
+    .flatMap(p => p.sessions.map(s => ({ project: p.project, sessionId: s.sessionId, date: s.firstTimestamp ? dateKey(s.firstTimestamp) : null, cost: convertCost(s.totalCostUSD), calls: s.apiCalls })))
     .sort((a, b) => b.cost - a.cost)
     .slice(0, 5)
 
@@ -545,7 +545,7 @@ program
       return
     }
 
-    const defaultName = `codeburn-${new Date().toISOString().slice(0, 10)}`
+    const defaultName = `codeburn-${toDateString(new Date())}`
     const outputPath = opts.output ?? `${defaultName}.${opts.format}`
 
     let savedPath: string
