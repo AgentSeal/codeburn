@@ -11,13 +11,11 @@ struct CachedPayload {
 
 struct PayloadCacheKey: Hashable {
     let period: Period
-    let provider: ProviderFilter
 }
 
 @MainActor
 @Observable
 final class AppStore {
-    var selectedProvider: ProviderFilter = .all
     var selectedPeriod: Period = .today
     var selectedInsight: InsightMode = .trend
     var currency: String = "USD"
@@ -26,22 +24,21 @@ final class AppStore {
     var subscription: SubscriptionUsage?
     var subscriptionError: String?
     var subscriptionLoadState: SubscriptionLoadState = .idle
-    var capacityEstimates: [String: CapacityEstimate] = [:]
 
     private var cache: [PayloadCacheKey: CachedPayload] = [:]
 
     private var currentKey: PayloadCacheKey {
-        PayloadCacheKey(period: selectedPeriod, provider: selectedProvider)
+        PayloadCacheKey(period: selectedPeriod)
     }
 
     var payload: MenubarPayload {
         cache[currentKey]?.payload ?? .empty
     }
 
-    /// Today (across all providers) is pinned for the always-visible menubar icon, independent of
-    /// the popover's selected period or provider.
+    /// Today is pinned for the always-visible menubar icon, independent of
+    /// the popover's selected period.
     var todayPayload: MenubarPayload? {
-        cache[PayloadCacheKey(period: .today, provider: .all)]?.payload
+        cache[PayloadCacheKey(period: .today)]?.payload
     }
 
     var hasCachedData: Bool {
@@ -59,18 +56,10 @@ final class AppStore {
         await refresh(includeOptimize: true)
     }
 
-    /// Switch to a provider filter. Uses cached payload if fresh; otherwise fetches.
-    func switchTo(provider: ProviderFilter) async {
-        selectedProvider = provider
-        if let cached = cache[currentKey], cached.isFresh { return }
-        await refresh(includeOptimize: true)
-    }
-
     private var inFlightKeys: Set<PayloadCacheKey> = []
 
-    /// Refresh the currently selected (period, provider) combination. Guards against concurrent
-    /// fetches for the same key so a slow initial request can't overwrite a newer one that
-    /// finished first (which would show stale numbers the user has already moved past).
+    /// Refresh the currently selected period. Guards against concurrent fetches for the same key
+    /// so a slow initial request can't overwrite a newer one that finished first.
     func refresh(includeOptimize: Bool) async {
         let key = currentKey
         guard !inFlightKeys.contains(key) else { return }
@@ -81,29 +70,26 @@ final class AppStore {
             isLoading = false
         }
         do {
-            let fresh = try await DataClient.fetch(period: key.period, provider: key.provider, includeOptimize: includeOptimize)
+            let fresh = try await DataClient.fetch(period: key.period, includeOptimize: includeOptimize)
             cache[key] = CachedPayload(payload: fresh, fetchedAt: Date())
             lastError = nil
         } catch {
             lastError = String(describing: error)
-            NSLog("CodeBurn: fetch failed for \(key.period.rawValue)/\(key.provider.rawValue): \(error)")
+            NSLog("CodeBurn: fetch failed for \(key.period.rawValue): \(error)")
         }
     }
 
     /// Background refresh for a period other than the visible one (e.g. keeping today fresh for the menubar badge).
     /// Does not toggle isLoading, so the popover's loading overlay is unaffected.
-    /// Always uses the .all provider since the menubar badge shows total spend.
     func refreshQuietly(period: Period) async {
         do {
-            let fresh = try await DataClient.fetch(period: period, provider: .all, includeOptimize: true)
-            cache[PayloadCacheKey(period: period, provider: .all)] = CachedPayload(payload: fresh, fetchedAt: Date())
+            let fresh = try await DataClient.fetch(period: period, includeOptimize: true)
+            cache[PayloadCacheKey(period: period)] = CachedPayload(payload: fresh, fetchedAt: Date())
         } catch {
             NSLog("CodeBurn: quiet refresh failed for \(period.rawValue): \(error)")
         }
     }
 
-    /// Fetch Claude subscription usage. Sets subscription = nil on missing creds (API users / unauthenticated).
-    /// Triggered lazily when the user opens the Plan pill, so the Keychain prompt only fires on intent.
     func refreshSubscription() async {
         subscriptionLoadState = .loading
         do {
@@ -111,11 +97,18 @@ final class AppStore {
             subscription = usage
             subscriptionError = nil
             subscriptionLoadState = .loaded
-            await captureSnapshots(for: usage)
-        } catch SubscriptionError.noCredentials {
+        } catch SubscriptionError.noSession {
             subscription = nil
             subscriptionError = nil
             subscriptionLoadState = .noCredentials
+        } catch SubscriptionError.sessionInvalid {
+            subscription = nil
+            subscriptionError = nil
+            subscriptionLoadState = .noCredentials
+        } catch SubscriptionError.sessionExpired(let code) {
+            subscription = nil
+            subscriptionError = "Session expired (\(code)). Run `auggie login` and reopen."
+            subscriptionLoadState = .sessionExpired
         } catch {
             subscription = nil
             subscriptionError = String(describing: error)
@@ -124,61 +117,7 @@ final class AppStore {
         }
     }
 
-    /// Persist one snapshot per window so we can answer "what did the prior cycle end at?"
-    /// when the current window has just reset and projection from current data isn't meaningful.
-    /// Also computes the effective_tokens consumed inside each 7-day window from local history,
-    /// which the CapacityEstimator uses to derive the absolute token capacity per tier.
-    private func captureSnapshots(for usage: SubscriptionUsage) async {
-        let now = Date()
-        let history = payload.history.daily
 
-        let captures: [(key: String, percent: Double?, resetsAt: Date?, effective: Double?)] = [
-            ("five_hour", usage.fiveHourPercent, usage.fiveHourResetsAt, nil),
-            ("seven_day", usage.sevenDayPercent, usage.sevenDayResetsAt,
-             effectiveTokensInLast7Days(history: history, asOf: now)),
-            ("seven_day_opus", usage.sevenDayOpusPercent, usage.sevenDayOpusResetsAt, nil),
-            ("seven_day_sonnet", usage.sevenDaySonnetPercent, usage.sevenDaySonnetResetsAt, nil),
-        ]
-        for capture in captures {
-            guard let percent = capture.percent, let resetsAt = capture.resetsAt else { continue }
-            await SubscriptionSnapshotStore.record(SubscriptionSnapshot(
-                windowKey: capture.key,
-                percent: percent,
-                resetsAt: resetsAt,
-                capturedAt: now,
-                effectiveTokens: capture.effective
-            ))
-        }
-
-        await refreshCapacityEstimates()
-    }
-
-    /// Sum effective tokens (input + 5*output + cache_creation + 0.1*cache_read) across the
-    /// last 7 days of dailyHistory. Used as the "tokens consumed in 7-day window" reading paired
-    /// with the API-reported percent for capacity estimation.
-    private func effectiveTokensInLast7Days(history: [DailyHistoryEntry], asOf now: Date) -> Double {
-        let cutoff = ISO8601DateFormatter().string(from: now.addingTimeInterval(-7 * 86400)).prefix(10)
-        return history
-            .filter { $0.date >= cutoff }
-            .reduce(0.0) { $0 + $1.effectiveTokens }
-    }
-
-    /// Run CapacityEstimator over each window's accumulated snapshots. Only snapshots with a
-    /// non-nil effectiveTokens contribute. Result lives in capacityEstimates dict for UI gating.
-    private func refreshCapacityEstimates() async {
-        var next: [String: CapacityEstimate] = [:]
-        for key in ["seven_day", "seven_day_opus", "seven_day_sonnet"] {
-            let snaps = await SubscriptionSnapshotStore.snapshots(for: key)
-            let capacitySnaps = snaps.compactMap { s -> CapacitySnapshot? in
-                guard let effective = s.effectiveTokens, effective > 0 else { return nil }
-                return CapacitySnapshot(percent: s.percent, effectiveTokens: effective, capturedAt: s.capturedAt)
-            }
-            if let estimate = CapacityEstimator.estimate(capacitySnaps) {
-                next[key] = estimate
-            }
-        }
-        capacityEstimates = next
-    }
 }
 
 enum SupportedCurrency: String, CaseIterable, Identifiable {
@@ -207,36 +146,12 @@ enum SupportedCurrency: String, CaseIterable, Identifiable {
     }
 }
 
-enum ProviderFilter: String, CaseIterable, Identifiable {
-    case all = "All"
-    case claude = "Claude"
-    case codex = "Codex"
-    case cursor = "Cursor"
-    case copilot = "Copilot"
-    case opencode = "OpenCode"
-    case pi = "Pi"
-
-    var id: String { rawValue }
-
-    /// Maps to the CLI's `--provider` argument values.
-    var cliArg: String {
-        switch self {
-        case .all: "all"
-        case .claude: "claude"
-        case .codex: "codex"
-        case .cursor: "cursor"
-        case .copilot: "copilot"
-        case .opencode: "opencode"
-        case .pi: "pi"
-        }
-    }
-}
-
 enum SubscriptionLoadState: Sendable, Equatable {
     case idle           // never tried, awaiting user intent
     case loading        // fetch in progress
     case loaded         // success; subscription is populated
-    case noCredentials  // tried; user has no Claude OAuth (API user / not logged in)
+    case noCredentials  // tried; user has no session (not logged in)
+    case sessionExpired // tried; session expired (401/403)
     case failed         // tried; error occurred
 }
 

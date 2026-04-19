@@ -6,10 +6,8 @@ import { CATEGORY_LABELS, type DateRange, type ProjectSummary, type TaskCategory
 import { formatCost, formatTokens } from './format.js'
 import { parseAllSessions, filterProjectsByName } from './parser.js'
 import { loadPricing } from './models.js'
-import { getAllProviders } from './providers/index.js'
+
 import { scanAndDetect, type WasteFinding, type WasteAction, type OptimizeResult } from './optimize.js'
-import { estimateContextBudget, discoverProjectCwd, type ContextBudget } from './context-budget.js'
-import { join } from 'path'
 
 type Period = 'today' | 'week' | '30days' | 'month' | 'all'
 type View = 'dashboard' | 'optimize'
@@ -50,14 +48,7 @@ const PANEL_COLORS = {
   bash: '#F5A05B',
 }
 
-const PROVIDER_COLORS: Record<string, string> = {
-  claude: '#FF8C42',
-  codex: '#5BF5A0',
-  cursor: '#00B4D8',
-  opencode: '#A78BFA',
-  pi: '#F472B6',
-  all: '#FF8C42',
-}
+
 
 const CATEGORY_COLORS: Record<TaskCategory, string> = {
   coding: '#5B9EF5',
@@ -235,19 +226,16 @@ function shortProject(encoded: string): string {
 
 const PROJECT_COL_AVG = 7
 const PROJECT_COL_BASE_WIDTH = 30
-const PROJECT_COL_WITH_OVERHEAD_WIDTH = 40
 
-function ProjectBreakdown({ projects, pw, bw, budgets }: { projects: ProjectSummary[]; pw: number; bw: number; budgets?: Map<string, ContextBudget> }) {
+function ProjectBreakdown({ projects, pw, bw }: { projects: ProjectSummary[]; pw: number; bw: number }) {
   const maxCost = Math.max(...projects.map(p => p.totalCostUSD))
-  const hasBudgets = budgets && budgets.size > 0
-  const nw = Math.max(8, pw - bw - (hasBudgets ? PROJECT_COL_WITH_OVERHEAD_WIDTH : PROJECT_COL_BASE_WIDTH))
+  const nw = Math.max(8, pw - bw - PROJECT_COL_BASE_WIDTH)
   return (
     <Panel title="By Project" color={PANEL_COLORS.project} width={pw}>
       <Text dimColor wrap="truncate-end">
-        {''.padEnd(bw + 1 + nw)}{'cost'.padStart(8)}{'avg/s'.padStart(PROJECT_COL_AVG)}{'sess'.padStart(6)}{hasBudgets ? 'overhead'.padStart(10) : ''}
+        {''.padEnd(bw + 1 + nw)}{'cost'.padStart(8)}{'avg/s'.padStart(PROJECT_COL_AVG)}{'sess'.padStart(6)}
       </Text>
       {projects.slice(0, 8).map((project, i) => {
-        const budget = budgets?.get(project.project)
         const avgCost = project.sessions.length > 0
           ? formatCost(project.totalCostUSD / project.sessions.length)
           : '-'
@@ -258,7 +246,6 @@ function ProjectBreakdown({ projects, pw, bw, budgets }: { projects: ProjectSumm
             <Text color={GOLD}>{formatCost(project.totalCostUSD).padStart(8)}</Text>
             <Text color={GOLD}>{avgCost.padStart(PROJECT_COL_AVG)}</Text>
             <Text>{String(project.sessions.length).padStart(6)}</Text>
-            {hasBudgets && <Text color="#7B9EF5">{(budget ? formatTokens(budget.total) : '-').padStart(10)}</Text>}
           </Text>
         )
       })}
@@ -446,17 +433,7 @@ function BashBreakdown({ projects, pw, bw }: { projects: ProjectSummary[]; pw: n
   )
 }
 
-const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
-  all: 'All',
-  claude: 'Claude',
-  codex: 'Codex',
-  cursor: 'Cursor',
-  opencode: 'OpenCode',
-  pi: 'Pi',
-}
-function getProviderDisplayName(name: string): string { return PROVIDER_DISPLAY_NAMES[name] ?? name }
-
-function PeriodTabs({ active, providerName, showProvider }: { active: Period; providerName?: string; showProvider?: boolean }) {
+function PeriodTabs({ active }: { active: Period }) {
   return (
     <Box justifyContent="space-between" paddingX={1}>
       <Box gap={1}>
@@ -466,9 +443,6 @@ function PeriodTabs({ active, providerName, showProvider }: { active: Period; pr
           </Text>
         ))}
       </Box>
-      {showProvider && providerName && (
-        <Box><Text color={DIM}>|  </Text><Text color={ORANGE} bold>[p]</Text><Text bold color={PROVIDER_COLORS[providerName] ?? ORANGE}> {getProviderDisplayName(providerName)}</Text></Box>
-      )}
     </Box>
   )
 }
@@ -525,7 +499,7 @@ function OptimizeView({ findings, costRate, projects, label, width, healthScore,
   )
 }
 
-function StatusBar({ width, showProvider, view, findingCount, optimizeAvailable }: { width: number; showProvider?: boolean; view?: View; findingCount?: number; optimizeAvailable?: boolean }) {
+function StatusBar({ width, view, findingCount }: { width: number; view?: View; findingCount?: number }) {
   const isOptimize = view === 'optimize'
   return (
     <Box borderStyle="round" borderColor={DIM} width={width} justifyContent="center" paddingX={1}>
@@ -539,10 +513,9 @@ function StatusBar({ width, showProvider, view, findingCount, optimizeAvailable 
         <Text color={ORANGE} bold>3</Text><Text dimColor> 30 days   </Text>
         <Text color={ORANGE} bold>4</Text><Text dimColor> month   </Text>
         <Text color={ORANGE} bold>5</Text><Text dimColor> all time</Text>
-        {!isOptimize && optimizeAvailable && findingCount != null && findingCount > 0 && (
+        {!isOptimize && findingCount != null && findingCount > 0 && (
           <><Text dimColor>   </Text><Text color={ORANGE} bold>o</Text><Text dimColor> optimize</Text><Text color="#F55B5B"> ({findingCount})</Text></>
         )}
-        {showProvider && (<><Text dimColor>   </Text><Text color={ORANGE} bold>p</Text><Text dimColor> provider</Text></>)}
       </Text>
     </Box>
   )
@@ -553,31 +526,26 @@ function Row({ wide, width, children }: { wide: boolean; width: number; children
   return <>{children}</>
 }
 
-function DashboardContent({ projects, period, columns, activeProvider, budgets }: { projects: ProjectSummary[]; period: Period; columns?: number; activeProvider?: string; budgets?: Map<string, ContextBudget> }) {
+function DashboardContent({ projects, period, columns }: { projects: ProjectSummary[]; period: Period; columns?: number }) {
   const { dashWidth, wide, halfWidth, barWidth } = getLayout(columns)
-  const isCursor = activeProvider === 'cursor'
   if (projects.length === 0) return <Panel title="CodeBurn" color={ORANGE} width={dashWidth}><Text dimColor>No usage data found for {PERIOD_LABELS[period]}.</Text></Panel>
   const pw = wide ? halfWidth : dashWidth
   const days = period === 'all' ? undefined : (period === 'month' || period === '30days' ? 31 : 14)
   return (
     <Box flexDirection="column" width={dashWidth}>
       <Overview projects={projects} label={PERIOD_LABELS[period]} width={dashWidth} />
-      <Row wide={wide} width={dashWidth}><DailyActivity projects={projects} days={days} pw={pw} bw={barWidth} /><ProjectBreakdown projects={projects} pw={pw} bw={barWidth} budgets={budgets} /></Row>
+      <Row wide={wide} width={dashWidth}><DailyActivity projects={projects} days={days} pw={pw} bw={barWidth} /><ProjectBreakdown projects={projects} pw={pw} bw={barWidth} /></Row>
       <TopSessions projects={projects} pw={dashWidth} bw={barWidth} />
       <Row wide={wide} width={dashWidth}><ActivityBreakdown projects={projects} pw={pw} bw={barWidth} /><ModelBreakdown projects={projects} pw={pw} bw={barWidth} /></Row>
-      {isCursor ? (
-        <ToolBreakdown projects={projects} pw={dashWidth} bw={barWidth} title="Languages" filterPrefix="lang:" />
-      ) : (
-        <><Row wide={wide} width={dashWidth}><ToolBreakdown projects={projects} pw={pw} bw={barWidth} /><BashBreakdown projects={projects} pw={pw} bw={barWidth} /></Row><McpBreakdown projects={projects} pw={dashWidth} bw={barWidth} /></>
-      )}
+      <Row wide={wide} width={dashWidth}><ToolBreakdown projects={projects} pw={pw} bw={barWidth} /><BashBreakdown projects={projects} pw={pw} bw={barWidth} /></Row>
+      <McpBreakdown projects={projects} pw={dashWidth} bw={barWidth} />
     </Box>
   )
 }
 
-function InteractiveDashboard({ initialProjects, initialPeriod, initialProvider, refreshSeconds, projectFilter, excludeFilter }: {
+function InteractiveDashboard({ initialProjects, initialPeriod, refreshSeconds, projectFilter, excludeFilter }: {
   initialProjects: ProjectSummary[]
   initialPeriod: Period
-  initialProvider: string
   refreshSeconds?: number
   projectFilter?: string[]
   excludeFilter?: string[]
@@ -586,48 +554,14 @@ function InteractiveDashboard({ initialProjects, initialPeriod, initialProvider,
   const [period, setPeriod] = useState<Period>(initialPeriod)
   const [projects, setProjects] = useState<ProjectSummary[]>(initialProjects)
   const [loading, setLoading] = useState(false)
-  const [activeProvider, setActiveProvider] = useState(initialProvider)
-  const [detectedProviders, setDetectedProviders] = useState<string[]>([])
   const [view, setView] = useState<View>('dashboard')
   const [optimizeResult, setOptimizeResult] = useState<OptimizeResult | null>(null)
-  const [projectBudgets, setProjectBudgets] = useState<Map<string, ContextBudget>>(new Map())
   const { columns } = useWindowSize()
   const { dashWidth } = getLayout(columns)
-  const multipleProviders = detectedProviders.length > 1
-  const optimizeAvailable = activeProvider === 'all' || activeProvider === 'claude'
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const findingCount = optimizeResult?.findings.length ?? 0
 
   useEffect(() => {
-    let cancelled = false
-    async function detect() {
-      const found: string[] = []
-      for (const p of await getAllProviders()) { const s = await p.discoverSessions(); if (s.length > 0) found.push(p.name) }
-      if (!cancelled) setDetectedProviders(found)
-    }
-    detect()
-    return () => { cancelled = true }
-  }, [])
-
-  useEffect(() => {
-    let cancelled = false
-    async function loadBudgets() {
-      const claudeDir = join(homedir(), '.claude', 'projects')
-      const budgets = new Map<string, ContextBudget>()
-      for (const project of projects.slice(0, 8)) {
-        if (cancelled) return
-        const cwd = await discoverProjectCwd(join(claudeDir, project.project))
-        if (!cwd) continue
-        budgets.set(project.project, await estimateContextBudget(cwd))
-      }
-      if (!cancelled) setProjectBudgets(budgets)
-    }
-    loadBudgets()
-    return () => { cancelled = true }
-  }, [projects])
-
-  useEffect(() => {
-    if (!optimizeAvailable) { setOptimizeResult(null); return }
     let cancelled = false
     async function scan() {
       if (projects.length === 0) { setOptimizeResult(null); return }
@@ -636,47 +570,41 @@ function InteractiveDashboard({ initialProjects, initialPeriod, initialProvider,
     }
     scan()
     return () => { cancelled = true }
-  }, [projects, period, optimizeAvailable])
+  }, [projects, period])
 
-  const reloadData = useCallback(async (p: Period, prov: string) => {
+  const reloadData = useCallback(async (p: Period) => {
     setLoading(true)
     setOptimizeResult(null)
     const range = getDateRange(p)
-    const data = filterProjectsByName(await parseAllSessions(range, prov), projectFilter, excludeFilter)
+    const data = filterProjectsByName(await parseAllSessions(range), projectFilter, excludeFilter)
     setProjects(data)
     setLoading(false)
   }, [projectFilter, excludeFilter])
 
   useEffect(() => {
     if (!refreshSeconds || refreshSeconds <= 0) return
-    const id = setInterval(() => { reloadData(period, activeProvider) }, refreshSeconds * 1000)
+    const id = setInterval(() => { reloadData(period) }, refreshSeconds * 1000)
     return () => clearInterval(id)
-  }, [refreshSeconds, period, activeProvider, reloadData])
+  }, [refreshSeconds, period, reloadData])
 
   const switchPeriod = useCallback((np: Period) => {
     if (np === period) return
     setPeriod(np); setView('dashboard')
     if (debounceRef.current) clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => { reloadData(np, activeProvider) }, 600)
-  }, [period, activeProvider, reloadData])
+    debounceRef.current = setTimeout(() => { reloadData(np) }, 600)
+  }, [period, reloadData])
 
   const switchPeriodImmediate = useCallback(async (np: Period) => {
     if (np === period) return
     setPeriod(np); setView('dashboard')
     if (debounceRef.current) clearTimeout(debounceRef.current)
-    await reloadData(np, activeProvider)
-  }, [period, activeProvider, reloadData])
+    await reloadData(np)
+  }, [period, reloadData])
 
   useInput((input, key) => {
     if (input === 'q') { exit(); return }
-    if (input === 'o' && findingCount > 0 && view === 'dashboard' && optimizeAvailable) { setView('optimize'); return }
+    if (input === 'o' && findingCount > 0 && view === 'dashboard') { setView('optimize'); return }
     if ((input === 'b' || key.escape) && view === 'optimize') { setView('dashboard'); return }
-    if (input === 'p' && multipleProviders) {
-      const opts = ['all', ...detectedProviders]; const next = opts[(opts.indexOf(activeProvider) + 1) % opts.length]
-      setActiveProvider(next); setView('dashboard')
-      if (debounceRef.current) clearTimeout(debounceRef.current)
-      reloadData(period, next); return
-    }
     const idx = PERIODS.indexOf(period)
     if (key.leftArrow && view === 'dashboard') switchPeriod(PERIODS[(idx - 1 + PERIODS.length) % PERIODS.length])
     else if ((key.rightArrow || key.tab) && view === 'dashboard') switchPeriod(PERIODS[(idx + 1) % PERIODS.length])
@@ -690,47 +618,47 @@ function InteractiveDashboard({ initialProjects, initialPeriod, initialProvider,
   if (loading) {
     return (
       <Box flexDirection="column" width={dashWidth}>
-        <PeriodTabs active={period} providerName={activeProvider} showProvider={multipleProviders} />
+        <PeriodTabs active={period} />
         <Panel title="CodeBurn" color={ORANGE} width={dashWidth}><Text dimColor>Loading {PERIOD_LABELS[period]}...</Text></Panel>
-        <StatusBar width={dashWidth} showProvider={multipleProviders} view="dashboard" findingCount={0} optimizeAvailable={false} />
+        <StatusBar width={dashWidth} view="dashboard" findingCount={0} />
       </Box>
     )
   }
 
   return (
     <Box flexDirection="column" width={dashWidth}>
-      <PeriodTabs active={period} providerName={activeProvider} showProvider={multipleProviders} />
+      <PeriodTabs active={period} />
       {view === 'optimize' && optimizeResult
         ? <OptimizeView findings={optimizeResult.findings} costRate={optimizeResult.costRate} projects={projects} label={PERIOD_LABELS[period]} width={dashWidth} healthScore={optimizeResult.healthScore} healthGrade={optimizeResult.healthGrade} />
-        : <DashboardContent projects={projects} period={period} columns={columns} activeProvider={activeProvider} budgets={projectBudgets} />}
-      <StatusBar width={dashWidth} showProvider={multipleProviders} view={view} findingCount={findingCount} optimizeAvailable={optimizeAvailable} />
+        : <DashboardContent projects={projects} period={period} columns={columns} />}
+      <StatusBar width={dashWidth} view={view} findingCount={findingCount} />
     </Box>
   )
 }
 
-function StaticDashboard({ projects, period, activeProvider }: { projects: ProjectSummary[]; period: Period; activeProvider?: string }) {
+function StaticDashboard({ projects, period }: { projects: ProjectSummary[]; period: Period }) {
   const { columns } = useWindowSize()
   const { dashWidth } = getLayout(columns)
   return (
     <Box flexDirection="column" width={dashWidth}>
       <PeriodTabs active={period} />
-      <DashboardContent projects={projects} period={period} columns={columns} activeProvider={activeProvider} />
+      <DashboardContent projects={projects} period={period} columns={columns} />
     </Box>
   )
 }
 
-export async function renderDashboard(period: Period = 'week', provider: string = 'all', refreshSeconds?: number, projectFilter?: string[], excludeFilter?: string[], customRange?: DateRange | null): Promise<void> {
+export async function renderDashboard(period: Period = 'week', refreshSeconds?: number, projectFilter?: string[], excludeFilter?: string[], customRange?: DateRange | null): Promise<void> {
   await loadPricing()
   const range = customRange ?? getDateRange(period)
-  const projects = filterProjectsByName(await parseAllSessions(range, provider), projectFilter, excludeFilter)
+  const projects = filterProjectsByName(await parseAllSessions(range), projectFilter, excludeFilter)
   const isTTY = process.stdin.isTTY && process.stdout.isTTY
   if (isTTY) {
     const { waitUntilExit } = render(
-      <InteractiveDashboard initialProjects={projects} initialPeriod={period} initialProvider={provider} refreshSeconds={refreshSeconds} projectFilter={projectFilter} excludeFilter={excludeFilter} />
+      <InteractiveDashboard initialProjects={projects} initialPeriod={period} refreshSeconds={refreshSeconds} projectFilter={projectFilter} excludeFilter={excludeFilter} />
     )
     await waitUntilExit()
   } else {
-    const { unmount } = render(<StaticDashboard projects={projects} period={period} activeProvider={provider} />, { patchConsole: false })
+    const { unmount } = render(<StaticDashboard projects={projects} period={period} />, { patchConsole: false })
     unmount()
   }
 }
