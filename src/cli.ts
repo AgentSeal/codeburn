@@ -13,6 +13,7 @@ import { CATEGORY_LABELS, type DateRange, type ProjectSummary, type TaskCategory
 import { renderDashboard } from './dashboard.js'
 import { parseDateRangeFlags } from './cli-date.js'
 import { runOptimize, scanAndDetect } from './optimize.js'
+import { renderCompare } from './compare.js'
 import { getAllProviders } from './providers/index.js'
 import { readConfig, saveConfig, getConfigFilePath } from './config.js'
 import { createRequire } from 'node:module'
@@ -647,6 +648,17 @@ program
     const { range, label } = getDateRange(opts.period)
     const projects = await parseAllSessions(range, opts.provider)
     await runOptimize(projects, label, range)
+  })
+
+program
+  .command('compare')
+  .description('Compare two AI models side-by-side')
+  .option('-p, --period <period>', 'Analysis period: today, week, 30days, month, all', 'all')
+  .option('--provider <provider>', 'Filter by provider: all, claude, codex, cursor', 'all')
+  .action(async (opts) => {
+    await loadPricing()
+    const { range } = getDateRange(opts.period)
+    await renderCompare(range, opts.provider)
   })
 
 program.parse()
