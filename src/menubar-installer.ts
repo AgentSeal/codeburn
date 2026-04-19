@@ -1,8 +1,10 @@
 import { spawn } from 'node:child_process'
-import { createWriteStream } from 'node:fs'
-import { mkdir, mkdtemp, rename, rm, stat } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { createReadStream, createWriteStream } from 'node:fs'
+import { mkdir, mkdtemp, readFile, rename, rm, stat } from 'node:fs/promises'
 import { homedir, platform, tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { URL } from 'node:url'
 import { pipeline } from 'node:stream/promises'
 import { Readable } from 'node:stream'
 
@@ -11,14 +13,26 @@ import { Readable } from 'node:stream'
 const RELEASE_API = 'https://api.github.com/repos/getagentseal/codeburn/releases/latest'
 const APP_BUNDLE_NAME = 'CodeBurnMenubar.app'
 const ASSET_PATTERN = /^CodeBurnMenubar-.*\.zip$/
+const SHA256_SUFFIX = '.sha256'
 const APP_PROCESS_NAME = 'CodeBurnMenubar'
 const SUPPORTED_OS = 'darwin'
 const MIN_MACOS_MAJOR = 14
+/// Only accept download URLs served from these GitHub-controlled hosts. Stops a release-asset
+/// JSON whose `browser_download_url` was tampered with (or returned via a redirect we forwarded)
+/// from pointing the installer at an attacker-hosted binary.
+const ALLOWED_DOWNLOAD_HOSTS = new Set([
+  'github.com',
+  'objects.githubusercontent.com',
+  'release-assets.githubusercontent.com',
+])
+const SHA256_HEX_PATTERN = /^[0-9a-fA-F]{64}$/
+const ALLOW_UNVERIFIED_ENV = 'CODEBURN_ALLOW_UNVERIFIED_INSTALL'
 
 export type InstallResult = { installedPath: string; launched: boolean }
 
 type ReleaseAsset = { name: string; browser_download_url: string }
 type ReleaseResponse = { tag_name: string; assets: ReleaseAsset[] }
+type AssetPair = { archive: ReleaseAsset; checksum: ReleaseAsset | null; tag: string }
 
 function userApplicationsDir(): string {
   return join(homedir(), 'Applications')
@@ -57,7 +71,7 @@ async function sysProductVersion(): Promise<string> {
   })
 }
 
-async function fetchLatestReleaseAsset(): Promise<ReleaseAsset> {
+async function fetchLatestReleaseAsset(): Promise<AssetPair> {
   const response = await fetch(RELEASE_API, {
     headers: {
       // Identify the installer so GitHub's abuse heuristics treat us as a known client.
@@ -69,17 +83,34 @@ async function fetchLatestReleaseAsset(): Promise<ReleaseAsset> {
     throw new Error(`GitHub release lookup failed: HTTP ${response.status}`)
   }
   const body = await response.json() as ReleaseResponse
-  const asset = body.assets.find(a => ASSET_PATTERN.test(a.name))
-  if (!asset) {
+  const archive = body.assets.find(a => ASSET_PATTERN.test(a.name))
+  if (!archive) {
     throw new Error(
       `No ${APP_BUNDLE_NAME} zip found in release ${body.tag_name}. ` +
       `Check https://github.com/getagentseal/codeburn/releases.`
     )
   }
-  return asset
+  const checksum = body.assets.find(a => a.name === `${archive.name}${SHA256_SUFFIX}`) ?? null
+  return { archive, checksum, tag: body.tag_name }
+}
+
+/// Refuses to download if the published asset URL points anywhere other than a GitHub-controlled
+/// host. Belt-and-braces alongside the SHA256 verification: even with TLS, a malicious release
+/// payload can ship arbitrary `browser_download_url` strings.
+function ensureAllowedHost(url: string, label: string): void {
+  let host: string
+  try {
+    host = new URL(url).host.toLowerCase()
+  } catch {
+    throw new Error(`${label} URL is unparseable: ${url}`)
+  }
+  if (!ALLOWED_DOWNLOAD_HOSTS.has(host)) {
+    throw new Error(`${label} URL points at an unexpected host (${host}); refusing to install.`)
+  }
 }
 
 async function downloadToFile(url: string, destPath: string): Promise<void> {
+  ensureAllowedHost(url, 'Download')
   const response = await fetch(url, {
     headers: { 'User-Agent': 'codeburn-menubar-installer' },
     redirect: 'follow',
@@ -90,6 +121,77 @@ async function downloadToFile(url: string, destPath: string): Promise<void> {
   // fetch's ReadableStream needs to be wrapped for Node streams.
   const nodeStream = Readable.fromWeb(response.body as never)
   await pipeline(nodeStream, createWriteStream(destPath))
+}
+
+async function fetchExpectedSha256(asset: ReleaseAsset): Promise<string> {
+  ensureAllowedHost(asset.browser_download_url, 'Checksum')
+  const response = await fetch(asset.browser_download_url, {
+    headers: { 'User-Agent': 'codeburn-menubar-installer' },
+    redirect: 'follow',
+  })
+  if (!response.ok) {
+    throw new Error(`Checksum download failed: HTTP ${response.status}`)
+  }
+  const body = (await response.text()).trim()
+  // Accept either a bare hex digest or the `sha256sum` two-column format ("<hex>  <name>").
+  const hex = body.split(/\s+/)[0] ?? ''
+  if (!SHA256_HEX_PATTERN.test(hex)) {
+    throw new Error(`Checksum file does not contain a valid SHA-256 digest.`)
+  }
+  return hex.toLowerCase()
+}
+
+async function computeFileSha256(path: string): Promise<string> {
+  const hash = createHash('sha256')
+  await pipeline(createReadStream(path), hash)
+  return hash.digest('hex').toLowerCase()
+}
+
+async function verifyArchiveIntegrity(archivePath: string, checksum: ReleaseAsset | null, tag: string): Promise<void> {
+  if (!checksum) {
+    if (process.env[ALLOW_UNVERIFIED_ENV] === '1') {
+      console.warn(
+        `WARNING: release ${tag} ships no .sha256 sidecar; proceeding because ` +
+        `${ALLOW_UNVERIFIED_ENV}=1. The downloaded bundle is NOT integrity-verified.`,
+      )
+      return
+    }
+    throw new Error(
+      `Release ${tag} does not publish a SHA-256 checksum sidecar (${APP_BUNDLE_NAME}<version>.zip${SHA256_SUFFIX}). ` +
+      `Refusing to install an unverified binary. ` +
+      `Set ${ALLOW_UNVERIFIED_ENV}=1 to override at your own risk, or wait for a release that ships a sidecar.`
+    )
+  }
+  const [expected, actual] = await Promise.all([
+    fetchExpectedSha256(checksum),
+    computeFileSha256(archivePath),
+  ])
+  if (expected !== actual) {
+    throw new Error(
+      `Checksum mismatch for ${APP_BUNDLE_NAME} (${tag}): expected ${expected}, got ${actual}. ` +
+      `The downloaded archive does not match the published SHA-256; refusing to install.`
+    )
+  }
+  console.log(`Verified SHA-256 (${actual.slice(0, 12)}...) against published sidecar.`)
+}
+
+async function readChecksumSidecar(path: string): Promise<string> {
+  const body = (await readFile(path, 'utf-8')).trim()
+  const hex = body.split(/\s+/)[0] ?? ''
+  if (!SHA256_HEX_PATTERN.test(hex)) {
+    throw new Error(`Local checksum sidecar at ${path} does not contain a valid SHA-256 digest.`)
+  }
+  return hex.toLowerCase()
+}
+
+async function verifyLocalArchive(archivePath: string, checksumPath: string): Promise<void> {
+  const [expected, actual] = await Promise.all([
+    readChecksumSidecar(checksumPath),
+    computeFileSha256(archivePath),
+  ])
+  if (expected !== actual) {
+    throw new Error(`Local checksum mismatch: expected ${expected}, got ${actual}.`)
+  }
 }
 
 async function runCommand(command: string, args: string[]): Promise<void> {
@@ -134,13 +236,15 @@ export async function installMenubarApp(options: { force?: boolean } = {}): Prom
   }
 
   console.log('Looking up the latest CodeBurn Menubar release...')
-  const asset = await fetchLatestReleaseAsset()
+  const { archive, checksum, tag } = await fetchLatestReleaseAsset()
 
   const stagingDir = await mkdtemp(join(tmpdir(), 'codeburn-menubar-'))
   try {
-    const archivePath = join(stagingDir, asset.name)
-    console.log(`Downloading ${asset.name}...`)
-    await downloadToFile(asset.browser_download_url, archivePath)
+    const archivePath = join(stagingDir, archive.name)
+    console.log(`Downloading ${archive.name}...`)
+    await downloadToFile(archive.browser_download_url, archivePath)
+
+    await verifyArchiveIntegrity(archivePath, checksum, tag)
 
     console.log('Unpacking...')
     await runCommand('/usr/bin/unzip', ['-q', archivePath, '-d', stagingDir])
@@ -150,10 +254,10 @@ export async function installMenubarApp(options: { force?: boolean } = {}): Prom
       throw new Error(`Archive did not contain ${APP_BUNDLE_NAME}.`)
     }
 
-    // Clear Gatekeeper's quarantine xattr. Without this, the first launch shows the
-    // "cannot verify developer" prompt even for a signed + notarized app when the bundle
-    // was delivered via curl/fetch instead of the Mac App Store.
-    await runCommand('/usr/bin/xattr', ['-dr', 'com.apple.quarantine', unpackedApp]).catch(() => {})
+    // Quarantine xattr is intentionally left in place so Gatekeeper evaluates the bundle
+    // on first launch. Stripping it (the previous behaviour) defeated the OS-level prompt
+    // that gives the user a chance to abort if the binary was tampered with -- the SHA-256
+    // sidecar verification above is necessary but not sufficient.
 
     await mkdir(appsDir, { recursive: true })
     if (alreadyInstalled) {
@@ -170,4 +274,15 @@ export async function installMenubarApp(options: { force?: boolean } = {}): Prom
   } finally {
     await rm(stagingDir, { recursive: true, force: true })
   }
+}
+
+/// Test seam: verifies a locally-staged archive against a sidecar without touching the network.
+/// Exported so tests can exercise the SHA-256 path end-to-end with fixture files.
+export async function _verifyLocalArchiveForTest(archivePath: string, checksumPath: string): Promise<void> {
+  return verifyLocalArchive(archivePath, checksumPath)
+}
+
+/// Test seam: exposes the host allow-list check for unit tests.
+export function _ensureAllowedHostForTest(url: string): void {
+  ensureAllowedHost(url, 'Test')
 }

@@ -2,8 +2,9 @@ name: Release macOS Menubar
 
 # Triggers on a `mac-v*` tag push (e.g. `git tag mac-v0.8.0 && git push origin mac-v0.8.0`),
 # or manually via the Actions tab. Builds a universal arm64+x86_64 bundle, ad-hoc signs it,
-# zips via `ditto`, and uploads the zip to the GitHub Release. `npx codeburn menubar` clears
-# the download quarantine flag on install so Gatekeeper stays quiet.
+# zips via `ditto`, computes a SHA-256 sidecar so the installer can verify integrity end-to-end,
+# and uploads both the zip and the .sha256 to the GitHub Release. `npx codeburn menubar` then
+# downloads the zip, fetches the sidecar, and refuses to install on hash mismatch.
 on:
   push:
     tags:
@@ -40,12 +41,28 @@ jobs:
       - name: Build + bundle + zip
         run: mac/Scripts/package-app.sh "${{ steps.version.outputs.value }}"
 
+      - name: Generate SHA-256 sidecars
+        # Produces `<archive>.sha256` alongside each zip in the standard `sha256sum` format
+        # ("<hex>  <filename>"). The installer downloads this sidecar and refuses to proceed
+        # on mismatch, so an attacker would have to swap both files atomically to deliver a
+        # malicious binary.
+        working-directory: mac/.build/dist
+        run: |
+          set -euo pipefail
+          for archive in CodeBurnMenubar-*.zip; do
+            shasum -a 256 "$archive" > "$archive.sha256"
+            echo "Wrote sidecar for $archive:"
+            cat "$archive.sha256"
+          done
+
       - name: Upload artifact (for manual runs)
         if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
           name: CodeBurnMenubar-${{ steps.version.outputs.value }}
-          path: mac/.build/dist/CodeBurnMenubar-*.zip
+          path: |
+            mac/.build/dist/CodeBurnMenubar-*.zip
+            mac/.build/dist/CodeBurnMenubar-*.zip.sha256
           if-no-files-found: error
 
       - name: Create / update GitHub Release
@@ -61,9 +78,11 @@ jobs:
             npx codeburn menubar
             ```
 
-            That command drops the app into `~/Applications`, clears the download
-            quarantine, and launches it. If you download the zip from this page directly
-            and macOS shows "cannot verify developer", right-click the app in Finder and
-            pick Open to whitelist it once.
-          files: mac/.build/dist/CodeBurnMenubar-*.zip
+            That command drops the app into `~/Applications` and launches it. The installer
+            downloads the SHA-256 sidecar published alongside the zip and refuses to install
+            on hash mismatch. macOS Gatekeeper will still prompt on first launch because the
+            bundle is ad-hoc signed; right-click the app in Finder and pick Open to confirm.
+          files: |
+            mac/.build/dist/CodeBurnMenubar-*.zip
+            mac/.build/dist/CodeBurnMenubar-*.zip.sha256
           fail_on_unmatched_files: true
