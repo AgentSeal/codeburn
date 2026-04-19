@@ -10,6 +10,12 @@ private let betaHeader = "oauth-2025-04-20"
 private let userAgent = "claude-code/2.1.0"
 private let requestTimeout: TimeInterval = 30
 
+/// User-controllable kill switch for the entire subscription fetch path. Set with:
+///   defaults write org.agentseal.codeburn-menubar CodeBurnDisableSubscriptionFetch -bool true
+/// When true, no credential file or Keychain item is read and no requests are sent to
+/// platform.claude.com / api.anthropic.com. The Plan pill behaves as if no credentials exist.
+private let disableSubscriptionFetchKey = "CodeBurnDisableSubscriptionFetch"
+
 /// Claude Code writes Keychain items with `kSecAttrAccount = "default"`. Filtering on this
 /// prevents a planted Keychain item from another app (or a stale install with a mangled
 /// account) from being accepted as our source of OAuth credentials.
@@ -36,6 +42,12 @@ enum SubscriptionError: Error, LocalizedError {
 
 struct SubscriptionClient {
     static func fetch() async throws -> SubscriptionUsage {
+        if UserDefaults.standard.bool(forKey: disableSubscriptionFetchKey) {
+            // Treat opt-out exactly like "no credentials": AppStore.refreshSubscription maps this
+            // to subscriptionLoadState = .noCredentials and the popover shows the unauthenticated
+            // copy, which is the right UX for a user who explicitly disabled the integration.
+            throw SubscriptionError.noCredentials
+        }
         let creds = try loadCredentials()
 
         // Try the usage call with the existing token first. Only refresh on 401.
