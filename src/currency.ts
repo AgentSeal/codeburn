@@ -11,6 +11,7 @@ type CurrencyState = {
 }
 
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000
+const FETCH_TIMEOUT_MS = 10_000
 const FRANKFURTER_URL = 'https://api.frankfurter.app/latest?from=USD&to='
 // Defensive bounds on any fetched FX rate. Outside this band the rate is either a parser bug
 // or a tampered Frankfurter response, and we refuse to multiply it into displayed costs.
@@ -63,7 +64,7 @@ function getRateCachePath(): string {
 }
 
 async function fetchRate(code: string): Promise<number> {
-  const response = await fetch(`${FRANKFURTER_URL}${code}`)
+  const response = await fetch(`${FRANKFURTER_URL}${code}`, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })
   if (!response.ok) throw new Error(`HTTP ${response.status}`)
   const data = await response.json() as { rates?: Record<string, unknown> }
   const rate = data.rates?.[code]
