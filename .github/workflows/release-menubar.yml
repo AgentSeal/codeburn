@@ -38,8 +38,88 @@ jobs:
       - name: Show Swift toolchain
         run: swift --version
 
+      - name: Import Developer ID signing cert
+        # Degrades cleanly when the optional secrets are absent -- the step logs and skips
+        # without failing, so forks that have not set up an Apple Developer account still
+        # get ad-hoc-signed builds via the fallback path in package-app.sh.
+        # Required secrets to enable Developer ID signing:
+        #   APPLE_DEVELOPER_ID_P12_BASE64       -- base64-encoded .p12 (cert + private key)
+        #   APPLE_DEVELOPER_ID_P12_PASSWORD     -- password for the .p12
+        #   APPLE_DEVELOPER_ID_SIGNING_IDENTITY -- e.g. "Developer ID Application: ACME, Inc. (TEAMID)"
+        # The keychain is discarded when the runner VM is torn down, so the imported cert
+        # never leaves the job.
+        id: signing
+        env:
+          P12_BASE64: ${{ secrets.APPLE_DEVELOPER_ID_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_P12_PASSWORD }}
+          SIGNING_IDENTITY: ${{ secrets.APPLE_DEVELOPER_ID_SIGNING_IDENTITY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${P12_BASE64}" || -z "${P12_PASSWORD}" || -z "${SIGNING_IDENTITY}" ]]; then
+            echo "No Developer ID secrets set; falling back to ad-hoc signing."
+            echo "identity=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          KEYCHAIN="$RUNNER_TEMP/codeburn-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          CERT_PATH="$RUNNER_TEMP/codeburn-developer-id.p12"
+          echo "$P12_BASE64" | base64 --decode > "$CERT_PATH"
+          security import "$CERT_PATH" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" > /dev/null
+          rm -f "$CERT_PATH"
+          echo "identity=${SIGNING_IDENTITY}" >> "$GITHUB_OUTPUT"
+          echo "Developer ID cert imported into an ephemeral keychain."
+
       - name: Build + bundle + zip
+        env:
+          DEVELOPER_ID_SIGNING_IDENTITY: ${{ steps.signing.outputs.identity }}
         run: mac/Scripts/package-app.sh "${{ steps.version.outputs.value }}"
+
+      - name: Notarise + staple
+        # Only runs when Developer ID signing succeeded AND notary credentials are present.
+        # Notarisation re-verifies the signature server-side and stapling embeds the ticket
+        # so Gatekeeper clears the bundle offline on first launch. Without stapling, users
+        # who install while offline would see the "cannot verify developer" prompt until the
+        # machine can reach apple.com.
+        # Required secrets:
+        #   APPLE_NOTARY_APPLE_ID       -- Apple ID email
+        #   APPLE_NOTARY_APP_PASSWORD   -- app-specific password from appleid.apple.com
+        #   APPLE_NOTARY_TEAM_ID        -- 10-char team ID
+        if: steps.signing.outputs.identity != ''
+        env:
+          APPLE_ID: ${{ secrets.APPLE_NOTARY_APPLE_ID }}
+          APP_PASSWORD: ${{ secrets.APPLE_NOTARY_APP_PASSWORD }}
+          TEAM_ID: ${{ secrets.APPLE_NOTARY_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${APPLE_ID}" || -z "${APP_PASSWORD}" || -z "${TEAM_ID}" ]]; then
+            echo "Notary credentials missing; skipping notarisation (bundle is signed but not notarised)."
+            exit 0
+          fi
+          cd mac/.build/dist
+          for archive in CodeBurnMenubar-*.zip; do
+            echo "Submitting $archive to notarytool..."
+            xcrun notarytool submit "$archive" \
+              --apple-id "$APPLE_ID" \
+              --password "$APP_PASSWORD" \
+              --team-id "$TEAM_ID" \
+              --wait
+            # Staple the ticket onto the unpacked bundle, then re-zip so the published archive
+            # carries the staple. notarytool only accepts zips, but the ticket must live on
+            # the .app bundle itself, not the zip envelope.
+            app_dir="$(basename "$archive" .zip).unpacked"
+            rm -rf "$app_dir"
+            mkdir "$app_dir"
+            /usr/bin/ditto -x -k "$archive" "$app_dir"
+            xcrun stapler staple "$app_dir/CodeBurnMenubar.app"
+            rm -f "$archive"
+            (cd "$app_dir" && /usr/bin/ditto -c -k --keepParent "CodeBurnMenubar.app" "../$archive")
+            rm -rf "$app_dir"
+          done
 
       - name: Generate SHA-256 sidecars
         # Produces `<archive>.sha256` alongside each zip in the standard `sha256sum` format
@@ -85,8 +165,10 @@ jobs:
 
             That command drops the app into `~/Applications` and launches it. The installer
             downloads the SHA-256 sidecar published alongside the zip and refuses to install
-            on hash mismatch. macOS Gatekeeper will still prompt on first launch because the
-            bundle is ad-hoc signed; right-click the app in Finder and pick Open to confirm.
+            on hash mismatch. If this release was built with Developer ID signing + notarisation
+            enabled (repo secrets set), macOS Gatekeeper will accept the bundle silently.
+            Otherwise it is ad-hoc signed and you'll see "cannot verify developer" on first
+            launch -- right-click the app in Finder and pick Open to confirm.
           files: |
             mac/.build/dist/CodeBurnMenubar-*.zip
             mac/.build/dist/CodeBurnMenubar-*.zip.sha256

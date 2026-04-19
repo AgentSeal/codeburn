@@ -94,13 +94,21 @@ cat > "${BUNDLE}/Contents/PkgInfo" <<'PKG'
 APPL????
 PKG
 
-# Ad-hoc sign so macOS treats the bundle as internally consistent. This satisfies the
-# minimum bundle-validity checks on macOS 14+ and prevents a class of Gatekeeper edge
-# cases on managed Macs. A Developer ID signature (separate setup) would additionally
-# surface the publisher name in Finder; not required here.
-echo "▸ Ad-hoc signing..."
-codesign --force --sign - --timestamp=none --deep "${BUNDLE}" 2>/dev/null || true
-codesign --verify --deep --strict "${BUNDLE}" 2>/dev/null || echo "  (signature verify skipped)"
+# Prefer a Developer ID identity when the release workflow has imported one into the
+# keychain and exported its common name as DEVELOPER_ID_SIGNING_IDENTITY. Falls back to
+# ad-hoc so local `mac/Scripts/package-app.sh` runs still work without an Apple cert.
+# Developer ID signing is a prerequisite for notarisation (which happens in the workflow
+# after this script returns).
+SIGN_IDENTITY="${DEVELOPER_ID_SIGNING_IDENTITY:-}"
+if [[ -n "${SIGN_IDENTITY}" ]]; then
+  echo "▸ Signing with Developer ID: ${SIGN_IDENTITY}"
+  codesign --force --sign "${SIGN_IDENTITY}" --timestamp --options runtime --deep "${BUNDLE}"
+  codesign --verify --deep --strict --verbose=2 "${BUNDLE}"
+else
+  echo "▸ Ad-hoc signing (DEVELOPER_ID_SIGNING_IDENTITY unset)..."
+  codesign --force --sign - --timestamp=none --deep "${BUNDLE}" 2>/dev/null || true
+  codesign --verify --deep --strict "${BUNDLE}" 2>/dev/null || echo "  (signature verify skipped)"
+fi
 
 ZIP_NAME="CodeBurnMenubar-${VERSION}.zip"
 ZIP_PATH="${DIST_DIR}/${ZIP_NAME}"
