@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdtemp, readFile, rm } from 'fs/promises'
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
 
@@ -133,5 +133,26 @@ describe('exportCsv', () => {
     expect(content).toContain("\"'=cmd,calc\"")
     expect(content).toContain("'+danger-model")
     expect(content).toContain("'@malicious")
+  })
+
+  it('refuses to reuse a directory whose .codeburn-export marker is a symlink', async () => {
+    // Stage a directory that holds a user file we don't want deleted plus a symlinked
+    // marker that points at an unrelated regular file. Pre-fix, isCodeburnExportFolder
+    // would stat-through the symlink, see a regular file, and proceed to wipe everything
+    // in `targetFolder`. Post-fix, lstat catches the symlink and we refuse.
+    const targetFolder = join(tmpDir, 'looks-like-a-codeburn-export')
+    await mkdir(targetFolder)
+    const userFile = join(targetFolder, 'important.txt')
+    await writeFile(userFile, 'do not delete me\n', 'utf-8')
+    const sentinelTarget = join(tmpDir, 'unrelated-real-file')
+    await writeFile(sentinelTarget, '', 'utf-8')
+    await symlink(sentinelTarget, join(targetFolder, '.codeburn-export'))
+
+    const periods: PeriodExport[] = [{ label: '30 Days', projects: [makeProject('demo')] }]
+    await expect(exportCsv(periods, targetFolder)).rejects.toThrow(/no \.codeburn-export marker/i)
+
+    // Confirm nothing was deleted from the target directory.
+    const survived = await readFile(userFile, 'utf-8')
+    expect(survived).toBe('do not delete me\n')
   })
 })

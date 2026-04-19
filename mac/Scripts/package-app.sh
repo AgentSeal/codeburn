@@ -9,6 +9,15 @@
 set -euo pipefail
 
 VERSION="${1:-dev}"
+# Refuse anything outside the strict tag charset before interpolating into the Info.plist
+# heredoc. Tag pushes are constrained by git's own rules (no <, >, ", newlines), but the
+# workflow's workflow_dispatch.inputs.version accepts arbitrary text -- a manual run with
+# 'dev</string><string>injected' would emit an XML-broken Info.plist. The regex matches the
+# semver-ish charset we actually use (digits, dots, letters, hyphens, underscores).
+if [[ ! "${VERSION}" =~ ^[A-Za-z0-9._-]+$ ]]; then
+  echo "Refusing to package: VERSION '${VERSION}' contains characters outside [A-Za-z0-9._-]" >&2
+  exit 1
+fi
 BUNDLE_NAME="CodeBurnMenubar.app"
 BUNDLE_ID="org.agentseal.codeburn-menubar"
 EXECUTABLE_NAME="CodeBurnMenubar"

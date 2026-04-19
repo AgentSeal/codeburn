@@ -1,4 +1,4 @@
-import { writeFile, mkdir, readdir, stat, rm } from 'fs/promises'
+import { writeFile, mkdir, readdir, lstat, stat, rm } from 'fs/promises'
 import { dirname, join, resolve } from 'path'
 
 import { CATEGORY_LABELS, type ProjectSummary, type TaskCategory } from './types.js'
@@ -265,8 +265,15 @@ function buildReadme(periods: PeriodExport[]): string {
 const EXPORT_MARKER_FILE = '.codeburn-export'
 
 async function isCodeburnExportFolder(path: string): Promise<boolean> {
-  const markerStat = await stat(join(path, EXPORT_MARKER_FILE)).catch(() => null)
-  return markerStat?.isFile() ?? false
+  // lstat (not stat) so a symlinked .codeburn-export pointing at a real file elsewhere does
+  // NOT trick us into treating an arbitrary directory as a codeburn export. That symlink
+  // confusion would let an `export -o ~/Documents` blow away the user's documents on the next
+  // run because the marker would be "valid" via the symlink target while clearCodeburnExportFolder
+  // operates on the directory itself.
+  const markerStat = await lstat(join(path, EXPORT_MARKER_FILE)).catch(() => null)
+  if (!markerStat) return false
+  if (markerStat.isSymbolicLink()) return false
+  return markerStat.isFile()
 }
 
 async function clearCodeburnExportFolder(path: string): Promise<void> {
