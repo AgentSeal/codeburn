@@ -93,10 +93,25 @@ enum SubscriptionSnapshotStore {
     }
 
     private static func save(_ snapshots: [SubscriptionSnapshot]) throws {
+        // Ensure the parent dir exists at 0700 before writing. mkdir's attributes are only
+        // applied when the directory is freshly created, so also chmod afterwards to tighten
+        // a dir that was left at 0755 by an older build (mirrors the round-2 G4 fix on the
+        // TS side in src/config.ts and src/cursor-cache.ts).
+        ensureSnapshotsDir()
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         let data = try encoder.encode(snapshots)
         // SafeFile.write refuses symlinked targets and does the tmp+rename atomic dance.
         try SafeFile.write(data, to: snapshotsPath(), mode: 0o600)
+    }
+
+    private static func ensureSnapshotsDir() {
+        let dir = snapshotsCacheDir()
+        try? FileManager.default.createDirectory(
+            atPath: dir,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir)
     }
 }
