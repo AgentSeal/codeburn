@@ -544,7 +544,7 @@ function StatusBar({ width, showProvider, view, findingCount, optimizeAvailable,
         {!isOptimize && optimizeAvailable && findingCount != null && findingCount > 0 && (
           <><Text dimColor>   </Text><Text color={ORANGE} bold>o</Text><Text dimColor> optimize</Text><Text color="#F55B5B"> ({findingCount})</Text></>
         )}
-        {!isOptimize && view !== 'compare' && compareAvailable && (
+        {!isOptimize && compareAvailable && (
           <><Text dimColor>   </Text><Text color={ORANGE} bold>c</Text><Text dimColor> compare</Text></>
         )}
         {showProvider && (<><Text dimColor>   </Text><Text color={ORANGE} bold>p</Text><Text dimColor> provider</Text></>)}
@@ -664,7 +664,6 @@ function InteractiveDashboard({ initialProjects, initialPeriod, initialProvider,
   const switchPeriod = useCallback((np: Period) => {
     if (np === period) return
     setPeriod(np)
-    setView(v => v === 'compare' ? v : 'dashboard')
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => { reloadData(np, activeProvider) }, 600)
   }, [period, activeProvider, reloadData])
@@ -672,7 +671,6 @@ function InteractiveDashboard({ initialProjects, initialPeriod, initialProvider,
   const switchPeriodImmediate = useCallback(async (np: Period) => {
     if (np === period) return
     setPeriod(np)
-    setView(v => v === 'compare' ? v : 'dashboard')
     if (debounceRef.current) clearTimeout(debounceRef.current)
     await reloadData(np, activeProvider)
   }, [period, activeProvider, reloadData])
@@ -689,8 +687,8 @@ function InteractiveDashboard({ initialProjects, initialPeriod, initialProvider,
       reloadData(period, next); return
     }
     const idx = PERIODS.indexOf(period)
-    if (key.leftArrow && view !== 'optimize') switchPeriod(PERIODS[(idx - 1 + PERIODS.length) % PERIODS.length]!)
-    else if ((key.rightArrow || key.tab) && view !== 'optimize') switchPeriod(PERIODS[(idx + 1) % PERIODS.length]!)
+    if (key.leftArrow) switchPeriod(PERIODS[(idx - 1 + PERIODS.length) % PERIODS.length]!)
+    else if (key.rightArrow || key.tab) switchPeriod(PERIODS[(idx + 1) % PERIODS.length]!)
     else if (input === '1') switchPeriodImmediate('today')
     else if (input === '2') switchPeriodImmediate('week')
     else if (input === '3') switchPeriodImmediate('30days')
@@ -711,7 +709,7 @@ function InteractiveDashboard({ initialProjects, initialPeriod, initialProvider,
               </Box>
             </Box>
           : <Panel title="CodeBurn" color={ORANGE} width={dashWidth}><Text dimColor>Loading {PERIOD_LABELS[period]}...</Text></Panel>}
-        {view !== 'compare' && <StatusBar width={dashWidth} showProvider={multipleProviders} view="dashboard" findingCount={0} optimizeAvailable={false} compareAvailable={false} />}
+        {view !== 'compare' && <StatusBar width={dashWidth} showProvider={multipleProviders} view={view} findingCount={0} optimizeAvailable={false} compareAvailable={false} />}
       </Box>
     )
   }

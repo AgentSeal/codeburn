@@ -121,6 +121,7 @@ function ModelSelector({ models, onSelect, onBack }: ModelSelectorProps) {
       <Text>
         <Text color={ORANGE} bold>[space]</Text><Text dimColor> select  </Text>
         <Text color={ORANGE} bold>[enter]</Text><Text dimColor> compare  </Text>
+        <Text color={ORANGE} bold>{'<>'}</Text><Text dimColor> switch period  </Text>
         <Text color={ORANGE} bold>[esc]</Text><Text dimColor> back  </Text>
         <Text color={ORANGE} bold>[q]</Text><Text dimColor> quit</Text>
       </Text>
@@ -298,6 +299,7 @@ function ComparisonResults({ modelA, modelB, rows, categories, workingStyle, onB
       </Box>
 
       <Text>
+        <Text color={ORANGE} bold>{'<>'}</Text><Text dimColor> switch period  </Text>
         <Text color={ORANGE} bold>[esc]</Text><Text dimColor> back  </Text>
         <Text color={ORANGE} bold>[q]</Text><Text dimColor> quit</Text>
       </Text>
