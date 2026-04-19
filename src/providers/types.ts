@@ -30,6 +30,11 @@ export type ParsedProviderCall = {
   /// (e.g., non-Augment provider or legacy session), 0 means zero usage, positive
   /// means actual credits consumed.
   credits?: number | null
+  /// Session-level credit usage (fast-path). When present on any call in a session,
+  /// this is Augment's authoritative session total (already deduped, includes sub-agents).
+  /// The parser should prefer this over summing per-call credits for session totals.
+  /// Per-call credits are still used for per-model breakdowns.
+  sessionCreditUsage?: number | null
 }
 
 export type Provider = {

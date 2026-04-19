@@ -302,7 +302,7 @@ function ModelBreakdown({ projects, pw, bw }: { projects: ProjectSummary[]; pw: 
       <Text dimColor wrap="truncate-end">
         {''.padEnd(bw + 1 + MODEL_NAME_WIDTH)}
         {'est.USD'.padStart(MODEL_COL_COST)}
-        {hasAnyCredits && 'credits'.padStart(MODEL_COL_CREDITS)}
+        {hasAnyCredits && 'Augment'.padStart(MODEL_COL_CREDITS)}
         {'cache'.padStart(MODEL_COL_CACHE)}
         {'calls'.padStart(MODEL_COL_CALLS)}
       </Text>

@@ -574,17 +574,23 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
       const seenTransactionIds = new Set<string>()
 
       // Session-level creditUsage fast-path: Newer sessions (Apr 2026+) may have
-      // session.creditUsage set. When present, this is the authoritative total.
-      // We still parse per-exchange credits for the breakdown, but downstream
-      // aggregation should prefer creditUsage when available.
-      // Note: We DON'T distribute creditUsage across calls here — the per-exchange
-      // credits are independently computed from type-9 nodes.
+      // session.creditUsage set. When present, this is Augment's authoritative
+      // session total (already deduped, includes sub-agents); prefer it over
+      // per-node summation for session totals. Per-exchange credits are still
+      // parsed for per-model breakdowns.
+      const sessionCreditUsage = session.creditUsage ?? null
 
       const fresh: ParsedProviderCall[] = []
+      let isFirstCall = true
       for (const turn of chatHistory) {
         const ex = turn.exchange
         if (!ex) continue
         for (const call of parseExchange(session, ex, sessionId, projectLabel, seenKeys, seenTransactionIds)) {
+          // Attach session-level creditUsage to the first call so the parser can use it.
+          if (isFirstCall && sessionCreditUsage !== null) {
+            call.sessionCreditUsage = sessionCreditUsage
+            isFirstCall = false
+          }
           fresh.push(call)
           yield call
         }

@@ -207,6 +207,7 @@ function buildSessionSummary(
   sessionId: string,
   project: string,
   turns: ClassifiedTurn[],
+  sessionCreditUsage?: number | null,
 ): SessionSummary {
   const modelBreakdown: SessionSummary['modelBreakdown'] = Object.create(null)
   const toolBreakdown: SessionSummary['toolBreakdown'] = Object.create(null)
@@ -219,7 +220,8 @@ function buildSessionSummary(
   let totalOutput = 0
   let totalCacheRead = 0
   let totalCacheWrite = 0
-  let totalCredits: number | null = null
+  // Per-call credits summed for fallback (older sessions without sessionCreditUsage)
+  let summedCredits: number | null = null
   let apiCalls = 0
   let firstTs = ''
   let lastTs = ''
@@ -244,7 +246,7 @@ function buildSessionSummary(
       totalOutput += call.usage.outputTokens
       totalCacheRead += call.usage.cacheReadInputTokens
       totalCacheWrite += call.usage.cacheCreationInputTokens
-      totalCredits = addCredits(totalCredits, call.credits)
+      summedCredits = addCredits(summedCredits, call.credits)
       apiCalls++
 
       const modelKey = getShortModelName(call.model)
@@ -282,6 +284,13 @@ function buildSessionSummary(
       if (!lastTs || call.timestamp > lastTs) lastTs = call.timestamp
     }
   }
+
+  // sessionCreditUsage is Augment's authoritative session total (already deduped,
+  // includes sub-agents); prefer it over per-node summation when present.
+  // Older sessions lacking sessionCreditUsage fall back to summedCredits.
+  const totalCredits = sessionCreditUsage !== undefined && sessionCreditUsage !== null
+    ? sessionCreditUsage
+    : summedCredits
 
   return {
     sessionId,
@@ -445,7 +454,7 @@ async function parseProviderSources(
   const provider = await getProvider(providerName)
   if (!provider) return []
 
-  const sessionMap = new Map<string, { project: string; turns: ClassifiedTurn[] }>()
+  const sessionMap = new Map<string, { project: string; turns: ClassifiedTurn[]; sessionCreditUsage?: number | null }>()
 
   for (const source of sources) {
     if (dateRange) {
@@ -473,16 +482,20 @@ async function parseProviderSources(
       const existing = sessionMap.get(key)
       if (existing) {
         existing.turns.push(classified)
+        // Capture sessionCreditUsage if present (first call that has it wins)
+        if (call.sessionCreditUsage !== undefined && existing.sessionCreditUsage === undefined) {
+          existing.sessionCreditUsage = call.sessionCreditUsage
+        }
       } else {
-        sessionMap.set(key, { project: source.project, turns: [classified] })
+        sessionMap.set(key, { project: source.project, turns: [classified], sessionCreditUsage: call.sessionCreditUsage })
       }
     }
   }
 
   const projectMap = new Map<string, SessionSummary[]>()
-  for (const [key, { project, turns }] of sessionMap) {
+  for (const [key, { project, turns, sessionCreditUsage }] of sessionMap) {
     const sessionId = key.split(':')[1] ?? key
-    const session = buildSessionSummary(sessionId, project, turns)
+    const session = buildSessionSummary(sessionId, project, turns, sessionCreditUsage)
     if (session.apiCalls > 0) {
       const existing = projectMap.get(project) ?? []
       existing.push(session)
