@@ -1,15 +1,22 @@
 import CommonCrypto
 import Foundation
 
-/// Opt-in SPKI (SubjectPublicKeyInfo) pinning for the two Anthropic hosts the menubar app
-/// talks to: platform.claude.com (token refresh) and api.anthropic.com (usage fetch).
+/// Opt-in certificate pinning for the two Anthropic hosts the menubar app talks to:
+/// platform.claude.com (token refresh) and api.anthropic.com (usage fetch).
 ///
 /// Default behaviour is unchanged: `UserDefaults.standard.array(forKey: pinnedHashesKey)`
 /// is empty out of the box, so connections use the system trust store exactly as before.
 /// A user who wants protection against a rogue root in their chain (corporate TLS inspector
 /// they don't trust, a locally-installed MITM cert) populates the array with base64 SHA-256
-/// hashes of known-good SPKI bytes. The delegate then walks the presented chain and accepts
-/// only when at least one cert's SPKI hash matches the allow-list.
+/// hashes of the full DER-encoded certificate. The delegate then walks the presented chain
+/// and accepts only when at least one cert's hash matches the allow-list.
+///
+/// Why hash the full certificate (leaf pinning) rather than just the SPKI: `SecKeyCopy-
+/// ExternalRepresentation` does NOT return the SPKI structure (it returns algorithm-specific
+/// raw key bytes), so hashing the key in Swift and hashing SPKI in openssl would produce
+/// different digests. Hashing `SecCertificateCopyData` matches `openssl x509 -outform DER`
+/// exactly and avoids brittle ASN.1 reconstruction. The trade-off: cert rotation forces a
+/// hash update even when the key stays the same.
 ///
 /// Why opt-in: the two endpoints rotate certs on their own schedule. A default-on pin would
 /// silently break the app on rotation for every user. Opt-in lets security-conscious users
@@ -17,12 +24,15 @@ import Foundation
 ///
 /// Hash extraction (paste one hash per endpoint into the array):
 ///   openssl s_client -connect api.anthropic.com:443 -servername api.anthropic.com </dev/null \
-///     2>/dev/null | openssl x509 -pubkey -noout \
-///     | openssl pkey -pubin -outform DER | openssl dgst -sha256 -binary | base64
+///     2>/dev/null | openssl x509 -outform DER | openssl dgst -sha256 -binary | base64
 ///
 /// Enable with:
 ///   defaults write org.agentseal.codeburn-menubar CodeBurnPinnedSPKIHashes -array \
 ///     "<base64-hash-for-platform-claude-com>" "<base64-hash-for-api-anthropic-com>"
+///
+/// The defaults key name is kept as `CodeBurnPinnedSPKIHashes` for forward compatibility
+/// with a future refactor that pins true SPKI; the hash semantics described above are what
+/// the current implementation actually matches.
 enum Pinning {
     static let pinnedHashesKey = "CodeBurnPinnedSPKIHashes"
     static let pinnedHosts: Set<String> = ["platform.claude.com", "api.anthropic.com"]
@@ -67,35 +77,24 @@ final class PinningURLSessionDelegate: NSObject, URLSessionDelegate, @unchecked 
             return
         }
 
-        // Then: compute SHA-256(SubjectPublicKeyInfo) for every cert in the presented chain
-        // and accept only when at least one matches the opt-in allow-list.
+        // Then: compute SHA-256 of the DER-encoded certificate for every cert in the presented
+        // chain and accept only when at least one matches the opt-in allow-list. See the file
+        // header for why we hash the full cert rather than the SPKI.
         guard let chain = SecTrustCopyCertificateChain(serverTrust) as? [SecCertificate] else {
             NSLog("CodeBurn: could not read cert chain for pinned host \(host)")
             completionHandler(.cancelAuthenticationChallenge, nil)
             return
         }
         for cert in chain {
-            guard let spkiDer = Self.subjectPublicKeyInfoDER(for: cert) else { continue }
-            let hash = Self.sha256Base64(spkiDer)
+            let derBytes = SecCertificateCopyData(cert) as Data
+            let hash = Self.sha256Base64(derBytes)
             if pinnedHashes.contains(hash) {
                 completionHandler(.useCredential, URLCredential(trust: serverTrust))
                 return
             }
         }
-        NSLog("CodeBurn: no SPKI hash in the chain for \(host) matched the configured pins; rejecting")
+        NSLog("CodeBurn: no certificate hash in the chain for \(host) matched the configured pins; rejecting")
         completionHandler(.cancelAuthenticationChallenge, nil)
-    }
-
-    /// Extracts the DER-encoded SubjectPublicKeyInfo for a cert so its hash can be compared
-    /// against the pinned allow-list. Returns nil if the public key cannot be read or exported;
-    /// the caller treats that cert as a non-match and continues down the chain.
-    private static func subjectPublicKeyInfoDER(for cert: SecCertificate) -> Data? {
-        guard let key = SecCertificateCopyKey(cert) else { return nil }
-        var extractError: Unmanaged<CFError>?
-        guard let keyData = SecKeyCopyExternalRepresentation(key, &extractError) as Data? else {
-            return nil
-        }
-        return keyData
     }
 
     private static func sha256Base64(_ data: Data) -> String {
