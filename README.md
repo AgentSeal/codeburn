@@ -2,28 +2,217 @@
 
 # CodeBurn
 
-See where your Auggie tokens go.
+See where your Auggie tokens (and credits) go.
 
-![npm version](https://img.shields.io/npm/v/codeburn.svg)
+A usage analytics tool for [Augment Code (Auggie)](https://www.augmentcode.com/) CLI sessions. Reads `~/.augment/sessions/*.json` directly from disk and surfaces cost, Augment credits, tools, shell commands, MCP servers, models, and per-project spend in an interactive terminal dashboard. No wrapper, no proxy, no API keys.
 
-![total downloads](https://img.shields.io/npm/dt/codeburn.svg)
-
-![monthly downloads](https://img.shields.io/npm/dm/codeburn.svg)
-
-![install size](https://img.shields.io/bundlephobia/min/codeburn)
-
+![node version](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)
 ![license](https://img.shields.io/npm/l/codeburn.svg)
-
-![node version](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)
 
 ![CodeBurn TUI dashboard](https://raw.githubusercontent.com/getagentseal/codeburn/main/assets/dashboard.jpg)
 
- *Screenshot predates 1.0.0 and will be updated.* ## Project Status **Version:** 1.0.0 **Tests:** 172 passing (168 TypeScript, 4 Swift) **Dependencies:** 0 vulnerabilities (npm audit) See [AUDIT_REPORT.md](./AUDIT_REPORT.md) for the full security and quality audit. See [CHANGELOG.md](./CHANGELOG.md) for version history. A usage dashboard for Auggie (the Augment Code CLI). Tracks cost by task type, tool, model, MCP server, and project. Shows one-shot success rate per activity type so you can see where the AI nails it first try vs. burns tokens on edit/test/fix retries. Interactive TUI dashboard with gradient charts, responsive panels, and keyboard navigation. Native macOS menubar app in `mac/`. CSV/JSON export. Works by reading Auggie session data directly from disk. No wrapper, no proxy, no API keys. Pricing from LiteLLM (auto-cached, all models supported). ## Install ```bash npm install -g codeburn ``` Or run without installing: ```bash npx codeburn ``` ### Requirements - Node.js 22+ - Auggie (Augment Code CLI) with session data at `~/.augment/sessions/` ## Usage ```bash codeburn # interactive dashboard (default: 7 days) codeburn today # today's usage codeburn month # this month's usage codeburn report -p 30days # rolling 30-day window codeburn report -p all # every recorded session codeburn report --from 2026-04-01 --to 2026-04-10 # exact date range codeburn report --format json # full dashboard data as JSON codeburn report --refresh 60 # auto-refresh every 60 seconds codeburn status # compact one-liner (today + month) codeburn status --format json codeburn export # CSV with today, 7 days, 30 days codeburn export -f json # JSON export codeburn optimize # find waste, get copy-paste fixes codeburn optimize -p week # scope the scan to last 7 days ``` Arrow keys switch between Today / 7 Days / 30 Days / Month / All Time. Press `q` to quit, `1` `2` `3` `4` `5` as shortcuts. The dashboard also shows average cost per session and the five most expensive sessions across all projects. ### JSON output `report`, `today`, and `month` support `--format json` to output the full dashboard data as structured JSON to stdout: ```bash codeburn report --format json # 7-day JSON report codeburn today --format json # today's data as JSON codeburn month --format json # this month as JSON codeburn report -p 30days --format json # 30-day window ``` The JSON includes all dashboard panels: overview (cost, calls, sessions, cache hit %), daily breakdown, projects (with `avgCostPerSession`), models with token counts, activities with one-shot rates, core tools, MCP servers, and shell commands. Pipe to `jq` for filtering: ```bash codeburn report --format json | jq '.projects' codeburn today --format json | jq '.overview.cost' ``` For the lighter `status --format json` (today + month totals only) or file-based exports (`export -f json`), see above. ### Project filtering Filter results by project name (case-insensitive substring match). Both flags are repeatable: ```bash codeburn report --project myapp # show only projects matching "myapp" codeburn report --exclude myapp # show everything except "myapp" codeburn report --exclude myapp --exclude tests # exclude multiple projects codeburn month --project api --project web # include multiple projects codeburn export --project inventory # export only "inventory" project data ``` The `--project` and `--exclude` flags work on all commands. ### Date range filtering Beyond the preset periods, specify an exact window with `--from` and `--to` (`YYYY-MM-DD`, local time): ```bash codeburn report --from 2026-04-01 --to 2026-04-10 # explicit window codeburn report --from 2026-04-01 # this date through today codeburn report --to 2026-04-10 # earliest data through this date codeburn report --from 2026-04-01 --to 2026-04-10 --format json ``` Either flag alone is valid. Inverted or malformed dates exit with a clear error. In the TUI, the custom range sets the initial load only - pressing `1`-`5` switches back to predefined periods. ### How Auggie sessions are parsed Auggie writes one pretty-printed JSON file per conversation into `~/.augment/sessions/.json`. CodeBurn emits one row per response node with populated `token_usage` (each exchange can carry multiple rows because of tool-use loops), dedups on `auggie:${sessionId}:${request_id}:${response_node.id}`, and tags sub-agent sessions with their `rootTaskUuid` in the session label. The credentials file at `~/.augment/session.json` is never read. When `agentState.modelId` is empty, CodeBurn falls back to a provider-aware default (`anthropic` to `claude-sonnet-4-5`, `openai` to `gpt-5.1`, `google` to `gemini-3-pro`); each default is overridable via `CODEBURN_AUGGIE_DEFAULT_ANTHROPIC`, `CODEBURN_AUGGIE_DEFAULT_OPENAI`, `CODEBURN_AUGGIE_DEFAULT_GOOGLE`. Augment-internal model ids are aliased for pricing (e.g. `butler` to `claude-haiku-4-5`); override any alias via `CODEBURN_AUGGIE_ALIAS_`. Parsed calls are cached per session at `~/.cache/codeburn/auggie/.json` (mode 0600) and invalidated on mtime+size change. ## Currency By default, costs are shown in USD. To display in a different currency: ```bash codeburn currency GBP # set to British Pounds codeburn currency AUD # set to Australian Dollars codeburn currency JPY # set to Japanese Yen codeburn currency # show current setting codeburn currency --reset # back to USD ``` Any [ISO 4217 currency code](https://en.wikipedia.org/wiki/ISO_4217#List_of_ISO_4217_currency_codes) is supported (162 currencies). Exchange rates are fetched from [Frankfurter](https://www.frankfurter.app/) (European Central Bank data, free, no API key) and cached for 24 hours at `~/.cache/codeburn/`. Config is stored at `~/.config/codeburn/config.json`. The currency setting applies everywhere: dashboard, status bar, menu bar widget, CSV/JSON exports, and JSON API output. The menu bar widget includes a currency picker with 17 common currencies. For any currency not listed, use the CLI command above. ## Menu Bar
+*Screenshot predates 1.0.0 and will be updated.*
+
+## Project status
+
+- **Version:** 1.0.0 (Auggie-only)
+- **Tests:** 177 passing (173 TypeScript, 4 Swift)
+- **What's new since 1.0.0:** exchange-level tool/shell/MCP aggregation, provider-aware model fallback with an `auggie-legacy` sentinel for pre-Nov-2025 sessions, and Augment credits surfaced alongside estimated USD. See [CHANGELOG.md](./CHANGELOG.md) for details and [AUDIT_REPORT.md](./AUDIT_REPORT.md) for the security/quality audit.
+
+## Prerequisites
+
+CodeBurn reads local files only. To get useful output you need:
+
+- **Node.js ≥ 22** (see `engines` in [`package.json`](./package.json)).
+- **Auggie (Augment Code CLI) installed and logged in.** Running `auggie login` writes `~/.augment/session.json` containing `accessToken` + `tenantURL`. CodeBurn itself does not read the token, but the macOS menubar app uses it to fetch live credit info from Augment's `/get-credit-info` endpoint.
+- **Session history under `~/.augment/sessions/`.** Every Auggie conversation is saved there as a pretty-printed JSON file. If the directory is empty or missing, the dashboard will have nothing to show.
+
+Override the Augment directory with `AUGMENT_HOME=/path/to/.augment` if you keep it elsewhere.
+
+## Install
+
+### From npm (published as `codeburn`)
+
+```bash
+npm install -g codeburn
+codeburn                       # interactive TUI, default 7 days
+```
+
+Or run without installing:
+
+```bash
+npx codeburn
+```
+
+### From source
+
+```bash
+git clone git@github.com:jaycdave88/codeburn.git
+cd codeburn
+npm install
+npm run build
+node dist/cli.js                         # interactive TUI
+node dist/cli.js --format json           # machine-readable report
+node dist/cli.js export --format json    # full CSV/JSON export
+```
+
+During development, `npm run dev -- report` runs the CLI directly via `tsx` without a build step.
+
+## Usage
+
+```bash
+codeburn                       # interactive dashboard (default: 7 days)
+codeburn today                 # today's usage
+codeburn month                 # this month's usage
+codeburn report -p 30days      # rolling 30-day window
+codeburn report -p all         # every recorded session
+codeburn report --from 2026-04-01 --to 2026-04-10
+codeburn report --format json  # full dashboard data as JSON
+codeburn status                # compact one-liner (today + month)
+codeburn export                # per-period CSV bundle
+codeburn export -f json        # JSON export
+codeburn optimize              # find waste, get copy-paste fixes
+codeburn currency GBP          # switch display currency (any ISO 4217 code)
+codeburn menubar               # install/update the macOS menubar app
+```
+
+Arrow keys switch between Today / 7 Days / 30 Days / Month / All Time. Press `q` to quit, `1`–`5` for shortcuts, `o` to open optimize findings inline.
+
+`--project <name>` and `--exclude <name>` (both repeatable, case-insensitive substring match) filter by project on every command. `--from` / `--to` (`YYYY-MM-DD`, local time) set an exact window; either flag alone is valid.
+
+## What the dashboard shows
+
+| Panel | What it contains |
+|---|---|
+| **Overview** | Estimated USD, **Augment credits** (when billing metadata is present), total calls, sessions, cache-hit %, token totals, legacy-session count |
+| **By Model** | Cost and call count per model, with an **Augment** credits column alongside `est.USD`. Pre-Nov-2025 sessions appear under `auggie-legacy`; set-but-unpriced IDs under `auggie-unknown` |
+| **Daily Activity** | Sparkline of cost per day across the selected window |
+| **Projects** | Top projects by cost, with `avgCostPerSession` in JSON output |
+| **Activities** | 13 deterministic task categories (Coding, Debugging, Refactoring, Testing, …) with one-shot success rate |
+| **Core Tools** | Non-shell, non-MCP tool invocations aggregated at the exchange level (so counts don't double from multi-node exchanges) |
+| **Shell Commands** | `launch-process` command lines pulled from every tool-use node |
+| **MCP Servers** | MCP tool calls routed by `tool_use.mcp_server_name` when present, suffix-parsed as fallback for older sessions |
+
+The `--format json` flag on `report`, `today`, and `month` emits the same data as a structured payload including a `"Credits (Augment)"` field per model. Pipe to `jq` for filtering.
+
+## How Auggie sessions are parsed
+
+Auggie writes one JSON file per conversation into `~/.augment/sessions/`. CodeBurn walks each file's `response_node` stream, aggregates at the **exchange level** (tool_use nodes + token_usage nodes that belong to the same model turn), and emits one row per `token_usage` node. Dedup key: `auggie:${sessionId}:${request_id}:${response_node.id}`. Sub-agent sessions are tagged with their `rootTaskUuid` in the session label.
+
+**Model selection** prefers `agentState.modelId` (resolved through an alias table). When it's empty, CodeBurn falls back to a provider-aware default derived from `metadata.provider` on type-8 THINKING nodes. Sessions with neither a `modelId` nor a recoverable provider hint (pre-Nov-2025 sessions) bucket under `auggie-legacy`; `auggie-unknown` is reserved for sessions where the `modelId` is set but not yet in the alias table.
+
+**Credits** come from Augment's own billing metadata: `billing_metadata.credits_consumed` on type-9 BILLING_METADATA nodes, deduped by `transaction_id`. When the top-level `session.creditUsage` is present it's used as the authoritative session total (it already includes sub-agent credits). The estimated USD column uses [LiteLLM](https://github.com/BerriAI/litellm) pricing data, cached for 24 hours at `~/.cache/codeburn/litellm-pricing.json`.
+
+Parsed calls are cached per session at `~/.cache/codeburn/auggie/<id>.json` (mode `0600`) and invalidated on mtime+size change. The credentials file at `~/.augment/session.json` is never read by the CLI.
+
+## Environment variables
+
+| Variable | Description |
+|---|---|
+| `AUGMENT_HOME` | Override the Augment data directory (default: `~/.augment`). |
+| `CODEBURN_AUGGIE_DEFAULT_ANTHROPIC` | Fallback model when `modelId` is empty and `metadata.provider = anthropic` (default: `claude-sonnet-4-5`). |
+| `CODEBURN_AUGGIE_DEFAULT_OPENAI` | Fallback model for OpenAI (default: `gpt-5.1`). |
+| `CODEBURN_AUGGIE_DEFAULT_GEMINI` | Fallback model for Gemini (default: `gemini-3-pro`). |
+| `CODEBURN_AUGGIE_DEFAULT_XAI` | Fallback model for xAI (default: `grok-2`). |
+| `CODEBURN_AUGGIE_DEFAULT_MINIMAX` | Fallback model for MiniMax (default: `minimax`). |
+| `CODEBURN_AUGGIE_ALIAS_<MODELID>` | Override the alias for a specific Augment-internal model ID. Example: `CODEBURN_AUGGIE_ALIAS_BUTLER=claude-haiku-4-5`. |
+| `CODEBURN_ALLOW_UNVERIFIED_INSTALL` | Set to `1` to install the macOS menubar app from a release that doesn't publish a SHA-256 sidecar. Off by default. |
+
+## Currency
+
+```bash
+codeburn currency GBP          # any ISO 4217 code (162 currencies supported)
+codeburn currency              # show current setting
+codeburn currency --reset      # back to USD
+```
+
+Rates come from [Frankfurter](https://www.frankfurter.app/) (ECB data, no API key) and are cached for 24 hours. Config lives at `~/.config/codeburn/config.json` and applies to dashboard, exports, JSON output, and the menubar app.
+
+## macOS menubar app
+
+A native Swift + SwiftUI menubar app lives in [`mac/`](./mac/). Install it with:
+
+```bash
+npx codeburn menubar           # downloads the latest .app into ~/Applications and launches it
+```
 
 ![CodeBurn macOS menubar app](https://cdn.jsdelivr.net/gh/getagentseal/codeburn@main/assets/menubar-0.7.2.png)
 
- *Screenshot predates 1.0.0 and will be updated.* ```bash npx codeburn menubar ``` One command: downloads the latest `.app`, installs into `~/Applications`, and launches it. Re-run with `--force` to reinstall. Native Swift + SwiftUI app lives in `mac/` (see `mac/README.md` for build details). Shows today's cost with a flame icon, opens a popover with period switcher (Today / 7 Days / 30 Days / Month / All), Trend / Forecast / Pulse / Stats / Plan insights, activity and model breakdowns, optimize findings, and CSV/JSON export. Refreshes live via FSEvents plus a 60-second poll. ## What it tracks **13 task categories** classified from tool usage patterns and user message keywords. No LLM calls, fully deterministic. | Category | What triggers it | |---|---| | Coding | Edit, Write tools | | Debugging | Error/fix keywords + tool usage | | Feature Dev | "add", "create", "implement" keywords | | Refactoring | "refactor", "rename", "simplify" | | Testing | pytest, vitest, jest in Bash | | Exploration | Read, Grep, WebSearch without edits | | Planning | EnterPlanMode, TaskCreate tools | | Delegation | Agent tool spawns | | Git Ops | git push/commit/merge in Bash | | Build/Deploy | npm build, docker, pm2 | | Brainstorming | "brainstorm", "what if", "design" | | Conversation | No tools, pure text exchange | | General | Skill tool, uncategorized | **Breakdowns**: daily cost chart, per-project, per-model (Opus/Sonnet/Haiku/GPT-5/GPT-4o/Gemini), per-activity with one-shot rate, core tools, shell commands, MCP servers. **One-shot rate**: For categories that involve code edits, CodeBurn detects edit/test/fix retry cycles (Edit -> Bash -> Edit patterns). The 1-shot column shows the percentage of edit turns that succeeded without retries. Coding at 90% means the AI got it right first try 9 out of 10 times. **Pricing**: Fetched from [LiteLLM](https://github.com/BerriAI/litellm) model prices (auto-cached 24h at `~/.cache/codeburn/`). Handles input, output, cache write, cache read, and web search costs. Fast mode multiplier for Claude. Hardcoded fallbacks for all Claude and GPT-5 models to prevent fuzzy matching mispricing. ## Reading the dashboard CodeBurn surfaces the data, you read the story. A few patterns worth knowing: | Signal you see | What it might mean | |---|---| | Cache hit < 80% | System prompt or context isn't stable, or caching not enabled | | Lots of `Read` calls per session | Agent re-reading same files, missing context | | Low 1-shot rate (Coding 30%) | Agent struggling with edits, retry loops | | Opus 4.6 dominating cost on small turns | Overpowered model for simple tasks | | `dispatch_agent` / `task` heavy | Sub-agent fan-out, expected or excessive | | No MCP usage shown | Either you don't use MCP servers, or your config is broken | | Bash dominated by `git status`, `ls` | Agent exploring instead of executing | | Conversation category dominant | Agent talking instead of doing | These are starting points, not verdicts. A 60% cache hit on a single experimental session is fine. A persistent 60% cache hit across weeks of work is a config issue. ## Optimize `codeburn optimize` scans your Auggie sessions for common waste patterns and hands back exact, copy-paste fixes. It never writes to your files.
+*Screenshot predates 1.0.0 and will be updated.*
+
+The popover shows today's cost, a period switcher, activity/model breakdowns, optimize findings, and a Plan pill that fetches live credit info from Augment's `/get-credit-info` endpoint (using the `accessToken` + `tenantURL` from `~/.augment/session.json`). Refresh is live via FSEvents plus a 60-second poll. Build details: [`mac/README.md`](./mac/README.md).
+
+## Optimize
+
+```bash
+codeburn optimize              # scan last 30 days, print copy-paste fixes
+codeburn optimize -p week      # last 7 days
+```
+
+Detects files re-read across sessions, low Read:Edit ratios, uncapped bash output, cache-creation overhead, and junk directory reads. Each finding shows estimated token and dollar savings plus a ready-to-paste fix, rolled up into an A-F setup health grade. Repeat runs classify findings as new / improving / resolved against a 48-hour window. Press `o` in the dashboard to open findings inline, `b` to return.
 
 ![CodeBurn optimize output](https://raw.githubusercontent.com/getagentseal/codeburn/main/assets/optimize.jpg)
 
- *Screenshot predates 1.0.0 and will be updated.* ```bash codeburn optimize # scan the last 30 days codeburn optimize -p today # today only codeburn optimize -p week # last 7 days ``` **What it detects** - Files re-read across sessions (same content, same context, over and over) - Low Read:Edit ratio (editing without reading leads to retries and wasted tokens) - Wasted bash output (uncapped output, trailing noise) - Unused MCP servers still paying their tool-schema overhead every session - Cache creation overhead and junk directory reads Each finding shows the estimated token and dollar savings plus a ready-to-paste fix. Findings are ranked by urgency (impact weighted against observed waste) and rolled up into an A-F setup health grade. Repeat runs classify each finding as new, improving, or resolved against a 48-hour recent window. You can also open it inline from the dashboard: press `o` when a finding count appears in the status bar, `b` to return. ## Privacy and network access CodeBurn parses session logs locally; no prompt or response text is sent off your machine. The CLI and the optional macOS menubar app do make a small number of well-defined network calls: | Caller | Endpoint | What is sent | When | |--------|----------|--------------|------| | CLI | `raw.githubusercontent.com/BerriAI/litellm/...` | nothing (GET only) | model pricing refresh, cached locally | | CLI | `api.frankfurter.app` | nothing (GET only) | currency FX rate, cached locally | | CLI installer | `api.github.com/repos/getagentseal/codeburn/...`, `objects.githubusercontent.com` | nothing (GET only) | only when you run `codeburn menubar` to install/upgrade the macOS app | | Menubar app | Augment `/get-credit-info` | nothing (reads local `~/.augment/session.json`) | when you click the Plan pill in the popover | Cache and config files written by the CLI are created with mode `0600` under directories with mode `0700`. The macOS installer verifies a published SHA-256 sidecar before unpacking the downloaded app and refuses to install on mismatch (set `CODEBURN_ALLOW_UNVERIFIED_INSTALL=1` to override for releases that pre-date the sidecar). ## Environment variables | Variable | Description | |----------|-------------| | `CODEBURN_AUGGIE_DEFAULT_ANTHROPIC` | Override Auggie fallback model for Anthropic provider (default: `claude-sonnet-4-5`) | | `CODEBURN_AUGGIE_DEFAULT_OPENAI` | Override Auggie fallback model for OpenAI provider (default: `gpt-5.1`) | | `CODEBURN_AUGGIE_DEFAULT_GOOGLE` | Override Auggie fallback model for Google provider (default: `gemini-3-pro`) | | `CODEBURN_AUGGIE_ALIAS_` | Override model alias for Augment-internal model IDs | | `CODEBURN_ALLOW_UNVERIFIED_INSTALL` | Set to `1` to install the macOS menubar app from a release that does not publish a SHA-256 sidecar. Off by default; not recommended. | ## Project structure ``` src/ cli.ts Commander.js entry point dashboard.tsx Ink TUI (React for terminals) parser.ts Session reader, dedup, date filter models.ts LiteLLM pricing, cost calculation classifier.ts 13-category task classifier types.ts Type definitions format.ts Text rendering (status bar) menubar-json.ts Payload builder consumed by the native macOS menubar app in mac/ export.ts CSV/JSON multi-period export config.ts Config file management (~/.config/codeburn/) currency.ts Currency conversion, exchange rates, Intl formatting providers/ types.ts Provider interface definitions index.ts Provider registry auggie.ts Auggie session discovery and JSON parsing ``` ## License MIT ## Credits Inspired by [ccusage](https://github.com/ryoppippi/ccusage). Pricing data from [LiteLLM](https://github.com/BerriAI/litellm). Exchange rates from [Frankfurter](https://www.frankfurter.app/). Built by [AgentSeal](https://agentseal.org).
+*Screenshot predates 1.0.0 and will be updated.*
+
+## Data and privacy
+
+All session parsing is local; no prompt or response text is sent off your machine. The network calls CodeBurn makes are:
+
+| Caller | Endpoint | Payload | When |
+|---|---|---|---|
+| CLI | `raw.githubusercontent.com/BerriAI/litellm/...` | none (GET) | LiteLLM model-price refresh (cached at `~/.cache/codeburn/litellm-pricing.json`) |
+| CLI | `api.frankfurter.app` | none (GET) | currency FX rate refresh (cached 24h) |
+| CLI installer | `api.github.com/repos/getagentseal/codeburn/...` | none (GET) | only when you run `codeburn menubar` |
+| Menubar app | Augment `{tenantURL}/get-credit-info` | Bearer `accessToken` from `~/.augment/session.json` | Plan pill refresh |
+
+Cache and config files are created with mode `0600` under directories with mode `0700`. The macOS installer verifies a published SHA-256 sidecar before unpacking the downloaded app (override with `CODEBURN_ALLOW_UNVERIFIED_INSTALL=1`).
+
+## Troubleshooting
+
+- **`By Model` shows `auggie-legacy`** — these are pre-Nov-2025 sessions with an empty `modelId` and no recoverable provider hint. The model is unrecoverable; the count is shown under the overview so you can see the blind-spot size. This is expected.
+- **Credits column shows `—`** — the session has no `billing_metadata` nodes and no top-level `creditUsage`. Typical for very old sessions or CLI-offline runs.
+- **Core Tools / Shell Commands / MCP Servers tables empty** — confirm `~/.augment/sessions/` contains recent files (`ls -lt ~/.augment/sessions/ | head`). If your Augment data lives elsewhere, set `AUGMENT_HOME`.
+- **`auggie-unknown` in By Model** — CodeBurn has a `modelId` it doesn't know how to price. Add an alias via `CODEBURN_AUGGIE_ALIAS_<MODELID>=<public-model-name>` or file an issue.
+- **Plan pill says "Session expired"** — run `auggie login` to refresh `~/.augment/session.json`.
+
+## Development
+
+```bash
+npm install
+npm test                       # vitest, 177 tests
+npm run build                  # tsup → dist/cli.js
+npm run dev -- report          # run CLI directly from src/ via tsx
+```
+
+Full version history is in [CHANGELOG.md](./CHANGELOG.md). Security and quality findings are in [AUDIT_REPORT.md](./AUDIT_REPORT.md).
+
+## Project structure
+
+```
+src/
+  cli.ts              Commander.js entry point
+  dashboard.tsx       Ink TUI (React for terminals)
+  parser.ts           Session reader, dedup, date filter, MCP extraction
+  models.ts           LiteLLM pricing, cost calculation
+  classifier.ts       13-category task classifier
+  format.ts           Text rendering (cost, tokens, credits)
+  menubar-json.ts     Payload builder for the Swift menubar app
+  export.ts           CSV/JSON multi-period export
+  config.ts           Config file management (~/.config/codeburn/)
+  currency.ts         Currency conversion, Intl formatting
+  optimize.ts         Waste-pattern scanner
+  providers/
+    index.ts          Provider registry (single entry: auggie)
+    auggie.ts         Session discovery, exchange-level parsing, credits, model selection
+mac/                  Native Swift + SwiftUI menubar app
+tests/                Vitest suite (providers, security, parser, export, …)
+```
+
+## License
+
+MIT
+
+## Credits
+
+Inspired by [ccusage](https://github.com/ryoppippi/ccusage). Pricing from [LiteLLM](https://github.com/BerriAI/litellm). Exchange rates from [Frankfurter](https://www.frankfurter.app/). Built by [AgentSeal](https://agentseal.org).
