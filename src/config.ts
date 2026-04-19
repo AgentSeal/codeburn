@@ -1,5 +1,5 @@
 import { randomBytes } from 'crypto'
-import { mkdir, open, readFile, rename, unlink } from 'fs/promises'
+import { chmod, mkdir, open, readFile, rename, unlink } from 'fs/promises'
 import { join } from 'path'
 import { homedir } from 'os'
 
@@ -31,7 +31,12 @@ export async function readConfig(): Promise<CodeburnConfig> {
 }
 
 export async function saveConfig(config: CodeburnConfig): Promise<void> {
-  await mkdir(getConfigDir(), { recursive: true, mode: CONFIG_DIR_MODE })
+  const dir = getConfigDir()
+  await mkdir(dir, { recursive: true, mode: CONFIG_DIR_MODE })
+  // mkdir's `mode` is only honoured for newly-created directories. A user upgrading from a
+  // pre-hardening build will already have ~/.config/codeburn at 0755; chmod on every save
+  // tightens the permission without breaking anyone whose directory is already 0700.
+  await chmod(dir, CONFIG_DIR_MODE).catch(() => {})
   const finalPath = getConfigPath()
   const tempPath = `${finalPath}.${randomBytes(8).toString('hex')}.tmp`
   const payload = JSON.stringify(config, null, 2) + '\n'
