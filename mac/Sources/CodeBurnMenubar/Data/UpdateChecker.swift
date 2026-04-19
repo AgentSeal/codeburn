@@ -18,7 +18,8 @@ final class UpdateChecker {
         let current = currentVersion
         let normalizedLatest = latest.hasPrefix("v") ? String(latest.dropFirst()) : latest
         let normalizedCurrent = current.hasPrefix("v") ? String(current.dropFirst()) : current
-        return !normalizedCurrent.isEmpty && normalizedCurrent != "dev" && normalizedLatest != normalizedCurrent
+        guard !normalizedCurrent.isEmpty && normalizedCurrent != "dev" else { return false }
+        return normalizedLatest.compare(normalizedCurrent, options: .numeric) == .orderedDescending
     }
 
     var currentVersion: String {
