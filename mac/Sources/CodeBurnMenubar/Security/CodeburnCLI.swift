@@ -19,13 +19,22 @@ enum CodeburnCLI {
     /// this list (e.g. `/tmp`, `/Volumes/...`, `~/Downloads`) is refused so a planted binary
     /// can't be selected just by exporting an env var. Includes Homebrew, system bin dirs, and
     /// the user's Node-toolchain prefixes.
+    ///
+    /// Cellar entries: Homebrew installs the real binary under `Cellar/<formula>/<version>/bin`
+    /// and symlinks it into `bin/`. `realpath` resolves through the symlink, so without the
+    /// Cellar prefix a user pointing CODEBURN_BIN at a Homebrew-managed node would be rejected
+    /// after the round-2 realpath hardening. The Cellar roots are Homebrew-controlled and only
+    /// contain Homebrew-managed binaries, so allow-listing them does not weaken the security
+    /// boundary.
     private static let allowedBinaryPrefixes: [String] = {
         let home = NSHomeDirectory()
         return [
             "/usr/local/bin/",
             "/usr/local/lib/node_modules/",
+            "/usr/local/Cellar/",
             "/opt/homebrew/bin/",
             "/opt/homebrew/lib/node_modules/",
+            "/opt/homebrew/Cellar/",
             "/usr/bin/",
             "\(home)/.npm-global/bin/",
             "\(home)/.npm/bin/",
