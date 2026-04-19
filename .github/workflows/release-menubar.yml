@@ -67,7 +67,12 @@ jobs:
 
       - name: Create / update GitHub Release
         if: startsWith(github.ref, 'refs/tags/mac-v')
-        uses: softprops/action-gh-release@v2
+        # Pinned to v2.6.2 commit SHA instead of the mutable @v2 tag. Third-party actions in
+        # the release path should be pinned so a tag move on the upstream repo cannot substitute
+        # new code into the workflow that ships the macOS bundle. Upgrade by resolving the target
+        # tag to its 40-char SHA (e.g. `git ls-remote https://github.com/softprops/action-gh-release
+        # refs/tags/v2.X.Y`) and updating both the hash and the trailing annotation.
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65  # v2.6.2
         with:
           tag_name: ${{ github.ref_name }}
           name: Menubar ${{ steps.version.outputs.value }}
