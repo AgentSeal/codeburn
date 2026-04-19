@@ -1,7 +1,11 @@
+import { createRequire } from 'node:module'
+
 /// Thin SQLite read-only wrapper over Node's built-in `node:sqlite` module (stable in
 /// Node 24, experimental in Node 22 / 23). Replaces the earlier `better-sqlite3` binding
 /// so the dependency graph no longer pulls in the deprecated `prebuild-install` package
 /// (issue #75). Works across Cursor and OpenCode session DBs, both of which we only read.
+
+const requireForSqlite = createRequire(import.meta.url)
 
 type Row = Record<string, unknown>
 
@@ -55,10 +59,7 @@ function loadDriver(): boolean {
   } as typeof process.emit
 
   try {
-    // Dynamic require via createRequire avoids TypeScript chasing types we don't need at
-    // build time (node:sqlite landed in @types/node much later than in Node itself).
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const mod = eval('require')('node:sqlite') as { DatabaseSync: DatabaseSyncCtor }
+    const mod = requireForSqlite('node:sqlite') as { DatabaseSync: DatabaseSyncCtor }
     DatabaseSync = mod.DatabaseSync
     return true
   } catch (err) {
