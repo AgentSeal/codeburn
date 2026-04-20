@@ -37,7 +37,7 @@ struct HeatmapSection: View {
     private var content: some View {
         switch store.selectedInsight {
         case .plan: PlanInsight(usage: store.subscription)
-        case .trend: TrendInsight(days: store.payload.history.daily)
+        case .trend: TrendInsight(days: store.payload.history.daily, billingMode: store.payload.billingMode)
         case .forecast: ForecastInsight(days: store.payload.history.daily)
         case .pulse: PulseInsight(payload: store.payload)
         case .stats: StatsInsight(payload: store.payload)
@@ -77,14 +77,16 @@ private struct InsightPillSwitcher: View {
 
 private struct TrendInsight: View {
     let days: [DailyHistoryEntry]
+    let billingMode: BillingMode
 
     var body: some View {
         let bars = buildTrendBars(from: days)
         let stats = computeTrendStats(bars: bars, allDays: days)
         // Tokens are real for the .all-providers view; per-provider history doesn't carry
         // token breakdown yet, so fall back to $ when no tokens are present.
+        // In credits mode, always use tokens to avoid showing $ symbols.
         let totalTokens = bars.reduce(0.0) { $0 + $1.tokens }
-        let useTokens = totalTokens > 0
+        let useTokens = (billingMode == .credits) || (totalTokens > 0)
         let metric: (TrendBar) -> Double = useTokens ? { $0.tokens } : { $0.cost }
         let maxValue = max(bars.map(metric).max() ?? 1, 0.01)
         let avgValue = bars.isEmpty ? 0 : bars.map(metric).reduce(0, +) / Double(bars.count)
