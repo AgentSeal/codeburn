@@ -48,6 +48,16 @@ describe('parseDateRangeFlags', () => {
       .toThrow('Invalid date format')
   })
 
+  it('throws on month out of range', () => {
+    expect(() => parseDateRangeFlags('2026-13-01', undefined))
+      .toThrow('month or day out of range')
+  })
+
+  it('throws on day out of range for month', () => {
+    expect(() => parseDateRangeFlags('2026-02-30', undefined))
+      .toThrow('month or day out of range')
+  })
+
   it('same day is valid (start midnight, end 23:59:59)', () => {
     const range = parseDateRangeFlags('2026-04-10', '2026-04-10')
     expect(range).not.toBeNull()
