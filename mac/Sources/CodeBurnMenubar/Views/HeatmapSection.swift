@@ -37,7 +37,7 @@ struct HeatmapSection: View {
     private var content: some View {
         switch store.selectedInsight {
         case .plan: PlanInsight(usage: store.subscription)
-        case .trend: TrendInsight(days: store.payload.history.daily)
+        case .trend: TrendInsight(days: store.payload.history.daily, billingMode: store.payload.billingMode)
         case .forecast: ForecastInsight(days: store.payload.history.daily)
         case .pulse: PulseInsight(payload: store.payload)
         case .stats: StatsInsight(payload: store.payload)
@@ -77,14 +77,16 @@ private struct InsightPillSwitcher: View {
 
 private struct TrendInsight: View {
     let days: [DailyHistoryEntry]
+    let billingMode: BillingMode
 
     var body: some View {
         let bars = buildTrendBars(from: days)
         let stats = computeTrendStats(bars: bars, allDays: days)
         // Tokens are real for the .all-providers view; per-provider history doesn't carry
         // token breakdown yet, so fall back to $ when no tokens are present.
+        // In credits mode, always use tokens to avoid showing $ symbols.
         let totalTokens = bars.reduce(0.0) { $0 + $1.tokens }
-        let useTokens = totalTokens > 0
+        let useTokens = (billingMode == .credits) || (totalTokens > 0)
         let metric: (TrendBar) -> Double = useTokens ? { $0.tokens } : { $0.cost }
         let maxValue = max(bars.map(metric).max() ?? 1, 0.01)
         let avgValue = bars.isEmpty ? 0 : bars.map(metric).reduce(0, +) / Double(bars.count)
@@ -611,10 +613,8 @@ private struct PulseInsight: View {
             PulseTile(label: "Cache hit", value: cacheHitText, color: Theme.brandAccent)
             PulseTile(label: "1-shot", value: oneShotText, color: oneShotColor)
             PulseTile(
-                label: "Cost / session",
-                value: payload.current.sessions > 0
-                    ? (payload.current.cost / Double(payload.current.sessions)).asCompactCurrency()
-                    : "—",
+                label: perSessionLabel,
+                value: perSessionValue,
                 color: .secondary
             )
         }
@@ -632,6 +632,33 @@ private struct PulseInsight: View {
 
     private var oneShotColor: Color {
         payload.current.oneShotRate == nil ? .secondary : Theme.brandAccent
+    }
+
+    /// Label varies by billing mode
+    private var perSessionLabel: String {
+        switch payload.billingMode {
+        case .credits: "Credits / session"
+        case .tokenPlus, .legacy: "Cost / session"
+        }
+    }
+
+    /// Value formatted according to billing mode
+    private var perSessionValue: String {
+        guard payload.current.sessions > 0 else { return "—" }
+        switch payload.billingMode {
+        case .credits:
+            guard let credits = payload.current.creditsAugment else { return "—" }
+            let perSession = credits / Double(payload.current.sessions)
+            return perSession.asCompactCredits()
+        case .tokenPlus:
+            guard let billed = payload.current.billedAmountUsd else {
+                return payload.current.cost.asCompactCurrency(fallback: "—")
+            }
+            return (billed / Double(payload.current.sessions)).asCompactCurrency()
+        case .legacy:
+            guard let cost = payload.current.cost else { return "—" }
+            return (cost / Double(payload.current.sessions)).asCompactCurrency()
+        }
     }
 }
 
