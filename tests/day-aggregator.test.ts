@@ -38,6 +38,11 @@ function makeCall(timestamp: string, costUSD: number, model = 'Opus 4.7', provid
   }
 }
 
+function localDateKey(iso: string): string {
+  const d = new Date(iso)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 describe('aggregateProjectsIntoDays', () => {
   it('buckets api calls by calendar date derived from timestamp', () => {
     const projects: ProjectSummary[] = [
@@ -130,12 +135,13 @@ describe('aggregateProjectsIntoDays', () => {
   })
 
   it('counts a session under its firstTimestamp date', () => {
+    const firstTimestamp = '2026-04-09T23:59:00Z'
     const projects: ProjectSummary[] = [
       makeProject({
         sessions: [{
           sessionId: 's1',
           project: 'p',
-          firstTimestamp: '2026-04-09T23:59:00Z',
+          firstTimestamp,
           lastTimestamp: '2026-04-10T00:10:00Z',
           totalCostUSD: 1,
           totalInputTokens: 0, totalOutputTokens: 0, totalCacheReadTokens: 0, totalCacheWriteTokens: 0,
@@ -147,7 +153,7 @@ describe('aggregateProjectsIntoDays', () => {
       }),
     ]
     const days = aggregateProjectsIntoDays(projects)
-    expect(days[0]!.date).toBe('2026-04-09')
+    expect(days[0]!.date).toBe(localDateKey(firstTimestamp))
     expect(days[0]!.sessions).toBe(1)
   })
 
