@@ -11,13 +11,13 @@ A usage analytics tool for [Augment Code (Auggie)](https://www.augmentcode.com/)
 
 ![CodeBurn TUI dashboard](https://raw.githubusercontent.com/getagentseal/codeburn/main/assets/dashboard.jpg)
 
-*Screenshot predates 1.0.0 and will be updated.*
+*Screenshot predates 2.0.0 and will be updated.*
 
 ## Project status
 
-- **Version:** 1.0.0 (Auggie-only)
-- **Tests:** 177 passing (173 TypeScript, 4 Swift)
-- **What's new since 1.0.0:** exchange-level tool/shell/MCP aggregation, provider-aware model fallback with an `auggie-legacy` sentinel for pre-Nov-2025 sessions, and Augment credits surfaced alongside estimated USD. See [CHANGELOG.md](./CHANGELOG.md) for details and [AUDIT_REPORT.md](./AUDIT_REPORT.md) for the security/quality audit.
+- **Version:** 2.0.0 (Auggie-only, fork)
+- **Tests:** 203 passing (193 TypeScript, 10 Swift)
+- **What's new in 2.0.0:** Dual billing modes (credits vs USD-estimate), per-model surcharge support. See the [Billing modes](#billing-modes) section and [CHANGELOG.md](./CHANGELOG.md) for details.
 
 ## Prerequisites
 
@@ -31,34 +31,31 @@ Override the Augment directory with `AUGMENT_HOME=/path/to/.augment` if you keep
 
 ## Install
 
-### From npm (published as `codeburn`)
+This fork is Auggie-specific and runs from source. Clone, build, then either invoke directly or link it into `$PATH`:
 
 ```bash
-npm install -g codeburn
-codeburn                       # interactive TUI, default 7 days
-```
-
-Or run without installing:
-
-```bash
-npx codeburn
-```
-
-### From source
-
-```bash
-git clone git@github.com:jaycdave88/codeburn.git
+git clone https://github.com/jaycdave88/codeburn.git
 cd codeburn
 npm install
 npm run build
+
+# Option A: invoke directly
 node dist/cli.js                         # interactive TUI
 node dist/cli.js --format json           # machine-readable report
 node dist/cli.js export --format json    # full CSV/JSON export
+
+# Option B: link globally (gives you `codeburn …` in your shell)
+npm link
+codeburn                                 # now works anywhere
 ```
 
 During development, `npm run dev -- report` runs the CLI directly via `tsx` without a build step.
 
+> **Note:** The upstream `codeburn` package on npm (v1.x) is a different build. Running `npm install -g codeburn` or `npx codeburn` installs the upstream package, **not this fork**.
+
 ## Usage
+
+> **Note:** If you ran `npm link`, you can use `codeburn …` below. Otherwise substitute `node dist/cli.js …`.
 
 ```bash
 codeburn                       # interactive dashboard (default: 7 days)
@@ -84,8 +81,8 @@ Arrow keys switch between Today / 7 Days / 30 Days / Month / All Time. Press `q`
 
 | Panel | What it contains |
 |---|---|
-| **Overview** | Estimated USD, **Augment credits** (when billing metadata is present), total calls, sessions, cache-hit %, token totals, legacy-session count (shown as `(N legacy sessions — model unrecoverable)` when applicable) |
-| **By Model** | Cost and call count per model, with an **Augment** credits column alongside `est.USD`. Pre-Nov-2025 sessions appear under `auggie-legacy`; set-but-unpriced IDs under `auggie-unknown` |
+| **Overview** | In **credits mode**: shows Augment credits (ground-truth and synthesized) plus token totals; USD fields are `null`. In **token_plus (USD-estimate) mode**: shows base cost, surcharge, and billed USD; credits are `null`. Both modes show total calls, sessions, cache-hit %, and legacy-session count when applicable. |
+| **By Model** | Per-model breakdown. In credits mode: credits column. In token_plus mode: base/surcharge/billed USD columns. Pre-Nov-2025 sessions appear under `auggie-legacy`; set-but-unpriced IDs under `auggie-unknown`. |
 | **Daily Activity** | Sparkline of cost per day across the selected window |
 | **Projects** | Top projects by cost, with `avgCostPerSession` in JSON output |
 | **Activities** | 13 deterministic task categories (Coding, Debugging, Refactoring, Testing, …) with one-shot success rate |
@@ -93,7 +90,7 @@ Arrow keys switch between Today / 7 Days / 30 Days / Month / All Time. Press `q`
 | **Shell Commands** | `launch-process` command lines pulled from every tool-use node |
 | **MCP Servers** | MCP tool calls routed by `tool_use.mcp_server_name` when present, suffix-parsed as fallback for older sessions |
 
-The `--format json` flag on `report`, `today`, and `month` emits the same data as a structured payload including a `"Credits (Augment)"` field per model. Pipe to `jq` for filtering.
+The `--format json` flag on `report`, `today`, and `month` emits a structured payload. In v2+, output includes a top-level `billing` block (`mode`, `creditsPerDollar`, `surchargeRate`, `activityMultiplier`) and per-row fields: `creditsAugment`, `creditsSynthesized`, `baseCostUsd`, `surchargeUsd`, `billedAmountUsd`. Pipe to `jq` for filtering.
 
 ## How Auggie sessions are parsed
 
@@ -101,7 +98,7 @@ Auggie writes one JSON file per conversation into `~/.augment/sessions/`. CodeBu
 
 **Model selection** prefers `agentState.modelId` (resolved through an alias table). When it's empty, CodeBurn falls back to a provider-aware default derived from `metadata.provider` on type-8 THINKING nodes (see `CODEBURN_AUGGIE_DEFAULT_*` and `CODEBURN_AUGGIE_ALIAS_*` in the Environment Variables table below). Sessions with neither a `modelId` nor a recoverable provider hint (pre-Nov-2025 sessions) bucket under `auggie-legacy`; `auggie-unknown` is reserved for sessions where the `modelId` is set but not yet in the alias table.
 
-**Credits** come from Augment's own billing metadata: `billing_metadata.credits_consumed` on type-9 BILLING_METADATA nodes, deduped by `transaction_id`. When the top-level `session.creditUsage` is present it's used as the authoritative session total (it already includes sub-agent credits). The estimated USD column uses [LiteLLM](https://github.com/BerriAI/litellm) pricing data, cached for 24 hours at `~/.cache/codeburn/litellm-pricing.json`.
+**Credits** come from Augment's own billing metadata: `billing_metadata.credits_consumed` on type-9 BILLING_METADATA nodes, deduped by `transaction_id`. When the top-level `session.creditUsage` is present it's used as the authoritative session total (it already includes sub-agent credits). In **token_plus mode**, USD cost is computed from token counts using [LiteLLM](https://github.com/BerriAI/litellm) pricing (cached at `~/.cache/codeburn/litellm-pricing.json`); in **credits mode** the USD column is `null`.
 
 Parsed calls are cached per session at `~/.cache/codeburn/auggie/<id>.json` (mode `0600`) and invalidated on mtime+size change. A daily cache at `~/.cache/codeburn/daily.json` aggregates completed days (yesterday and earlier) so `status --format menubar-json` stays fast; today's data is always re-parsed live. The credentials file at `~/.augment/session.json` is never read by the CLI.
 
@@ -110,6 +107,8 @@ Parsed calls are cached per session at `~/.cache/codeburn/auggie/<id>.json` (mod
 | Variable | Description |
 |---|---|
 | `AUGMENT_HOME` | Override the Augment data directory (default: `~/.augment`). |
+| `CODEBURN_BILLING_MODE` | `credits` or `token_plus` (default: `credits`). See [Billing modes](#billing-modes) for details. |
+| `CODEBURN_SURCHARGE_RATE` | Decimal surcharge for token_plus mode (default: `0`). See [Billing modes](#billing-modes) for details. |
 | `CODEBURN_AUGGIE_DEFAULT_ANTHROPIC` | Fallback model when `modelId` is empty and `metadata.provider = anthropic` (default: `claude-sonnet-4-5`). |
 | `CODEBURN_AUGGIE_DEFAULT_OPENAI` | Fallback model for OpenAI (default: `gpt-5.1`). |
 | `CODEBURN_AUGGIE_DEFAULT_GEMINI` | Fallback model for Gemini (default: `gemini-3-pro`). |
@@ -141,7 +140,7 @@ npx codeburn menubar           # downloads the latest .app into ~/Applications a
 
 ![CodeBurn macOS menubar app](https://cdn.jsdelivr.net/gh/getagentseal/codeburn@main/assets/menubar-0.7.2.png)
 
-*Screenshot predates 1.0.0 and will be updated.*
+*Screenshot predates 2.0.0 and will be updated.*
 
 The popover shows today's cost, a period switcher, activity/model breakdowns, optimize findings, and a Plan pill that fetches live credit info from Augment's `/get-credit-info` endpoint (using the `accessToken` + `tenantURL` from `~/.augment/session.json`). Refresh is live via FSEvents plus a 60-second poll. Build details: [`mac/README.md`](./mac/README.md).
 
@@ -156,7 +155,7 @@ Detects files re-read across sessions, low Read:Edit ratios, uncapped bash outpu
 
 ![CodeBurn optimize output](https://raw.githubusercontent.com/getagentseal/codeburn/main/assets/optimize.jpg)
 
-*Screenshot predates 1.0.0 and will be updated.*
+*Screenshot predates 2.0.0 and will be updated.*
 
 ## Billing modes
 
@@ -182,6 +181,19 @@ Shows estimated **USD cost** instead of credits. Useful for enterprise users wit
 |---|---|---|
 | `CODEBURN_BILLING_MODE` | `credits` or `token_plus` | `credits` |
 | `CODEBURN_SURCHARGE_RATE` | Decimal surcharge for token_plus mode | `0` (0% surcharge; enterprise USD users set to contracted rate e.g. `0.3` for 30%) |
+
+### CLI examples
+
+```bash
+# Default — credits mode (if you ran `npm link`, use `codeburn today` instead)
+node dist/cli.js today
+
+# USD-estimate mode, default 0% surcharge
+CODEBURN_BILLING_MODE=token_plus node dist/cli.js today
+
+# Enterprise USD with contracted 30% surcharge
+CODEBURN_BILLING_MODE=token_plus CODEBURN_SURCHARGE_RATE=0.3 node dist/cli.js today
+```
 
 ### Limitations
 
@@ -243,7 +255,7 @@ Cache and config files are created with mode `0600` under directories with mode 
 
 ```bash
 npm install
-npm test                       # vitest, 177 tests
+npm test                       # vitest, 203 tests
 npm run build                  # tsup → dist/cli.js (target: node20¹)
 
 ¹ `tsup.config.ts` uses `target: node20` for compile-time syntax transpilation, while `package.json engines` requires Node ≥ 22 at runtime.
