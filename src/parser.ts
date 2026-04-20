@@ -239,7 +239,10 @@ function buildSessionSummary(
     const turnCost = turn.assistantCalls.reduce((s, c) => s + c.costUSD, 0)
 
     if (!categoryBreakdown[turn.category]) {
-      categoryBreakdown[turn.category] = { turns: 0, costUSD: 0, retries: 0, editTurns: 0, oneShotTurns: 0 }
+      categoryBreakdown[turn.category] = {
+        turns: 0, costUSD: 0, retries: 0, editTurns: 0, oneShotTurns: 0,
+        credits: null, baseCostUsd: null, surchargeUsd: null, billedAmountUsd: null,
+      }
     }
     categoryBreakdown[turn.category].turns++
     categoryBreakdown[turn.category].costUSD += turnCost
@@ -247,6 +250,17 @@ function buildSessionSummary(
       categoryBreakdown[turn.category].editTurns++
       categoryBreakdown[turn.category].retries += turn.retries
       if (turn.retries === 0) categoryBreakdown[turn.category].oneShotTurns++
+    }
+
+    // Aggregate billing fields per category from turn's calls
+    for (const call of turn.assistantCalls) {
+      const billing = call.billing
+      if (billing) {
+        categoryBreakdown[turn.category].credits = addNullable(categoryBreakdown[turn.category].credits, billing.creditsAugment)
+        categoryBreakdown[turn.category].baseCostUsd = addNullable(categoryBreakdown[turn.category].baseCostUsd, billing.baseCostUsd)
+        categoryBreakdown[turn.category].surchargeUsd = addNullable(categoryBreakdown[turn.category].surchargeUsd, billing.surchargeUsd)
+        categoryBreakdown[turn.category].billedAmountUsd = addNullable(categoryBreakdown[turn.category].billedAmountUsd, billing.billedAmountUsd)
+      }
     }
 
     for (const call of turn.assistantCalls) {

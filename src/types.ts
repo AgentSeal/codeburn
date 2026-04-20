@@ -144,7 +144,18 @@ export type SessionSummary = {
   toolBreakdown: Record<string, { calls: number }>
   mcpBreakdown: Record<string, { calls: number }>
   bashBreakdown: Record<string, { calls: number }>
-  categoryBreakdown: Record<TaskCategory, { turns: number; costUSD: number; retries: number; editTurns: number; oneShotTurns: number }>
+  categoryBreakdown: Record<TaskCategory, {
+    turns: number
+    costUSD: number
+    retries: number
+    editTurns: number
+    oneShotTurns: number
+    /// Billing aggregates per category.
+    credits?: number | null
+    baseCostUsd?: number | null
+    surchargeUsd?: number | null
+    billedAmountUsd?: number | null
+  }>
 }
 
 export type ProjectSummary = {

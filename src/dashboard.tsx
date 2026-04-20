@@ -406,31 +406,54 @@ function ModelBreakdown({ projects, pw, bw, billingMode }: { projects: ProjectSu
   )
 }
 
-function ActivityBreakdown({ projects, pw, bw }: { projects: ProjectSummary[]; pw: number; bw: number }) {
-  const categoryTotals: Record<string, { turns: number; costUSD: number; editTurns: number; oneShotTurns: number }> = {}
+function ActivityBreakdown({ projects, pw, bw, billingMode }: { projects: ProjectSummary[]; pw: number; bw: number; billingMode: BillingMode }) {
+  const categoryTotals: Record<string, { turns: number; costUSD: number; credits: number | null; billedAmountUsd: number | null; editTurns: number; oneShotTurns: number }> = {}
   for (const project of projects) {
     for (const session of project.sessions) {
       for (const [cat, data] of Object.entries(session.categoryBreakdown)) {
-        if (!categoryTotals[cat]) categoryTotals[cat] = { turns: 0, costUSD: 0, editTurns: 0, oneShotTurns: 0 }
+        if (!categoryTotals[cat]) categoryTotals[cat] = { turns: 0, costUSD: 0, credits: null, billedAmountUsd: null, editTurns: 0, oneShotTurns: 0 }
         categoryTotals[cat].turns += data.turns
         categoryTotals[cat].costUSD += data.costUSD
         categoryTotals[cat].editTurns += data.editTurns
         categoryTotals[cat].oneShotTurns += data.oneShotTurns
+        // Aggregate billing fields
+        if (categoryTotals[cat].credits === null && data.credits == null) {
+          // Both null, keep null
+        } else {
+          categoryTotals[cat].credits = (categoryTotals[cat].credits ?? 0) + (data.credits ?? 0)
+        }
+        if (categoryTotals[cat].billedAmountUsd === null && data.billedAmountUsd == null) {
+          // Both null, keep null
+        } else {
+          categoryTotals[cat].billedAmountUsd = (categoryTotals[cat].billedAmountUsd ?? 0) + (data.billedAmountUsd ?? 0)
+        }
       }
     }
   }
-  const sorted = Object.entries(categoryTotals).sort(([, a], [, b]) => b.costUSD - a.costUSD)
-  const maxCost = sorted[0]?.[1]?.costUSD ?? 0
+  // Sort by billing-mode aware value
+  const sorted = Object.entries(categoryTotals).sort(([, a], [, b]) => {
+    const valueA = billingMode === 'credits' ? (a.credits ?? 0) : (a.billedAmountUsd ?? a.costUSD)
+    const valueB = billingMode === 'credits' ? (b.credits ?? 0) : (b.billedAmountUsd ?? b.costUSD)
+    return valueB - valueA
+  })
+  const maxValue = sorted.length > 0
+    ? (billingMode === 'credits' ? (sorted[0][1].credits ?? 0) : (sorted[0][1].billedAmountUsd ?? sorted[0][1].costUSD))
+    : 0
+
+  const valueLabel = billingMode === 'credits' ? 'credits' : 'billed'
+  const formatValue = billingMode === 'credits' ? formatCredits : formatCost
+
   return (
     <Panel title="By Activity" color={PANEL_COLORS.activity} width={pw}>
-      <Text dimColor wrap="truncate-end">{''.padEnd(bw + 14)}{'cost'.padStart(8)}{'turns'.padStart(6)}{'1-shot'.padStart(7)}</Text>
+      <Text dimColor wrap="truncate-end">{''.padEnd(bw + 14)}{valueLabel.padStart(8)}{'turns'.padStart(6)}{'1-shot'.padStart(7)}</Text>
       {sorted.map(([cat, data]) => {
+        const displayValue = billingMode === 'credits' ? data.credits : (data.billedAmountUsd ?? data.costUSD)
         const oneShotPct = data.editTurns > 0 ? Math.round((data.oneShotTurns / data.editTurns) * 100) + '%' : '-'
         return (
           <Text key={cat} wrap="truncate-end">
-            <HBar value={data.costUSD} max={maxCost} width={bw} />
+            <HBar value={displayValue ?? 0} max={maxValue} width={bw} />
             <Text color={CATEGORY_COLORS[cat as TaskCategory] ?? '#666666'}> {fit(CATEGORY_LABELS[cat as TaskCategory] ?? cat, 13)}</Text>
-            <Text color={GOLD}>{formatCost(data.costUSD).padStart(8)}</Text>
+            <Text color={GOLD}>{formatValue(displayValue ?? 0).padStart(8)}</Text>
             <Text>{String(data.turns).padStart(6)}</Text>
             <Text color={data.editTurns === 0 ? DIM : oneShotPct === '100%' ? '#5BF58C' : ORANGE}>{String(oneShotPct).padStart(7)}</Text>
           </Text>
@@ -658,7 +681,7 @@ function DashboardContent({ projects, period, columns, billingMode, surchargeRat
       <Overview projects={projects} label={PERIOD_LABELS[period]} width={dashWidth} billingMode={billingMode} surchargeRate={surchargeRate} />
       <Row wide={wide} width={dashWidth}><DailyActivity projects={projects} days={days} pw={pw} bw={barWidth} billingMode={billingMode} /><ProjectBreakdown projects={projects} pw={pw} bw={barWidth} billingMode={billingMode} /></Row>
       <TopSessions projects={projects} pw={dashWidth} bw={barWidth} billingMode={billingMode} />
-      <Row wide={wide} width={dashWidth}><ActivityBreakdown projects={projects} pw={pw} bw={barWidth} /><ModelBreakdown projects={projects} pw={pw} bw={barWidth} billingMode={billingMode} /></Row>
+      <Row wide={wide} width={dashWidth}><ActivityBreakdown projects={projects} pw={pw} bw={barWidth} billingMode={billingMode} /><ModelBreakdown projects={projects} pw={pw} bw={barWidth} billingMode={billingMode} /></Row>
       <Row wide={wide} width={dashWidth}><ToolBreakdown projects={projects} pw={pw} bw={barWidth} /><BashBreakdown projects={projects} pw={pw} bw={barWidth} /></Row>
       <McpBreakdown projects={projects} pw={dashWidth} bw={barWidth} />
     </Box>

@@ -22,7 +22,10 @@ type SessionCacheFile = {
   calls: ParsedProviderCall[]
 }
 
-const CACHE_VERSION = 1
+// CACHE_VERSION changelog:
+// v1: Initial schema
+// v2: Added `billing: BillingResult` field to ParsedProviderCall (Wave 2 billing integration)
+const CACHE_VERSION = 2
 const CACHE_SUBDIR = 'auggie'
 const CACHE_FILE_MODE = 0o600
 const CACHE_DIR_MODE = 0o700

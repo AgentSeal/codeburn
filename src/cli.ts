@@ -15,6 +15,7 @@ import { parseDateRangeFlags } from './cli-date.js'
 import { runOptimize, scanAndDetect } from './optimize.js'
 import { getAllProviders } from './providers/index.js'
 import { readConfig, saveConfig, getConfigFilePath } from './config.js'
+import { loadBillingConfig, CREDITS_PER_DOLLAR } from './billing.js'
 import { createRequire } from 'node:module'
 
 const require = createRequire(import.meta.url)
@@ -106,6 +107,17 @@ program.hook('preAction', async (thisCommand) => {
 function buildJsonReport(projects: ProjectSummary[], period: string, periodKey: string) {
   const sessions = projects.flatMap(p => p.sessions)
   const { code } = getCurrency()
+  const billingConfig = loadBillingConfig()
+
+  // Build billing metadata
+  const billing: Record<string, unknown> = {
+    mode: billingConfig.mode,
+  }
+  if (billingConfig.mode === 'credits') {
+    billing.creditsPerDollar = CREDITS_PER_DOLLAR
+  } else {
+    billing.surchargeRate = billingConfig.surchargeRate
+  }
 
   const totalCostUSD = projects.reduce((s, p) => s + p.totalCostUSD, 0)
   const totalCalls = projects.reduce((s, p) => s + p.totalApiCalls, 0)
@@ -208,23 +220,56 @@ function buildJsonReport(projects: ProjectSummary[], period: string, periodKey: 
     .sort((a, b) => b.cost - a.cost)
     .slice(0, 5)
 
+  // Aggregate billing-specific fields for overview
+  const totalCredits = sessions.reduce<number | null>((acc, sess) => {
+    if (acc === null && sess.totalCredits === null) return null
+    return (acc ?? 0) + (sess.totalCredits ?? 0)
+  }, null)
+  const totalBaseCostUsd = sessions.reduce<number | null>((acc, sess) => {
+    if (acc === null && sess.totalBaseCostUsd == null) return null
+    return (acc ?? 0) + (sess.totalBaseCostUsd ?? 0)
+  }, null)
+  const totalSurchargeUsd = sessions.reduce<number | null>((acc, sess) => {
+    if (acc === null && sess.totalSurchargeUsd == null) return null
+    return (acc ?? 0) + (sess.totalSurchargeUsd ?? 0)
+  }, null)
+  const totalBilledAmountUsd = sessions.reduce<number | null>((acc, sess) => {
+    if (acc === null && sess.totalBilledAmountUsd == null) return null
+    return (acc ?? 0) + (sess.totalBilledAmountUsd ?? 0)
+  }, null)
+  const creditsSynthesizedCount = sessions.reduce((s, sess) => s + (sess.creditsSynthesizedCount ?? 0), 0)
+
+  // Build overview with billing-mode aware fields
+  const overview: Record<string, unknown> = {
+    calls: totalCalls,
+    sessions: totalSessions,
+    cacheHitPercent,
+    tokens: {
+      input: totalInput,
+      output: totalOutput,
+      cacheRead: totalCacheRead,
+      cacheWrite: totalCacheWrite,
+    },
+  }
+
+  if (billingConfig.mode === 'credits') {
+    overview.cost = null
+    overview.creditsAugment = totalCredits
+    overview.creditsSynthesized = creditsSynthesizedCount
+  } else {
+    overview.baseCostUsd = totalBaseCostUsd !== null ? Math.round(totalBaseCostUsd * 100) / 100 : null
+    overview.surchargeUsd = totalSurchargeUsd !== null ? Math.round(totalSurchargeUsd * 100) / 100 : null
+    overview.billedAmountUsd = totalBilledAmountUsd !== null ? Math.round(totalBilledAmountUsd * 100) / 100 : null
+    overview.cost = totalBilledAmountUsd !== null ? Math.round(totalBilledAmountUsd * 100) / 100 : convertCost(totalCostUSD)
+  }
+
   return {
     generated: new Date().toISOString(),
     currency: code,
+    billing,
     period,
     periodKey,
-    overview: {
-      cost: convertCost(totalCostUSD),
-      calls: totalCalls,
-      sessions: totalSessions,
-      cacheHitPercent,
-      tokens: {
-        input: totalInput,
-        output: totalOutput,
-        cacheRead: totalCacheRead,
-        cacheWrite: totalCacheWrite,
-      },
-    },
+    overview,
     daily,
     projects: projectList,
     models,
