@@ -255,4 +255,48 @@ describe('buildPeriodDataFromDays', () => {
     expect(pd.categories).toEqual([])
     expect(pd.models).toEqual([])
   })
+
+  it('attributes a midnight-straddling turn to the first assistant call date, not the user message date', () => {
+    // Regression for the bug that shipped in 0.8.2-0.8.4: when a user message
+    // sat on one side of midnight and the assistant response landed on the other,
+    // day-aggregator.ts bucketed by assistant time but renderStatusBar bucketed
+    // by user time, so the menubar and `codeburn status` disagreed on Today.
+    // The invariant for both surfaces: a turn is counted on the day its first
+    // assistant call actually ran.
+    const userTs = '2026-04-20T23:58:00Z'
+    const assistantTs = '2026-04-21T00:30:00Z'
+    const assistantLocal = new Date(assistantTs)
+    const expectedDate = `${assistantLocal.getFullYear()}-${String(assistantLocal.getMonth() + 1).padStart(2, '0')}-${String(assistantLocal.getDate()).padStart(2, '0')}`
+
+    const projects: ProjectSummary[] = [
+      makeProject({
+        sessions: [{
+          sessionId: 's1',
+          project: 'p',
+          firstTimestamp: userTs,
+          lastTimestamp: assistantTs,
+          totalCostUSD: 5,
+          totalInputTokens: 0, totalOutputTokens: 0, totalCacheReadTokens: 0, totalCacheWriteTokens: 0,
+          apiCalls: 1,
+          turns: [{
+            userMessage: 'ask',
+            timestamp: userTs,
+            sessionId: 's1',
+            category: 'coding',
+            retries: 0,
+            hasEdits: false,
+            assistantCalls: [makeCall(assistantTs, 5)],
+          }],
+          modelBreakdown: {}, toolBreakdown: {}, mcpBreakdown: {}, bashBreakdown: {},
+          categoryBreakdown: {} as never,
+        }],
+      }),
+    ]
+
+    const days = aggregateProjectsIntoDays(projects)
+    const costDay = days.find(d => d.cost === 5)
+    expect(costDay, 'turn cost must be bucketed somewhere').toBeDefined()
+    expect(costDay!.date).toBe(expectedDate)
+    expect(costDay!.calls).toBe(1)
+  })
 })
