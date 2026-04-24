@@ -2,7 +2,7 @@ import { readFile, writeFile, mkdir, rename } from 'fs/promises'
 import { join } from 'path'
 import { homedir } from 'os'
 
-export type PlanId = 'claude-pro' | 'claude-max' | 'cursor-pro' | 'custom' | 'none'
+export type PlanId = 'claude-pro' | 'claude-max' | 'claude-max-5x' | 'cursor-pro' | 'custom' | 'none'
 export type PlanProvider = 'claude' | 'codex' | 'cursor' | 'all'
 
 export type Plan = {
