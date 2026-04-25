@@ -1,62 +1,33 @@
-import { readdir, stat } from 'fs/promises'
-import { basename, join } from 'path'
-import { readSessionFile } from './fs-utils.js'
-import { calculateCost, getShortModelName } from './models.js'
+import { stat } from 'fs/promises'
+import { getShortModelName } from './models.js'
 import { discoverAllSessions, getProvider } from './providers/index.js'
 import type { ParsedProviderCall } from './providers/types.js'
 import type {
-  AssistantMessageContent,
   ClassifiedTurn,
-  ContentBlock,
   DateRange,
-  JournalEntry,
   ParsedApiCall,
   ParsedTurn,
   ProjectSummary,
   SessionSummary,
   TokenUsage,
-  ToolUseBlock,
 } from './types.js'
-import { classifyTurn, BASH_TOOLS } from './classifier.js'
-import { extractBashCommands } from './bash-utils.js'
+import { classifyTurn } from './classifier.js'
 
 function unsanitizePath(dirName: string): string {
   return dirName.replace(/-/g, '/')
 }
 
-function parseJsonlLine(line: string): JournalEntry | null {
-  try {
-    return JSON.parse(line) as JournalEntry
-  } catch {
-    return null
-  }
-}
-
-function extractToolNames(content: ContentBlock[]): string[] {
-  return content
-    .filter((b): b is ToolUseBlock => b.type === 'tool_use')
-    .map(b => b.name)
-}
-
 /// MCP tool naming conventions:
-///   - Claude Code (legacy): "mcp__server__tool" prefix format
 ///   - Auggie: "tool_server-mcp" suffix format (e.g., "read_note_workspace-mcp")
-/// Both are valid MCP tools; this function accepts either convention.
-const MCP_PREFIX = 'mcp__'
 const MCP_SUFFIX = '-mcp'
 
 function isMcpTool(tool: string): boolean {
-  return tool.startsWith(MCP_PREFIX) || tool.endsWith(MCP_SUFFIX)
+  return tool.endsWith(MCP_SUFFIX)
 }
 
 /// Extract the MCP server name from a tool name.
-/// - Claude Code format: "mcp__server__tool" → "server"
 /// - Auggie format: "tool_server-mcp" → "server"
 function extractMcpServerName(tool: string): string {
-  if (tool.startsWith(MCP_PREFIX)) {
-    // Claude Code: mcp__server__tool
-    return tool.split('__')[1] ?? tool
-  }
   if (tool.endsWith(MCP_SUFFIX)) {
     // Auggie: tool_server-mcp
     const withoutSuffix = tool.slice(0, -MCP_SUFFIX.length)
@@ -75,125 +46,6 @@ function extractMcpTools(tools: string[]): string[] {
 
 function extractCoreTools(tools: string[]): string[] {
   return tools.filter(t => !isMcpTool(t))
-}
-
-function extractBashCommandsFromContent(content: ContentBlock[]): string[] {
-  return content
-    .filter((b): b is ToolUseBlock => b.type === 'tool_use' && BASH_TOOLS.has((b as ToolUseBlock).name))
-    .flatMap(b => {
-      const command = (b.input as Record<string, unknown>)?.command
-      return typeof command === 'string' ? extractBashCommands(command) : []
-    })
-}
-
-function getUserMessageText(entry: JournalEntry): string {
-  if (!entry.message || entry.message.role !== 'user') return ''
-  const content = entry.message.content
-  if (typeof content === 'string') return content
-  if (Array.isArray(content)) {
-    return content
-      .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
-      .map(b => b.text)
-      .join(' ')
-  }
-  return ''
-}
-
-function getMessageId(entry: JournalEntry): string | null {
-  if (entry.type !== 'assistant') return null
-  const msg = entry.message as AssistantMessageContent | undefined
-  return msg?.id ?? null
-}
-
-function parseApiCall(entry: JournalEntry): ParsedApiCall | null {
-  if (entry.type !== 'assistant') return null
-  const msg = entry.message as AssistantMessageContent | undefined
-  if (!msg?.usage || !msg?.model) return null
-
-  const usage = msg.usage
-  const tokens: TokenUsage = {
-    inputTokens: usage.input_tokens ?? 0,
-    outputTokens: usage.output_tokens ?? 0,
-    cacheCreationInputTokens: usage.cache_creation_input_tokens ?? 0,
-    cacheReadInputTokens: usage.cache_read_input_tokens ?? 0,
-    cachedInputTokens: 0,
-    reasoningTokens: 0,
-    webSearchRequests: usage.server_tool_use?.web_search_requests ?? 0,
-  }
-
-  const tools = extractToolNames(msg.content ?? [])
-  const costUSD = calculateCost(
-    msg.model,
-    tokens.inputTokens,
-    tokens.outputTokens,
-    tokens.cacheCreationInputTokens,
-    tokens.cacheReadInputTokens,
-    tokens.webSearchRequests,
-    usage.speed ?? 'standard',
-  )
-
-  const bashCmds = extractBashCommandsFromContent(msg.content ?? [])
-
-  return {
-    provider: 'claude',
-    model: msg.model,
-    usage: tokens,
-    costUSD,
-    credits: null, // Claude provider does not have Augment credits
-    tools,
-    mcpTools: extractMcpTools(tools),
-    hasAgentSpawn: tools.includes('Agent'),
-    hasPlanMode: tools.includes('EnterPlanMode'),
-    speed: usage.speed ?? 'standard',
-    timestamp: entry.timestamp ?? '',
-    bashCommands: bashCmds,
-    deduplicationKey: msg.id ?? `claude:${entry.timestamp}`,
-  }
-}
-
-function groupIntoTurns(entries: JournalEntry[], seenMsgIds: Set<string>): ParsedTurn[] {
-  const turns: ParsedTurn[] = []
-  let currentUserMessage = ''
-  let currentCalls: ParsedApiCall[] = []
-  let currentTimestamp = ''
-  let currentSessionId = ''
-
-  for (const entry of entries) {
-    if (entry.type === 'user') {
-      const text = getUserMessageText(entry)
-      if (text.trim()) {
-        if (currentCalls.length > 0) {
-          turns.push({
-            userMessage: currentUserMessage,
-            assistantCalls: currentCalls,
-            timestamp: currentTimestamp,
-            sessionId: currentSessionId,
-          })
-        }
-        currentUserMessage = text
-        currentCalls = []
-        currentTimestamp = entry.timestamp ?? ''
-        currentSessionId = entry.sessionId ?? ''
-      }
-    } else if (entry.type === 'assistant') {
-      const msgId = getMessageId(entry)
-      if (msgId && seenMsgIds.has(msgId)) continue
-      if (msgId) seenMsgIds.add(msgId)
-      const call = parseApiCall(entry)
-      if (call) currentCalls.push(call)
-    }
-  }
-
-  if (currentCalls.length > 0) {
-    turns.push({
-      userMessage: currentUserMessage,
-      assistantCalls: currentCalls,
-      timestamp: currentTimestamp,
-      sessionId: currentSessionId,
-    })
-  }
-
-  return turns
 }
 
 /// Helper to add nullable numbers with proper null semantics.
@@ -363,102 +215,6 @@ function buildSessionSummary(
     bashBreakdown,
     categoryBreakdown,
   }
-}
-
-async function parseSessionFile(
-  filePath: string,
-  project: string,
-  seenMsgIds: Set<string>,
-  dateRange?: DateRange,
-): Promise<SessionSummary | null> {
-  // Skip files whose mtime is older than the range start. A session file
-  // can only contain entries up to its last-modified time; if that predates
-  // the requested range, nothing in this file can match.
-  if (dateRange) {
-    try {
-      const s = await stat(filePath)
-      if (s.mtimeMs < dateRange.start.getTime()) return null
-    } catch { /* fall through to normal read; missing stat shouldn't break parsing */ }
-  }
-  const content = await readSessionFile(filePath)
-  if (content === null) return null
-  const lines = content.split('\n').filter(l => l.trim())
-  const entries: JournalEntry[] = []
-
-  for (const line of lines) {
-    const entry = parseJsonlLine(line)
-    if (entry) entries.push(entry)
-  }
-
-  if (entries.length === 0) return null
-
-  let filteredEntries = entries
-  if (dateRange) {
-    filteredEntries = entries.filter(e => {
-      if (!e.timestamp) return e.type === 'user'
-      const ts = new Date(e.timestamp)
-      return ts >= dateRange.start && ts <= dateRange.end
-    })
-    if (filteredEntries.length === 0) return null
-  }
-
-  const sessionId = basename(filePath, '.jsonl')
-  const turns = groupIntoTurns(filteredEntries, seenMsgIds)
-  const classified = turns.map(classifyTurn)
-
-  return buildSessionSummary(sessionId, project, classified)
-}
-
-async function collectJsonlFiles(dirPath: string): Promise<string[]> {
-  const files = await readdir(dirPath).catch(() => [])
-  const jsonlFiles = files.filter(f => f.endsWith('.jsonl')).map(f => join(dirPath, f))
-
-  for (const entry of files) {
-    if (entry.endsWith('.jsonl')) continue
-    const subagentsPath = join(dirPath, entry, 'subagents')
-    const subFiles = await readdir(subagentsPath).catch(() => [])
-    for (const sf of subFiles) {
-      if (sf.endsWith('.jsonl')) jsonlFiles.push(join(subagentsPath, sf))
-    }
-  }
-
-  return jsonlFiles
-}
-
-async function scanProjectDirs(dirs: Array<{ path: string; name: string }>, seenMsgIds: Set<string>, dateRange?: DateRange): Promise<ProjectSummary[]> {
-  const projectMap = new Map<string, SessionSummary[]>()
-
-  for (const { path: dirPath, name: dirName } of dirs) {
-    const jsonlFiles = await collectJsonlFiles(dirPath)
-
-    for (const filePath of jsonlFiles) {
-      const session = await parseSessionFile(filePath, dirName, seenMsgIds, dateRange)
-      if (session && session.apiCalls > 0) {
-        const existing = projectMap.get(dirName) ?? []
-        existing.push(session)
-        projectMap.set(dirName, existing)
-      }
-    }
-  }
-
-  const projects: ProjectSummary[] = []
-  for (const [dirName, sessions] of projectMap) {
-    // Aggregate credits: null + null = null, null + N = N, N + M = N + M
-    const totalCredits = sessions.reduce<number | null>((acc, sess) => {
-      if (acc === null && sess.totalCredits === null) return null
-      return (acc ?? 0) + (sess.totalCredits ?? 0)
-    }, null)
-    projects.push({
-      project: dirName,
-      projectPath: unsanitizePath(dirName),
-      sessions,
-      totalCostUSD: sessions.reduce((s, sess) => s + sess.totalCostUSD, 0),
-      totalCredits,
-      totalApiCalls: sessions.reduce((s, sess) => s + sess.apiCalls, 0),
-    })
-  }
-
-  return projects
 }
 
 function providerCallToTurn(call: ParsedProviderCall): ParsedTurn {
