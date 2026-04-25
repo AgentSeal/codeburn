@@ -2,9 +2,22 @@ import { writeFile, mkdir, readdir, lstat, stat, rm } from 'fs/promises'
 import { dirname, join, resolve } from 'path'
 
 import { CATEGORY_LABELS, type ProjectSummary, type TaskCategory } from './types.js'
-import { getCurrency, convertCost } from './currency.js'
-import { loadBillingConfig, CREDITS_PER_DOLLAR, type BillingConfig } from './billing.js'
+import { getCurrency } from './currency.js'
+import { loadBillingConfig, type BillingConfig } from './billing.js'
 import { localDateString } from './cli-date.js'
+import {
+  addBillingAggregate,
+  aggregateCallsBilling,
+  aggregateSessionsBilling,
+  billingAggregateFromProject,
+  billingCsvFields,
+  billingJsonFields,
+  billingMetricValue,
+  buildBillingMetadata,
+  emptyBillingAggregate,
+  round2,
+  type BillingAggregate,
+} from './billing-output.js'
 
 function escCsv(s: string): string {
   const sanitized = /^[=+\-@]/.test(s) ? `'${s}` : s
@@ -26,16 +39,12 @@ function rowsToCsv(rows: Row[]): string {
   return lines.join('\n') + '\n'
 }
 
-function round2(n: number): number {
-  return Math.round(n * 100) / 100
-}
-
 function pct(n: number, total: number): number {
   return total > 0 ? round2((n / total) * 100) : 0
 }
 
 type DailyAgg = {
-  cost: number
+  billing: BillingAggregate
   calls: number
   input: number
   output: number
@@ -44,7 +53,7 @@ type DailyAgg = {
   sessions: Set<string>
 }
 
-function buildDailyRows(projects: ProjectSummary[], period: string): Row[] {
+function buildDailyRows(projects: ProjectSummary[], period: string, billingConfig: BillingConfig): Row[] {
   const daily: Record<string, DailyAgg> = {}
   for (const project of projects) {
     for (const session of project.sessions) {
@@ -52,11 +61,11 @@ function buildDailyRows(projects: ProjectSummary[], period: string): Row[] {
         if (!turn.timestamp) continue
         const day = localDateString(new Date(turn.timestamp))
         if (!daily[day]) {
-          daily[day] = { cost: 0, calls: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, sessions: new Set() }
+          daily[day] = { billing: emptyBillingAggregate(), calls: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, sessions: new Set() }
         }
         daily[day].sessions.add(session.sessionId)
         for (const call of turn.assistantCalls) {
-          daily[day].cost += call.costUSD
+          addBillingAggregate(daily[day].billing, aggregateCallsBilling([call]))
           daily[day].calls++
           daily[day].input += call.usage.inputTokens
           daily[day].output += call.usage.outputTokens
@@ -66,11 +75,10 @@ function buildDailyRows(projects: ProjectSummary[], period: string): Row[] {
       }
     }
   }
-  const { code } = getCurrency()
   return Object.entries(daily).sort().map(([date, d]) => ({
     Period: period,
     Date: date,
-    [`Cost (${code})`]: round2(convertCost(d.cost)),
+    ...billingCsvFields(d.billing, billingConfig),
     'API Calls': d.calls,
     Sessions: d.sessions.size,
     'Input Tokens': d.input,
@@ -80,46 +88,44 @@ function buildDailyRows(projects: ProjectSummary[], period: string): Row[] {
   }))
 }
 
-function buildActivityRows(projects: ProjectSummary[], period: string): Row[] {
-  const catTotals: Record<string, { turns: number; cost: number }> = {}
+function buildActivityRows(projects: ProjectSummary[], period: string, billingConfig: BillingConfig): Row[] {
+  const catTotals: Record<string, { turns: number; billing: BillingAggregate }> = {}
   for (const project of projects) {
     for (const session of project.sessions) {
-      for (const [cat, d] of Object.entries(session.categoryBreakdown)) {
-        if (!catTotals[cat]) catTotals[cat] = { turns: 0, cost: 0 }
-        catTotals[cat].turns += d.turns
-        catTotals[cat].cost += d.costUSD
+      for (const turn of session.turns) {
+        if (!catTotals[turn.category]) catTotals[turn.category] = { turns: 0, billing: emptyBillingAggregate() }
+        catTotals[turn.category].turns++
+        addBillingAggregate(catTotals[turn.category].billing, aggregateCallsBilling(turn.assistantCalls))
       }
     }
   }
-  const totalCost = Object.values(catTotals).reduce((s, d) => s + d.cost, 0)
-  const { code } = getCurrency()
+  const total = Object.values(catTotals).reduce((s, d) => s + billingMetricValue(d.billing, billingConfig), 0)
   return Object.entries(catTotals)
-    .sort(([, a], [, b]) => b.cost - a.cost)
+    .sort(([, a], [, b]) => billingMetricValue(b.billing, billingConfig) - billingMetricValue(a.billing, billingConfig))
     .map(([cat, d]) => ({
       Period: period,
       Activity: CATEGORY_LABELS[cat as TaskCategory] ?? cat,
-      [`Cost (${code})`]: round2(convertCost(d.cost)),
-      'Share (%)': pct(d.cost, totalCost),
+      ...billingCsvFields(d.billing, billingConfig),
+      'Share (%)': pct(billingMetricValue(d.billing, billingConfig), total),
       Turns: d.turns,
     }))
 }
 
-function buildModelRows(projects: ProjectSummary[], period: string): Row[] {
-  const modelTotals: Record<string, { calls: number; cost: number; credits: number | null; input: number; output: number; cacheRead: number; cacheWrite: number }> = {}
+function buildModelRows(projects: ProjectSummary[], period: string, billingConfig: BillingConfig): Row[] {
+  const modelTotals: Record<string, { calls: number; billing: BillingAggregate; input: number; output: number; cacheRead: number; cacheWrite: number }> = {}
   for (const project of projects) {
     for (const session of project.sessions) {
       for (const [model, d] of Object.entries(session.modelBreakdown)) {
-        if (!modelTotals[model]) modelTotals[model] = { calls: 0, cost: 0, credits: null, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
+        if (!modelTotals[model]) modelTotals[model] = { calls: 0, billing: emptyBillingAggregate(), input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
         modelTotals[model].calls += d.calls
-        modelTotals[model].cost += d.costUSD
-        // Aggregate credits: null + null = null, null + N = N, N + M = N + M
-        const existingCredits = modelTotals[model].credits
-        const newCredits = d.credits
-        if (existingCredits === null && newCredits === null) {
-          // Both null, keep null
-        } else {
-          modelTotals[model].credits = (existingCredits ?? 0) + (newCredits ?? 0)
-        }
+        addBillingAggregate(modelTotals[model].billing, {
+          costEstimateUsd: d.costUSD,
+          creditsAugment: d.credits,
+          creditsSynthesizedCalls: d.creditsSynthesizedCount ?? 0,
+          baseCostUsd: d.baseCostUsd ?? null,
+          surchargeUsd: d.surchargeUsd ?? null,
+          billedAmountUsd: d.billedAmountUsd ?? null,
+        })
         modelTotals[model].input += d.tokens.inputTokens
         modelTotals[model].output += d.tokens.outputTokens
         modelTotals[model].cacheRead += d.tokens.cacheReadInputTokens ?? 0
@@ -127,26 +133,21 @@ function buildModelRows(projects: ProjectSummary[], period: string): Row[] {
       }
     }
   }
-  const totalCost = Object.values(modelTotals).reduce((s, d) => s + d.cost, 0)
-  const { code } = getCurrency()
+  const total = Object.values(modelTotals).reduce((s, d) => s + billingMetricValue(d.billing, billingConfig), 0)
   return Object.entries(modelTotals)
     .filter(([name]) => name !== '<synthetic>')
-    .sort(([, a], [, b]) => b.cost - a.cost)
+    .sort(([, a], [, b]) => billingMetricValue(b.billing, billingConfig) - billingMetricValue(a.billing, billingConfig))
     .map(([model, d]) => {
       const row: Row = {
         Period: period,
         Model: model,
-        [`Cost (${code}, est.)`]: round2(convertCost(d.cost)),
-        'Share (%)': pct(d.cost, totalCost),
+        ...billingCsvFields(d.billing, billingConfig),
+        'Share (%)': pct(billingMetricValue(d.billing, billingConfig), total),
         'API Calls': d.calls,
         'Input Tokens': d.input,
         'Output Tokens': d.output,
         'Cache Read Tokens': d.cacheRead,
         'Cache Write Tokens': d.cacheWrite,
-      }
-      // Include credits column: null = '—', otherwise the number
-      if (d.credits !== null) {
-        row['Credits (Augment)'] = d.credits
       }
       return row
     })
@@ -190,45 +191,45 @@ function buildBashRows(projects: ProjectSummary[]): Row[] {
     }))
 }
 
-function buildProjectRows(projects: ProjectSummary[]): Row[] {
-  const { code } = getCurrency()
-  const total = projects.reduce((s, p) => s + p.totalCostUSD, 0)
+function buildProjectRows(projects: ProjectSummary[], billingConfig: BillingConfig): Row[] {
+  const total = projects.reduce((s, p) => s + billingMetricValue(billingAggregateFromProject(p), billingConfig), 0)
   return projects
     .slice()
-    .sort((a, b) => b.totalCostUSD - a.totalCostUSD)
+    .sort((a, b) => billingMetricValue(billingAggregateFromProject(b), billingConfig) - billingMetricValue(billingAggregateFromProject(a), billingConfig))
     .map(p => {
+      const billing = billingAggregateFromProject(p)
       const row: Row = {
         Project: p.projectPath,
-        [`Cost (${code}, est.)`]: round2(convertCost(p.totalCostUSD)),
-        [`Avg/Session (${code})`]: p.sessions.length > 0 ? round2(convertCost(p.totalCostUSD / p.sessions.length)) : '',
-        'Share (%)': pct(p.totalCostUSD, total),
+        ...billingCsvFields(billing, billingConfig),
+        'Share (%)': pct(billingMetricValue(billing, billingConfig), total),
         'API Calls': p.totalApiCalls,
         Sessions: p.sessions.length,
-      }
-      // Include credits column if present
-      if (p.totalCredits !== null) {
-        row['Credits (Augment)'] = p.totalCredits
       }
       return row
     })
 }
 
-function buildSessionRows(projects: ProjectSummary[]): Row[] {
-  const { code } = getCurrency()
+function buildSessionRows(projects: ProjectSummary[], billingConfig: BillingConfig): Row[] {
   const rows: Row[] = []
   for (const p of projects) {
     for (const s of p.sessions) {
+      const billing = aggregateSessionsBilling([s])
       rows.push({
         Project: p.projectPath,
         'Session ID': s.sessionId,
         'Started At': s.firstTimestamp ?? '',
-        [`Cost (${code})`]: round2(convertCost(s.totalCostUSD)),
+        ...billingCsvFields(billing, billingConfig),
         'API Calls': s.apiCalls,
         Turns: s.turns.length,
       })
     }
   }
-  return rows.sort((a, b) => (b[`Cost (${code})`] as number) - (a[`Cost (${code})`] as number))
+  return rows.sort((a, b) => {
+    const aBilling = projects.flatMap(project => project.sessions).find(session => session.sessionId === a['Session ID'])
+    const bBilling = projects.flatMap(project => project.sessions).find(session => session.sessionId === b['Session ID'])
+    return billingMetricValue(bBilling ? aggregateSessionsBilling([bBilling]) : emptyBillingAggregate(), billingConfig) -
+      billingMetricValue(aBilling ? aggregateSessionsBilling([aBilling]) : emptyBillingAggregate(), billingConfig)
+  })
 }
 
 export type PeriodExport = {
@@ -236,42 +237,35 @@ export type PeriodExport = {
   projects: ProjectSummary[]
 }
 
-function buildSummaryRows(periods: PeriodExport[]): Row[] {
-  const { code } = getCurrency()
+function buildSummaryRows(periods: PeriodExport[], billingConfig: BillingConfig): Row[] {
   return periods.map(p => {
-    const cost = p.projects.reduce((s, proj) => s + proj.totalCostUSD, 0)
+    const billing = aggregateSessionsBilling(p.projects.flatMap(proj => proj.sessions))
     const calls = p.projects.reduce((s, proj) => s + proj.totalApiCalls, 0)
     const sessions = p.projects.reduce((s, proj) => s + proj.sessions.length, 0)
-    const projectCount = p.projects.filter(proj => proj.totalCostUSD > 0).length
-    // Aggregate credits: null + null = null, null + N = N, N + M = N + M
-    const credits = p.projects.reduce<number | null>((acc, proj) => {
-      if (acc === null && proj.totalCredits === null) return null
-      return (acc ?? 0) + (proj.totalCredits ?? 0)
-    }, null)
-    const row: Row = {
+    const projectCount = p.projects.filter(proj => billingMetricValue(billingAggregateFromProject(proj), billingConfig) > 0).length
+    return {
       Period: p.label,
-      [`Cost (${code}, est.)`]: round2(convertCost(cost)),
+      ...billingCsvFields(billing, billingConfig),
       'API Calls': calls,
       Sessions: sessions,
       Projects: projectCount,
     }
-    // Include credits column if present
-    if (credits !== null) {
-      row['Credits (Augment)'] = credits
-    }
-    return row
   })
 }
 
-function buildReadme(periods: PeriodExport[]): string {
+function buildReadme(periods: PeriodExport[], billingConfig: BillingConfig): string {
   const { code } = getCurrency()
   const generated = new Date().toISOString()
+  const billingDescription = billingConfig.mode === 'credits'
+    ? 'credits mode (Augment credits; USD fields are token-pricing estimates only)'
+    : 'token_plus mode (base USD + surcharge USD = billed amount USD)'
   const lines = [
     'CodeBurn Usage Export',
     '====================',
     '',
     `Generated: ${generated}`,
     `Currency:  ${code}`,
+    `Billing:   ${billingDescription}`,
     `Periods:   ${periods.map(p => p.label).join(', ')}`,
     '',
     'Files',
@@ -287,8 +281,10 @@ function buildReadme(periods: PeriodExport[]): string {
     '',
     'Notes',
     '-----',
-    '  Every cost column is already converted to the active currency. Tokens are raw integer',
-    '  counts from provider telemetry. Share (%) is relative to the period/table total.',
+    '  Credits-mode billing columns use Augment credits. Cost Estimate (USD) columns are',
+    '  token-pricing estimates and are not authoritative Augment credit billing values.',
+    '  Token+ billing columns use base, surcharge, and billed USD. Tokens are raw integer',
+    '  counts from provider telemetry. Share (%) is relative to the active billing metric.',
     '',
   ]
   return lines.join('\n')
@@ -346,17 +342,18 @@ export async function exportCsv(periods: PeriodExport[], outputPath: string): Pr
   await mkdir(folder, { recursive: true })
   await writeFile(join(folder, EXPORT_MARKER_FILE), '', 'utf-8')
 
-  const dailyRows = periods.flatMap(p => buildDailyRows(p.projects, p.label))
-  const activityRows = periods.flatMap(p => buildActivityRows(p.projects, p.label))
-  const modelRows = periods.flatMap(p => buildModelRows(p.projects, p.label))
+  const billingConfig = loadBillingConfig()
+  const dailyRows = periods.flatMap(p => buildDailyRows(p.projects, p.label, billingConfig))
+  const activityRows = periods.flatMap(p => buildActivityRows(p.projects, p.label, billingConfig))
+  const modelRows = periods.flatMap(p => buildModelRows(p.projects, p.label, billingConfig))
 
-  await writeFile(join(folder, 'README.txt'), buildReadme(periods), 'utf-8')
-  await writeFile(join(folder, 'summary.csv'), rowsToCsv(buildSummaryRows(periods)), 'utf-8')
+  await writeFile(join(folder, 'README.txt'), buildReadme(periods, billingConfig), 'utf-8')
+  await writeFile(join(folder, 'summary.csv'), rowsToCsv(buildSummaryRows(periods, billingConfig)), 'utf-8')
   await writeFile(join(folder, 'daily.csv'), rowsToCsv(dailyRows), 'utf-8')
   await writeFile(join(folder, 'activity.csv'), rowsToCsv(activityRows), 'utf-8')
   await writeFile(join(folder, 'models.csv'), rowsToCsv(modelRows), 'utf-8')
-  await writeFile(join(folder, 'projects.csv'), rowsToCsv(buildProjectRows(thirtyDayProjects)), 'utf-8')
-  await writeFile(join(folder, 'sessions.csv'), rowsToCsv(buildSessionRows(thirtyDayProjects)), 'utf-8')
+  await writeFile(join(folder, 'projects.csv'), rowsToCsv(buildProjectRows(thirtyDayProjects, billingConfig)), 'utf-8')
+  await writeFile(join(folder, 'sessions.csv'), rowsToCsv(buildSessionRows(thirtyDayProjects, billingConfig)), 'utf-8')
   await writeFile(join(folder, 'tools.csv'), rowsToCsv(buildToolRows(thirtyDayProjects)), 'utf-8')
   await writeFile(join(folder, 'shell-commands.csv'), rowsToCsv(buildBashRows(thirtyDayProjects)), 'utf-8')
 
@@ -366,65 +363,30 @@ export async function exportCsv(periods: PeriodExport[], outputPath: string): Pr
 /// Build overview object with billing-aware fields
 function buildOverview(projects: ProjectSummary[], billingConfig: BillingConfig): Record<string, unknown> {
   const allSessions = projects.flatMap(p => p.sessions)
-  const totalCostUSD = projects.reduce((s, p) => s + p.totalCostUSD, 0)
   const totalCalls = projects.reduce((s, p) => s + p.totalApiCalls, 0)
   const totalSessions = allSessions.length
   const totalInputTokens = allSessions.reduce((s, sess) => s + sess.totalInputTokens, 0)
   const totalOutputTokens = allSessions.reduce((s, sess) => s + sess.totalOutputTokens, 0)
   const totalCacheRead = allSessions.reduce((s, sess) => s + sess.totalCacheReadTokens, 0)
   const totalCacheWrite = allSessions.reduce((s, sess) => s + sess.totalCacheWriteTokens, 0)
+  const billing = aggregateSessionsBilling(allSessions)
 
-  // Aggregate billing fields — use simple summation (null → 0 contribution, no short-circuit).
-  // This ensures all sessions contribute equally to base, surcharge, and billed.
-  let totalCredits: number | null = null
-  let totalBaseCostUsd: number | null = null
-  let totalSurchargeUsd: number | null = null
-  let totalBilledAmountUsd: number | null = null
-  let creditsSynthesizedCount = 0
-
-  for (const sess of allSessions) {
-    if (sess.totalCredits != null) totalCredits = (totalCredits ?? 0) + sess.totalCredits
-    if (sess.totalBaseCostUsd != null) totalBaseCostUsd = (totalBaseCostUsd ?? 0) + sess.totalBaseCostUsd
-    if (sess.totalSurchargeUsd != null) totalSurchargeUsd = (totalSurchargeUsd ?? 0) + sess.totalSurchargeUsd
-    if (sess.totalBilledAmountUsd != null) totalBilledAmountUsd = (totalBilledAmountUsd ?? 0) + sess.totalBilledAmountUsd
-    creditsSynthesizedCount += sess.creditsSynthesizedCount ?? 0
-  }
-
-  const base: Record<string, unknown> = {
+  return {
     calls: totalCalls,
     sessions: totalSessions,
     inputTokens: totalInputTokens,
     outputTokens: totalOutputTokens,
     cacheReadTokens: totalCacheRead,
     cacheWriteTokens: totalCacheWrite,
+    ...billingJsonFields(billing, billingConfig),
   }
-
-  if (billingConfig.mode === 'credits') {
-    // Credits mode: cost = null, add creditsAugment and creditsSynthesized
-    base.cost = null
-    base.creditsAugment = totalCredits
-    base.creditsSynthesized = creditsSynthesizedCount
-  } else {
-    // Token+ mode: add baseCostUsd, surchargeUsd, billedAmountUsd; keep cost = billedAmountUsd for back-compat
-    base.baseCostUsd = totalBaseCostUsd !== null ? round2(totalBaseCostUsd) : null
-    base.surchargeUsd = totalSurchargeUsd !== null ? round2(totalSurchargeUsd) : null
-    base.billedAmountUsd = totalBilledAmountUsd !== null ? round2(totalBilledAmountUsd) : null
-    base.cost = totalBilledAmountUsd !== null ? round2(totalBilledAmountUsd) : round2(totalCostUSD)
-  }
-
-  return base
 }
 
 /// Build byModel array with billing-aware fields
 function buildByModel(projects: ProjectSummary[], billingConfig: BillingConfig): unknown[] {
   const modelTotals: Record<string, {
     calls: number
-    costUSD: number
-    credits: number | null
-    baseCostUsd: number | null
-    surchargeUsd: number | null
-    billedAmountUsd: number | null
-    creditsSynthesizedCount: number
+    billing: BillingAggregate
     inputTokens: number
     outputTokens: number
     cacheRead: number
@@ -436,35 +398,18 @@ function buildByModel(projects: ProjectSummary[], billingConfig: BillingConfig):
       for (const [model, data] of Object.entries(session.modelBreakdown)) {
         if (!modelTotals[model]) {
           modelTotals[model] = {
-            calls: 0, costUSD: 0, credits: null, baseCostUsd: null, surchargeUsd: null, billedAmountUsd: null,
-            creditsSynthesizedCount: 0, inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheWrite: 0,
+            calls: 0, billing: emptyBillingAggregate(), inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheWrite: 0,
           }
         }
         modelTotals[model].calls += data.calls
-        modelTotals[model].costUSD += data.costUSD
-        // Aggregate credits
-        if (modelTotals[model].credits === null && data.credits === null) {
-          // Both null, keep null
-        } else {
-          modelTotals[model].credits = (modelTotals[model].credits ?? 0) + (data.credits ?? 0)
-        }
-        // Aggregate billing fields
-        if (modelTotals[model].baseCostUsd === null && data.baseCostUsd == null) {
-          // Both null, keep null
-        } else {
-          modelTotals[model].baseCostUsd = (modelTotals[model].baseCostUsd ?? 0) + (data.baseCostUsd ?? 0)
-        }
-        if (modelTotals[model].surchargeUsd === null && data.surchargeUsd == null) {
-          // Both null, keep null
-        } else {
-          modelTotals[model].surchargeUsd = (modelTotals[model].surchargeUsd ?? 0) + (data.surchargeUsd ?? 0)
-        }
-        if (modelTotals[model].billedAmountUsd === null && data.billedAmountUsd == null) {
-          // Both null, keep null
-        } else {
-          modelTotals[model].billedAmountUsd = (modelTotals[model].billedAmountUsd ?? 0) + (data.billedAmountUsd ?? 0)
-        }
-        modelTotals[model].creditsSynthesizedCount += data.creditsSynthesizedCount ?? 0
+        addBillingAggregate(modelTotals[model].billing, {
+          costEstimateUsd: data.costUSD,
+          creditsAugment: data.credits,
+          creditsSynthesizedCalls: data.creditsSynthesizedCount ?? 0,
+          baseCostUsd: data.baseCostUsd ?? null,
+          surchargeUsd: data.surchargeUsd ?? null,
+          billedAmountUsd: data.billedAmountUsd ?? null,
+        })
         modelTotals[model].inputTokens += data.tokens.inputTokens
         modelTotals[model].outputTokens += data.tokens.outputTokens
         modelTotals[model].cacheRead += data.tokens.cacheReadInputTokens ?? 0
@@ -475,27 +420,17 @@ function buildByModel(projects: ProjectSummary[], billingConfig: BillingConfig):
 
   return Object.entries(modelTotals)
     .filter(([name]) => name !== '<synthetic>')
-    .sort(([, a], [, b]) => (billingConfig.mode === 'credits' ? (b.credits ?? 0) - (a.credits ?? 0) : b.costUSD - a.costUSD))
+    .sort(([, a], [, b]) => billingMetricValue(b.billing, billingConfig) - billingMetricValue(a.billing, billingConfig))
     .map(([model, d]) => {
-      const base: Record<string, unknown> = {
+      return {
         model,
         calls: d.calls,
         inputTokens: d.inputTokens,
         outputTokens: d.outputTokens,
         cacheReadTokens: d.cacheRead,
         cacheWriteTokens: d.cacheWrite,
+        ...billingJsonFields(d.billing, billingConfig),
       }
-      if (billingConfig.mode === 'credits') {
-        base.cost = null
-        base.creditsAugment = d.credits
-        base.creditsSynthesized = d.creditsSynthesizedCount
-      } else {
-        base.baseCostUsd = d.baseCostUsd !== null ? round2(d.baseCostUsd) : null
-        base.surchargeUsd = d.surchargeUsd !== null ? round2(d.surchargeUsd) : null
-        base.billedAmountUsd = d.billedAmountUsd !== null ? round2(d.billedAmountUsd) : null
-        base.cost = d.billedAmountUsd !== null ? round2(d.billedAmountUsd) : round2(d.costUSD)
-      }
-      return base
     })
 }
 
@@ -503,47 +438,15 @@ function buildByModel(projects: ProjectSummary[], billingConfig: BillingConfig):
 function buildByProject(projects: ProjectSummary[], billingConfig: BillingConfig): unknown[] {
   return projects
     .slice()
-    .sort((a, b) => {
-      if (billingConfig.mode === 'credits') {
-        return (b.totalCredits ?? 0) - (a.totalCredits ?? 0)
-      }
-      // Token+ mode: sort by billed amount
-      const aBilled = b.sessions.reduce((s, sess) => s + (sess.totalBilledAmountUsd ?? sess.totalCostUSD), 0)
-      const bBilled = a.sessions.reduce((s, sess) => s + (sess.totalBilledAmountUsd ?? sess.totalCostUSD), 0)
-      return aBilled - bBilled
-    })
+    .sort((a, b) => billingMetricValue(billingAggregateFromProject(b), billingConfig) - billingMetricValue(billingAggregateFromProject(a), billingConfig))
     .map(p => {
-      const allSessions = p.sessions
-      const totalBilledAmountUsd = allSessions.reduce<number | null>((acc, sess) => {
-        if (acc === null && sess.totalBilledAmountUsd == null) return null
-        return (acc ?? 0) + (sess.totalBilledAmountUsd ?? 0)
-      }, null)
-      const totalBaseCostUsd = allSessions.reduce<number | null>((acc, sess) => {
-        if (acc === null && sess.totalBaseCostUsd == null) return null
-        return (acc ?? 0) + (sess.totalBaseCostUsd ?? 0)
-      }, null)
-      const totalSurchargeUsd = allSessions.reduce<number | null>((acc, sess) => {
-        if (acc === null && sess.totalSurchargeUsd == null) return null
-        return (acc ?? 0) + (sess.totalSurchargeUsd ?? 0)
-      }, null)
-      const creditsSynthesizedCount = allSessions.reduce((s, sess) => s + (sess.creditsSynthesizedCount ?? 0), 0)
-
-      const base: Record<string, unknown> = {
+      const billing = billingAggregateFromProject(p)
+      return {
         project: p.projectPath,
         calls: p.totalApiCalls,
         sessions: p.sessions.length,
+        ...billingJsonFields(billing, billingConfig),
       }
-      if (billingConfig.mode === 'credits') {
-        base.cost = null
-        base.creditsAugment = p.totalCredits
-        base.creditsSynthesized = creditsSynthesizedCount
-      } else {
-        base.baseCostUsd = totalBaseCostUsd !== null ? round2(totalBaseCostUsd) : null
-        base.surchargeUsd = totalSurchargeUsd !== null ? round2(totalSurchargeUsd) : null
-        base.billedAmountUsd = totalBilledAmountUsd !== null ? round2(totalBilledAmountUsd) : null
-        base.cost = totalBilledAmountUsd !== null ? round2(totalBilledAmountUsd) : round2(p.totalCostUSD)
-      }
-      return base
     })
 }
 
@@ -553,15 +456,7 @@ export async function exportJson(periods: PeriodExport[], outputPath: string): P
   const { code, rate, symbol } = getCurrency()
   const billingConfig = loadBillingConfig()
 
-  // Build billing metadata for top-level
-  const billingMeta: Record<string, unknown> = {
-    mode: billingConfig.mode,
-  }
-  if (billingConfig.mode === 'credits') {
-    billingMeta.creditsPerDollar = CREDITS_PER_DOLLAR
-  } else {
-    billingMeta.surchargeRate = billingConfig.surchargeRate
-  }
+  const billingMeta = buildBillingMetadata(billingConfig)
 
   const data = {
     schema: 'codeburn.export.v2',
@@ -572,15 +467,15 @@ export async function exportJson(periods: PeriodExport[], outputPath: string): P
     byModel: buildByModel(thirtyDayProjects, billingConfig),
     byProject: buildByProject(thirtyDayProjects, billingConfig),
     // Legacy fields for compatibility
-    summary: buildSummaryRows(periods),
+    summary: buildSummaryRows(periods, billingConfig),
     periods: periods.map(p => ({
       label: p.label,
-      daily: buildDailyRows(p.projects, p.label),
-      activity: buildActivityRows(p.projects, p.label),
-      models: buildModelRows(p.projects, p.label),
+      daily: buildDailyRows(p.projects, p.label, billingConfig),
+      activity: buildActivityRows(p.projects, p.label, billingConfig),
+      models: buildModelRows(p.projects, p.label, billingConfig),
     })),
-    projects: buildProjectRows(thirtyDayProjects),
-    sessions: buildSessionRows(thirtyDayProjects),
+    projects: buildProjectRows(thirtyDayProjects, billingConfig),
+    sessions: buildSessionRows(thirtyDayProjects, billingConfig),
     tools: buildToolRows(thirtyDayProjects),
     shellCommands: buildBashRows(thirtyDayProjects),
   }

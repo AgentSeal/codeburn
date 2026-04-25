@@ -16,7 +16,7 @@ afterEach(async () => {
   await rm(tmpDir, { recursive: true, force: true })
 })
 
-function makeProject(projectPath: string): ProjectSummary {
+function makeProject(projectPath: string, timestamp = '2026-04-14T10:00:00Z'): ProjectSummary {
   return {
     project: projectPath,
     projectPath,
@@ -24,8 +24,8 @@ function makeProject(projectPath: string): ProjectSummary {
       {
         sessionId: 'sess-001',
         project: projectPath,
-        firstTimestamp: '2026-04-14T10:00:00Z',
-        lastTimestamp: '2026-04-14T10:01:00Z',
+        firstTimestamp: timestamp,
+        lastTimestamp: timestamp,
         totalCostUSD: 1.23,
         totalInputTokens: 100,
         totalOutputTokens: 50,
@@ -35,7 +35,7 @@ function makeProject(projectPath: string): ProjectSummary {
         turns: [
           {
             userMessage: '=SUM(1,2)',
-            timestamp: '2026-04-14T10:00:00Z',
+            timestamp,
             sessionId: 'sess-001',
             category: 'coding',
             retries: 0,
@@ -59,7 +59,7 @@ function makeProject(projectPath: string): ProjectSummary {
                 hasAgentSpawn: false,
                 hasPlanMode: false,
                 speed: 'standard',
-                timestamp: '2026-04-14T10:00:00Z',
+                timestamp,
                 bashCommands: ['@malicious'],
                 deduplicationKey: 'dedup-1',
               },
@@ -110,6 +110,81 @@ function makeProject(projectPath: string): ProjectSummary {
   }
 }
 
+function withCredits(project: ProjectSummary, credits = 25): ProjectSummary {
+  const session = project.sessions[0]
+  const turn = session.turns[0]
+  const call = turn.assistantCalls[0]
+  const model = session.modelBreakdown['+danger-model']
+  call.credits = credits
+  call.billing = {
+    mode: 'credits',
+    baseCostUsd: call.costUSD,
+    surchargeUsd: null,
+    billedAmountUsd: null,
+    creditsAugment: credits,
+    creditsSynthesized: credits,
+    synthesized: true,
+  }
+  model.credits = credits
+  model.baseCostUsd = call.costUSD
+  model.surchargeUsd = null
+  model.billedAmountUsd = null
+  model.creditsSynthesizedCount = 1
+  session.totalCredits = credits
+  session.billingMode = 'credits'
+  session.totalBaseCostUsd = call.costUSD
+  session.totalSurchargeUsd = null
+  session.totalBilledAmountUsd = null
+  session.creditsSynthesizedCount = 1
+  project.totalCredits = credits
+  project.billingMode = 'credits'
+  project.creditsSynthesizedCount = 1
+  return project
+}
+
+function makeTokenPlusProject(baseCost: number, surchargeRate: number): ProjectSummary {
+  const project = makeProject('test-project')
+  const session = project.sessions[0]
+  const call = session.turns[0].assistantCalls[0]
+  const model = session.modelBreakdown['+danger-model']
+  const surcharge = baseCost * surchargeRate
+  const billed = baseCost + surcharge
+  call.costUSD = baseCost
+  call.credits = null
+  call.billing = {
+    mode: 'token_plus',
+    baseCostUsd: baseCost,
+    surchargeUsd: surcharge,
+    billedAmountUsd: billed,
+    creditsAugment: null,
+    creditsSynthesized: null,
+    synthesized: false,
+  }
+  model.costUSD = baseCost
+  model.credits = null
+  model.baseCostUsd = baseCost
+  model.surchargeUsd = surcharge
+  model.billedAmountUsd = billed
+  project.totalCostUSD = baseCost
+  project.totalCredits = null
+  project.billingMode = 'token_plus'
+  project.totalBaseCostUsd = baseCost
+  project.totalSurchargeUsd = surcharge
+  project.totalBilledAmountUsd = billed
+  session.totalCostUSD = baseCost
+  session.totalCredits = null
+  session.billingMode = 'token_plus'
+  session.totalBaseCostUsd = baseCost
+  session.totalSurchargeUsd = surcharge
+  session.totalBilledAmountUsd = billed
+  session.categoryBreakdown.coding.costUSD = baseCost
+  session.categoryBreakdown.coding.credits = null
+  session.categoryBreakdown.coding.baseCostUsd = baseCost
+  session.categoryBreakdown.coding.surchargeUsd = surcharge
+  session.categoryBreakdown.coding.billedAmountUsd = billed
+  return project
+}
+
 describe('exportCsv', () => {
   it('prefixes formula-like cells to prevent CSV injection', async () => {
     const periods: PeriodExport[] = [
@@ -154,6 +229,22 @@ describe('exportCsv', () => {
     // Confirm nothing was deleted from the target directory.
     const survived = await readFile(userFile, 'utf-8')
     expect(survived).toBe('do not delete me\n')
+  })
+
+  it('buckets daily rows by local date instead of UTC date', async () => {
+    const originalTz = process.env['TZ']
+    process.env['TZ'] = 'Pacific/Kiritimati'
+    try {
+      const periods: PeriodExport[] = [{ label: 'Today', projects: [makeProject('demo', '2026-04-13T10:30:00.000Z')] }]
+      const folder = await exportCsv(periods, join(tmpDir, 'local-day.csv'))
+      const daily = await readFile(join(folder, 'daily.csv'), 'utf-8')
+
+      expect(daily).toContain('Today,2026-04-14')
+      expect(daily).not.toContain('Today,2026-04-13')
+    } finally {
+      if (originalTz === undefined) delete process.env['TZ']
+      else process.env['TZ'] = originalTz
+    }
   })
 })
 
@@ -276,6 +367,59 @@ describe('exportJson token+ billing invariant', () => {
       // Invariant 2: surcharge ≈ base × surchargeRate
       const expectedSurcharge = overview.baseCostUsd * surchargeRate
       expect(Math.abs(overview.surchargeUsd - expectedSurcharge)).toBeLessThanOrEqual(0.01)
+    } finally {
+      if (origMode !== undefined) process.env['CODEBURN_BILLING_MODE'] = origMode
+      else delete process.env['CODEBURN_BILLING_MODE']
+      if (origRate !== undefined) process.env['CODEBURN_SURCHARGE_RATE'] = origRate
+      else delete process.env['CODEBURN_SURCHARGE_RATE']
+    }
+  })
+})
+
+describe('billing-aware export outputs', () => {
+  it('labels credits-mode JSON and CSV fields without authoritative cost', async () => {
+    const origMode = process.env['CODEBURN_BILLING_MODE']
+    process.env['CODEBURN_BILLING_MODE'] = 'credits'
+    try {
+      const periods: PeriodExport[] = [{ label: '30 Days', projects: [withCredits(makeProject('demo'))] }]
+      const jsonPath = await exportJson(periods, join(tmpDir, 'credits.json'))
+      const data = JSON.parse(await readFile(jsonPath, 'utf-8'))
+
+      expect(data.billing.mode).toBe('credits')
+      expect(data.overview).toMatchObject({ cost: null, creditsAugment: 25, creditsSynthesizedCalls: 1 })
+      expect(data.overview.costEstimateUsd).toBe(1.23)
+      expect(data.byModel[0]).toMatchObject({ cost: null, creditsAugment: 25, creditsSynthesizedCalls: 1 })
+      expect(data.periods[0].daily[0]).toMatchObject({ 'Credits (Augment)': 25, 'Synthesized Credit Calls': 1, 'Cost Estimate (USD)': 1.23 })
+
+      const folder = await exportCsv(periods, join(tmpDir, 'credits.csv'))
+      const summary = await readFile(join(folder, 'summary.csv'), 'utf-8')
+      expect(summary).toContain('Credits (Augment),Synthesized Credit Calls,Cost Estimate (USD)')
+      expect(summary).not.toContain('Cost (USD)')
+    } finally {
+      if (origMode !== undefined) process.env['CODEBURN_BILLING_MODE'] = origMode
+      else delete process.env['CODEBURN_BILLING_MODE']
+    }
+  })
+
+  it('labels token_plus JSON and CSV fields as base surcharge and billed USD', async () => {
+    const origMode = process.env['CODEBURN_BILLING_MODE']
+    const origRate = process.env['CODEBURN_SURCHARGE_RATE']
+    process.env['CODEBURN_BILLING_MODE'] = 'token_plus'
+    process.env['CODEBURN_SURCHARGE_RATE'] = '0.3'
+    try {
+      const periods: PeriodExport[] = [{ label: '30 Days', projects: [makeTokenPlusProject(10, 0.3)] }]
+      const jsonPath = await exportJson(periods, join(tmpDir, 'token-plus.json'))
+      const data = JSON.parse(await readFile(jsonPath, 'utf-8'))
+
+      expect(data.billing).toMatchObject({ mode: 'token_plus', surchargeRate: 0.3 })
+      expect(data.overview).toMatchObject({ baseCostUsd: 10, surchargeUsd: 3, billedAmountUsd: 13, cost: 13 })
+      expect(data.byModel[0]).toMatchObject({ baseCostUsd: 10, surchargeUsd: 3, billedAmountUsd: 13, cost: 13 })
+      expect(data.periods[0].models[0]).toMatchObject({ 'Base Cost (USD)': 10, 'Surcharge (USD)': 3, 'Billed Amount (USD)': 13 })
+
+      const folder = await exportCsv(periods, join(tmpDir, 'token-plus.csv'))
+      const sessions = await readFile(join(folder, 'sessions.csv'), 'utf-8')
+      expect(sessions).toContain('Billed Amount (USD),Base Cost (USD),Surcharge (USD)')
+      expect(sessions).toContain('13,10,3')
     } finally {
       if (origMode !== undefined) process.env['CODEBURN_BILLING_MODE'] = origMode
       else delete process.env['CODEBURN_BILLING_MODE']
