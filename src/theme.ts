@@ -80,6 +80,12 @@ export const TUI_THEME = {
     empty: AUGGIE_TOKENS.grayDim,
   },
   category: {
+    'view/read': AUGGIE_TOKENS.cyan,
+    'launch-process/terminal': AUGGIE_TOKENS.grayBright,
+    'search/retrieval': AUGGIE_TOKENS.purpleBright,
+    browser: AUGGIE_TOKENS.blueBright,
+    'file/write/edit': AUGGIE_TOKENS.brandBanner,
+    'agent/workspace': AUGGIE_TOKENS.pink,
     coding: AUGGIE_TOKENS.brandBanner,
     debugging: AUGGIE_TOKENS.pinkBright,
     feature: AUGGIE_TOKENS.magentaDim,
