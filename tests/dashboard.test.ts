@@ -8,6 +8,7 @@ import {
   formatInlineOptimizeFindingSavings,
   formatInlineOptimizeSummary,
   projectAverageHeaderLabel,
+  projectBreakdownHeaderLine,
   statusBarHelpLabels,
 } from '../src/dashboard.js'
 import { formatCost } from '../src/format.js'
@@ -123,6 +124,13 @@ describe('avg/run in ProjectBreakdown', () => {
 
   it('uses avg/run header wording instead of per-second wording', () => {
     expect(projectAverageHeaderLabel()).toBe('avg/run')
+  })
+
+  it('separates billing metric labels from the avg/run header in both billing modes', () => {
+    expect(projectBreakdownHeaderLine(10, 12, 'token_plus')).toContain('billed avg/run')
+    expect(projectBreakdownHeaderLine(10, 12, 'token_plus')).not.toContain('billedavg/run')
+    expect(projectBreakdownHeaderLine(10, 12, 'credits')).toContain('credits avg/run')
+    expect(projectBreakdownHeaderLine(10, 12, 'credits')).not.toContain('creditsavg/run')
   })
 })
 

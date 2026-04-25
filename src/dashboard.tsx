@@ -24,6 +24,9 @@ const VALUE = TUI_THEME.value.primary
 type KeyInput = { escape?: boolean; leftArrow?: boolean; rightArrow?: boolean; tab?: boolean }
 export type DashboardInputAction = 'quit' | 'openOptimize' | 'backToDashboard' | 'billingCredits' | 'billingBilledCost' | null
 
+const PROJECT_COL_AVG = 8
+const PROJECT_COL_BASE_WIDTH = 31
+
 export function billingModeLabel(mode: BillingMode): 'Credits' | 'Billed Cost' {
   return mode === 'credits' ? 'Credits' : 'Billed Cost'
 }
@@ -34,6 +37,10 @@ export function compactBillingMetricLabel(mode: BillingMode): 'credits' | 'bille
 
 export function projectAverageHeaderLabel(): 'avg/run' {
   return 'avg/run'
+}
+
+export function projectBreakdownHeaderLine(bw: number, nw: number, billingMode: BillingMode): string {
+  return `${''.padEnd(bw + 1 + nw)}${compactBillingMetricLabel(billingMode).padStart(8)}${projectAverageHeaderLabel().padStart(PROJECT_COL_AVG)}${'sess'.padStart(6)}`
 }
 
 export function billingDisplayValue(
@@ -287,9 +294,6 @@ function shortProject(encoded: string): string {
   return parts.slice(-3).join('/')
 }
 
-const PROJECT_COL_AVG = 7
-const PROJECT_COL_BASE_WIDTH = 30
-
 function ProjectBreakdown({ projects, pw, bw, billingMode, surchargeRate }: { projects: ProjectSummary[]; pw: number; bw: number; billingMode: BillingMode; surchargeRate: number }) {
   // Compute total value per project based on billing mode
   const projectValues = projects.map(p => {
@@ -306,13 +310,12 @@ function ProjectBreakdown({ projects, pw, bw, billingMode, surchargeRate }: { pr
   const maxValue = Math.max(...projectValues)
   const nw = Math.max(8, pw - bw - PROJECT_COL_BASE_WIDTH)
 
-  const valueLabel = compactBillingMetricLabel(billingMode)
   const formatValue = billingMode === 'credits' ? formatCredits : formatCost
 
   return (
     <Panel title="By Project" color={PANEL_COLORS.project} width={pw}>
       <Text dimColor wrap="truncate-end">
-        {''.padEnd(bw + 1 + nw)}{valueLabel.padStart(8)}{projectAverageHeaderLabel().padStart(PROJECT_COL_AVG)}{'sess'.padStart(6)}
+        {projectBreakdownHeaderLine(bw, nw, billingMode)}
       </Text>
       {projects.slice(0, 8).map((project, i) => {
         const totalValue = projectValues[i]
