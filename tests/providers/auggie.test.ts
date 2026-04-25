@@ -280,6 +280,29 @@ describe('auggie provider - cache', () => {
 
     await waitForCacheBillingConfig(cacheFile, { mode: 'token_plus', surchargeRate: 0.25 })
   })
+
+  it('does not reuse cached unpriced raw model calls after an explicit alias is configured', async () => {
+    const path = await stageFixture('old-schema.json')
+    const cacheFile = join(cacheDir, 'auggie', 'old-schema.json')
+
+    const rawCalls = await collectCalls(path)
+    expect(rawCalls).toHaveLength(1)
+    expect(rawCalls[0].model).toBe('butler')
+    expect(rawCalls[0].pricingStatus).toBe('unpriced')
+    expect(rawCalls[0].warnings?.[0]).toContain('butler')
+    expect(rawCalls[0].costUSD).toBe(0)
+    await waitForCacheFile(cacheFile)
+
+    process.env['CODEBURN_AUGGIE_ALIAS_BUTLER'] = 'claude-haiku-4-5'
+    const aliasCalls = await collectCalls(path)
+
+    expect(aliasCalls).toHaveLength(1)
+    expect(aliasCalls[0].model).toBe('claude-haiku-4-5')
+    expect(aliasCalls[0].pricingStatus).toBe('estimated')
+    expect(aliasCalls[0].warnings).toEqual([])
+    expect(aliasCalls[0].costUSD).toBeGreaterThan(0)
+    expect(aliasCalls[0].billing?.baseCostUsd).toBeGreaterThan(0)
+  })
 })
 
 describe('auggie provider - modern schema', () => {
