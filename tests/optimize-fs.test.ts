@@ -151,6 +151,32 @@ describe('scanJsonlFile', () => {
     expect(result.calls).toHaveLength(1)
     expect((result.calls[0].input as Record<string, unknown>).file_path).toBe('/new')
   })
+
+  it('parses Auggie pretty-printed JSON session files', async () => {
+    const root = makeFixtureRoot()
+    const filePath = join(root, 'session.json')
+    writeFile(filePath, JSON.stringify({
+      sessionId: 'auggie-session',
+      modified: new Date().toISOString(),
+      chatHistory: [{
+        exchange: {
+          request_message: 'optimize Auggie session',
+          request_nodes: [{ ide_state_node: { current_terminal: { current_working_directory: root } } }],
+          response_nodes: [{
+            timestamp_ms: Date.now(),
+            tool_use: { tool_name: 'view', input_json: '{"path":"/x/node_modules/a.js"}' },
+            token_usage: { cache_creation_input_tokens: 90000 },
+          }],
+        },
+      }],
+    }, null, 2))
+    const result = await scanJsonlFile(filePath, 'p1', undefined)
+    expect(result.calls).toHaveLength(1)
+    expect(result.calls[0].name).toBe('view')
+    expect(result.calls[0].input.file_path).toBe('/x/node_modules/a.js')
+    expect(result.apiCalls[0].cacheCreationTokens).toBe(90000)
+    expect(result.cwds).toContain(root)
+  })
 })
 
 // ============================================================================

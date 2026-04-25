@@ -192,6 +192,19 @@ describe('detectCacheBloat', () => {
     const finding = detectCacheBloat(apiCalls, emptyProjects())
     expect(finding).not.toBeNull()
   })
+
+  it('suggests Auggie context files instead of legacy Claude/Cursor paths', () => {
+    const apiCalls: ApiCallMeta[] = Array.from({ length: 20 }, () => ({
+      cacheCreationTokens: 80000,
+      version: '2.1.100',
+    }))
+    const finding = detectCacheBloat(apiCalls, emptyProjects())
+    expect(finding).not.toBeNull()
+    expect(finding!.fix.type).toBe('paste')
+    if (finding!.fix.type === 'paste') {
+      expect(finding!.fix.text).toContain('~/.augment/user-guidelines.md')
+    }
+  })
 })
 
 describe('computeHealth', () => {

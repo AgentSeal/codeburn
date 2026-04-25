@@ -1,12 +1,10 @@
 /*
- * Auggie paths inspected on 2026-04-25 for this retarget:
- * - Skills: /Users/jaydave/.augment/skills and repo-local <project>/.augment/skills
- * - Agent rules: /Users/jaydave/.augment/tmp/agent-rules-*.md,
- *   /Users/jaydave/.augment/rules, /Users/jaydave/.augment/user-guidelines.md,
- *   and repo-local <project>/AGENTS.md
- * - MCP config: /Users/jaydave/.augment/settings.json,
- *   /Users/jaydave/.augment/mcp_settings.json,
- *   /Users/jaydave/.augment/tmp/mcp-config-*.json, and repo-local <project>/.mcp.json
+ * Auggie context paths:
+ * - Skills: ~/.augment/skills and repo-local <project>/.augment/skills
+ * - Agent rules: ~/.augment/tmp/agent-rules-*.md, ~/.augment/rules,
+ *   ~/.augment/user-guidelines.md, and repo-local <project>/AGENTS.md
+ * - MCP config: ~/.augment/settings.json, ~/.augment/mcp_settings.json,
+ *   ~/.augment/tmp/mcp-config-*.json, and repo-local <project>/.mcp.json
  */
 import { readdir } from 'fs/promises'
 import { existsSync } from 'fs'
