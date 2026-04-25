@@ -385,6 +385,7 @@ describe('billing-aware export outputs', () => {
       const jsonPath = await exportJson(periods, join(tmpDir, 'credits.json'))
       const data = JSON.parse(await readFile(jsonPath, 'utf-8'))
 
+      expect(data).toMatchObject({ schema: 'codeburn.export.v2', schemaVersion: 2 })
       expect(data.billing.mode).toBe('credits')
       expect(data.overview).toMatchObject({ cost: null, creditsAugment: 25, creditsSynthesizedCalls: 1 })
       expect(data.overview.costEstimateUsd).toBe(1.23)

@@ -46,6 +46,12 @@ const PANEL_COLORS = {
 
 
 const CATEGORY_COLORS: Record<TaskCategory, string> = {
+  'view/read': TUI_THEME.category['view/read'],
+  'launch-process/terminal': TUI_THEME.category['launch-process/terminal'],
+  'search/retrieval': TUI_THEME.category['search/retrieval'],
+  browser: TUI_THEME.category.browser,
+  'file/write/edit': TUI_THEME.category['file/write/edit'],
+  'agent/workspace': TUI_THEME.category['agent/workspace'],
   coding: TUI_THEME.category.coding,
   debugging: TUI_THEME.category.debugging,
   feature: TUI_THEME.category.feature,
