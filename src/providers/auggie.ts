@@ -53,6 +53,10 @@ const MODEL_ALIASES: Record<string, string> = {
   'claude-sonnet-4-6': 'claude-sonnet-4-5',
 }
 
+function lookupOwn(table: Record<string, string>, key: string): string | undefined {
+  return Object.prototype.hasOwnProperty.call(table, key) ? table[key] : undefined
+}
+
 type AuggieTokenUsage = {
   input_tokens?: number
   output_tokens?: number
@@ -138,13 +142,13 @@ function resolveDefaultModel(provider: string | null | undefined): string {
   if (!key) return ''
   const envOverride = process.env[`CODEBURN_AUGGIE_DEFAULT_${key.toUpperCase()}`]
   if (envOverride) return envOverride
-  return PROVIDER_DEFAULT_MODEL[key] ?? ''
+  return lookupOwn(PROVIDER_DEFAULT_MODEL, key) ?? ''
 }
 
 function resolveModelAlias(modelId: string): string {
   const envOverride = process.env[`CODEBURN_AUGGIE_ALIAS_${modelId.toUpperCase()}`]
   if (envOverride) return envOverride
-  return MODEL_ALIASES[modelId] ?? modelId
+  return lookupOwn(MODEL_ALIASES, modelId) ?? modelId
 }
 
 /// Picks the model name used for pricing and display. Preference order:
@@ -159,7 +163,8 @@ function resolveModelAlias(modelId: string): string {
 ///   - `auggie-unknown`: we have a modelId but it isn't in the alias table yet
 ///   - `auggie-legacy`: pre-Nov-2025 session with no modelId, unrecoverable
 function selectModel(session: AuggieSession, nodeProvider: string | null | undefined): string {
-  const raw = session.agentState?.modelId?.trim()
+  const modelId = session.agentState?.modelId
+  const raw = typeof modelId === 'string' ? modelId.trim() : ''
   if (raw) return resolveModelAlias(raw)
   const providerDefault = resolveDefaultModel(nodeProvider)
   if (providerDefault) return providerDefault
