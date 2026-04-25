@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest'
 
+import { formatInlineOptimizeFindingSavings, formatInlineOptimizeSummary } from '../src/dashboard.js'
 import { formatCost } from '../src/format.js'
 import type { ProjectSummary, SessionSummary } from '../src/types.js'
+import type { WasteFinding } from '../src/optimize.js'
 
 const EMPTY_CATEGORY_BREAKDOWN = {
   coding: { turns: 0, costUSD: 0, retries: 0, editTurns: 0, oneShotTurns: 0 },
@@ -108,5 +110,43 @@ describe('avg/s in ProjectBreakdown', () => {
     const sessions = [makeSession('s1', 2.0), makeSession('s2', 4.0)]
     const project = makeProject('proj', sessions)
     expect(avgCostLabel(project)).toBe(formatCost(3.0))
+  })
+})
+
+function makeFinding(tokensSaved: number, savingsScope?: WasteFinding['savingsScope']): WasteFinding {
+  return {
+    title: 'Test finding',
+    explanation: 'Test explanation',
+    impact: 'medium',
+    tokensSaved,
+    savingsScope,
+    fix: { type: 'paste', label: 'Fix', text: 'test' },
+  }
+}
+
+describe('inline optimize wording', () => {
+  it('labels aggregate savings as token-pricing and token-priced spend estimates', () => {
+    const lines = formatInlineOptimizeSummary([makeFinding(10_000)], 0.00001, 1)
+
+    expect(lines).toEqual([
+      'Potential aggregate savings: ~10.0K tokens (~$0.100 token-pricing estimate, ~10% of token-priced spend)',
+    ])
+  })
+
+  it('separates aggregate totals from per-call savings', () => {
+    const lines = formatInlineOptimizeSummary([
+      makeFinding(10_000),
+      makeFinding(2_000, 'per-call'),
+    ], 0.00001, 1)
+
+    expect(lines).toEqual([
+      'Potential aggregate savings: ~10.0K tokens (~$0.100 token-pricing estimate, ~10% of token-priced spend)',
+      'Potential per-call savings: ~2.0K tokens (~$0.020 token-pricing estimate)',
+    ])
+  })
+
+  it('labels per-call finding savings per affected call', () => {
+    expect(formatInlineOptimizeFindingSavings(makeFinding(2_000, 'per-call'), 0.00001))
+      .toBe('Potential savings per affected call: ~2.0K tokens (~$0.020 token-pricing estimate)')
   })
 })

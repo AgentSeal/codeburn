@@ -585,8 +585,37 @@ function FindingAction({ action }: { action: WasteAction }) {
   return (<><Text color={DIM_TEXT}>{action.label}</Text>{lines.map((line, i) => <Text key={i} color={TUI_THEME.action.code}>  {line}</Text>)}</>)
 }
 
+function formatInlineSavings(tokens: number, costRate: number): string {
+  const costSaved = tokens * costRate
+  const costText = costRate > 0 ? ` (~${formatCost(costSaved)} token-pricing estimate)` : ''
+  return `~${formatTokens(tokens)} tokens${costText}`
+}
+
+export function formatInlineOptimizeFindingSavings(finding: WasteFinding, costRate: number): string {
+  const savingsLabel = finding.savingsScope === 'per-call' ? 'Potential savings per affected call' : 'Potential savings'
+  return `${savingsLabel}: ${formatInlineSavings(finding.tokensSaved, costRate)}`
+}
+
+export function formatInlineOptimizeSummary(findings: WasteFinding[], costRate: number, periodCost: number): string[] {
+  const lines: string[] = []
+  const aggregateFindings = findings.filter(f => f.savingsScope !== 'per-call')
+  const perCallFindings = findings.filter(f => f.savingsScope === 'per-call')
+  const totalTokens = aggregateFindings.reduce((s, f) => s + f.tokensSaved, 0)
+  if (totalTokens > 0) {
+    const totalCost = totalTokens * costRate
+    const pctRaw = periodCost > 0 ? (totalCost / periodCost) * 100 : 0
+    const pct = pctRaw >= 1 ? pctRaw.toFixed(0) : pctRaw.toFixed(1)
+    const costText = costRate > 0 ? ` (~${formatCost(totalCost)} token-pricing estimate, ~${pct}% of token-priced spend)` : ''
+    lines.push(`Potential aggregate savings: ~${formatTokens(totalTokens)} tokens${costText}`)
+  }
+  const perCallTokens = perCallFindings.reduce((s, f) => s + f.tokensSaved, 0)
+  if (perCallTokens > 0) {
+    lines.push(`Potential per-call savings: ${formatInlineSavings(perCallTokens, costRate)}`)
+  }
+  return lines
+}
+
 function FindingPanel({ index, finding, costRate, width }: { index: number; finding: WasteFinding; costRate: number; width: number }) {
-  const costSaved = finding.tokensSaved * costRate
   const color = IMPACT_PANEL_COLORS[finding.impact] ?? DIM
   const label = finding.impact.charAt(0).toUpperCase() + finding.impact.slice(1)
   const trendBadge = finding.trend === 'improving' ? ' improving \u2193' : ''
@@ -599,7 +628,7 @@ function FindingPanel({ index, finding, costRate, width }: { index: number; find
         {trendBadge && <Text color={TUI_THEME.state.success}>{trendBadge}</Text>}
       </Text>
       <Text dimColor wrap="wrap">{finding.explanation}</Text>
-      <Text color={VALUE}>Savings: ~{formatTokens(finding.tokensSaved)} tokens (~{formatCost(costSaved)})</Text>
+      <Text color={VALUE}>{formatInlineOptimizeFindingSavings(finding, costRate)}</Text>
       <Text> </Text>
       <FindingAction action={finding.fix} />
     </Box>
@@ -610,10 +639,7 @@ const GRADE_COLORS: Record<string, string> = { A: TUI_THEME.state.success, B: TU
 
 function OptimizeView({ findings, costRate, projects, label, width, healthScore, healthGrade }: { findings: WasteFinding[]; costRate: number; projects: ProjectSummary[]; label: string; width: number; healthScore: number; healthGrade: string }) {
   const periodCost = projects.reduce((s, p) => s + p.totalCostUSD, 0)
-  const totalTokens = findings.reduce((s, f) => s + f.tokensSaved, 0)
-  const totalCost = totalTokens * costRate
-  const pctRaw = periodCost > 0 ? (totalCost / periodCost) * 100 : 0
-  const pct = pctRaw >= 1 ? pctRaw.toFixed(0) : pctRaw.toFixed(1)
+  const summaryLines = formatInlineOptimizeSummary(findings, costRate, periodCost)
   const gradeColor = GRADE_COLORS[healthGrade] ?? DIM
   return (
     <Box flexDirection="column" width={width}>
@@ -624,10 +650,10 @@ function OptimizeView({ findings, costRate, projects, label, width, healthScore,
           <Text bold color={gradeColor}>{healthGrade}</Text>
           <Text dimColor> ({healthScore}/100)</Text>
         </Text>
-        <Text color={VALUE} wrap="truncate-end">Savings: ~{formatTokens(totalTokens)} tokens (~{formatCost(totalCost)}, ~{pct}% of spend)</Text>
+        {summaryLines.map((line, i) => <Text key={i} color={VALUE} wrap="truncate-end">{line}</Text>)}
       </Box>
       {findings.map((f, i) => <FindingPanel key={i} index={i + 1} finding={f} costRate={costRate} width={width} />)}
-      <Box paddingX={1} width={width}><Text dimColor>Token estimates are approximate.</Text></Box>
+      <Box paddingX={1} width={width}><Text dimColor>Estimates only.</Text></Box>
     </Box>
   )
 }
