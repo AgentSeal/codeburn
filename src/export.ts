@@ -29,6 +29,14 @@ function escCsv(s: string): string {
 
 type Row = Record<string, string | number>
 
+function collectPricingWarnings(projects: ProjectSummary[]): string[] {
+  return [...new Set(projects.flatMap(project =>
+    project.sessions.flatMap(session =>
+      Object.values(session.modelBreakdown).flatMap(model => model.warnings ?? []),
+    ),
+  ))]
+}
+
 function rowsToCsv(rows: Row[]): string {
   if (rows.length === 0) return ''
   const headers = Object.keys(rows[0])
@@ -112,16 +120,19 @@ function buildActivityRows(projects: ProjectSummary[], period: string, billingCo
 }
 
 function buildModelRows(projects: ProjectSummary[], period: string, billingConfig: BillingConfig): Row[] {
-  const modelTotals: Record<string, { calls: number; billing: BillingAggregate; input: number; output: number; cacheRead: number; cacheWrite: number }> = {}
+  const modelTotals: Record<string, { calls: number; billing: BillingAggregate; input: number; output: number; cacheRead: number; cacheWrite: number; pricingStatus: string; warnings: Set<string> }> = {}
   for (const project of projects) {
     for (const session of project.sessions) {
       for (const [model, d] of Object.entries(session.modelBreakdown)) {
-        if (!modelTotals[model]) modelTotals[model] = { calls: 0, billing: emptyBillingAggregate(), input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
+        if (!modelTotals[model]) modelTotals[model] = { calls: 0, billing: emptyBillingAggregate(), input: 0, output: 0, cacheRead: 0, cacheWrite: 0, pricingStatus: d.pricingStatus ?? 'estimated', warnings: new Set() }
+        if (d.pricingStatus === 'unpriced') modelTotals[model].pricingStatus = 'unpriced'
+        for (const warning of d.warnings ?? []) modelTotals[model].warnings.add(warning)
         modelTotals[model].calls += d.calls
         addBillingAggregate(modelTotals[model].billing, {
           costEstimateUsd: d.costUSD,
           creditsAugment: d.credits,
           creditsSynthesizedCalls: d.creditsSynthesizedCount ?? 0,
+          subAgentCreditsUsedUnconfirmed: null,
           baseCostUsd: d.baseCostUsd ?? null,
           surchargeUsd: d.surchargeUsd ?? null,
           billedAmountUsd: d.billedAmountUsd ?? null,
@@ -141,6 +152,8 @@ function buildModelRows(projects: ProjectSummary[], period: string, billingConfi
       const row: Row = {
         Period: period,
         Model: model,
+        'Pricing Status': d.pricingStatus,
+        Warnings: [...d.warnings].join(' | '),
         ...billingCsvFields(d.billing, billingConfig),
         'Share (%)': pct(billingMetricValue(d.billing, billingConfig), total),
         'API Calls': d.calls,
@@ -379,6 +392,7 @@ function buildOverview(projects: ProjectSummary[], billingConfig: BillingConfig)
     cacheReadTokens: totalCacheRead,
     cacheWriteTokens: totalCacheWrite,
     ...billingJsonFields(billing, billingConfig),
+    warnings: collectPricingWarnings(projects),
   }
 }
 
@@ -391,6 +405,8 @@ function buildByModel(projects: ProjectSummary[], billingConfig: BillingConfig):
     outputTokens: number
     cacheRead: number
     cacheWrite: number
+    pricingStatus: string
+    warnings: Set<string>
   }> = {}
 
   for (const project of projects) {
@@ -398,14 +414,17 @@ function buildByModel(projects: ProjectSummary[], billingConfig: BillingConfig):
       for (const [model, data] of Object.entries(session.modelBreakdown)) {
         if (!modelTotals[model]) {
           modelTotals[model] = {
-            calls: 0, billing: emptyBillingAggregate(), inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheWrite: 0,
+            calls: 0, billing: emptyBillingAggregate(), inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheWrite: 0, pricingStatus: data.pricingStatus ?? 'estimated', warnings: new Set(),
           }
         }
+        if (data.pricingStatus === 'unpriced') modelTotals[model].pricingStatus = 'unpriced'
+        for (const warning of data.warnings ?? []) modelTotals[model].warnings.add(warning)
         modelTotals[model].calls += data.calls
         addBillingAggregate(modelTotals[model].billing, {
           costEstimateUsd: data.costUSD,
           creditsAugment: data.credits,
           creditsSynthesizedCalls: data.creditsSynthesizedCount ?? 0,
+          subAgentCreditsUsedUnconfirmed: null,
           baseCostUsd: data.baseCostUsd ?? null,
           surchargeUsd: data.surchargeUsd ?? null,
           billedAmountUsd: data.billedAmountUsd ?? null,
@@ -429,6 +448,8 @@ function buildByModel(projects: ProjectSummary[], billingConfig: BillingConfig):
         outputTokens: d.outputTokens,
         cacheReadTokens: d.cacheRead,
         cacheWriteTokens: d.cacheWrite,
+        pricingStatus: d.pricingStatus,
+        warnings: [...d.warnings],
         ...billingJsonFields(d.billing, billingConfig),
       }
     })
@@ -463,6 +484,7 @@ export async function exportJson(periods: PeriodExport[], outputPath: string): P
     generated: new Date().toISOString(),
     currency: { code, rate, symbol },
     billing: billingMeta,
+    warnings: collectPricingWarnings(thirtyDayProjects),
     overview: buildOverview(thirtyDayProjects, billingConfig),
     byModel: buildByModel(thirtyDayProjects, billingConfig),
     byProject: buildByProject(thirtyDayProjects, billingConfig),

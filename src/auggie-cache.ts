@@ -29,7 +29,9 @@ type SessionCacheFile = {
 // v2: Added `billing: BillingResult` field to ParsedProviderCall (Wave 2 billing integration)
 // v3: Added billing config metadata so mode/surcharge switches invalidate cached totals
 // v4: Added Auggie project/workspace attribution fields to cached calls
-const CACHE_VERSION = 4
+// v5: Added informational subAgentCreditsUsed metadata to cached calls
+// v6: Added pricingStatus/warnings and unpriced unknown-model semantics
+const CACHE_VERSION = 6
 const CACHE_SUBDIR = 'auggie'
 const CACHE_FILE_MODE = 0o600
 const CACHE_DIR_MODE = 0o700

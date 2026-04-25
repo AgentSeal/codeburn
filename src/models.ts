@@ -11,6 +11,8 @@ export type ModelCosts = {
   fastMultiplier: number
 }
 
+export type PricingStatus = 'estimated' | 'unpriced'
+
 type LiteLLMEntry = {
   input_cost_per_token?: number
   output_cost_per_token?: number
@@ -25,11 +27,6 @@ const CACHE_TTL_MS = 24 * 60 * 60 * 1000
 const WEB_SEARCH_COST = 0.01
 
 const FALLBACK_PRICING: Record<string, ModelCosts> = {
-  // Auggie sentinel models — priced at $0 so they don't crash cost calculations
-  // - auggie-unknown: we have a modelId but it isn't in the alias table yet
-  // - auggie-legacy: pre-Nov-2025 session with no modelId, unrecoverable
-  'auggie-unknown': { inputCostPerToken: 0, outputCostPerToken: 0, cacheWriteCostPerToken: 0, cacheReadCostPerToken: 0, webSearchCostPerRequest: 0, fastMultiplier: 1 },
-  'auggie-legacy': { inputCostPerToken: 0, outputCostPerToken: 0, cacheWriteCostPerToken: 0, cacheReadCostPerToken: 0, webSearchCostPerRequest: 0, fastMultiplier: 1 },
   'claude-opus-4-7': { inputCostPerToken: 5e-6, outputCostPerToken: 25e-6, cacheWriteCostPerToken: 6.25e-6, cacheReadCostPerToken: 0.5e-6, webSearchCostPerRequest: WEB_SEARCH_COST, fastMultiplier: 6 },
   'claude-opus-4-6': { inputCostPerToken: 5e-6, outputCostPerToken: 25e-6, cacheWriteCostPerToken: 6.25e-6, cacheReadCostPerToken: 0.5e-6, webSearchCostPerRequest: WEB_SEARCH_COST, fastMultiplier: 6 },
   'claude-opus-4-5': { inputCostPerToken: 5e-6, outputCostPerToken: 25e-6, cacheWriteCostPerToken: 6.25e-6, cacheReadCostPerToken: 0.5e-6, webSearchCostPerRequest: WEB_SEARCH_COST, fastMultiplier: 1 },
@@ -47,7 +44,8 @@ const FALLBACK_PRICING: Record<string, ModelCosts> = {
   'gemini-2.5-pro': { inputCostPerToken: 1.25e-6, outputCostPerToken: 10e-6, cacheWriteCostPerToken: 1.25e-6, cacheReadCostPerToken: 0.315e-6, webSearchCostPerRequest: WEB_SEARCH_COST, fastMultiplier: 1 },
   'gpt-5.2': { inputCostPerToken: 2.5e-6, outputCostPerToken: 10e-6, cacheWriteCostPerToken: 2.5e-6, cacheReadCostPerToken: 1.25e-6, webSearchCostPerRequest: WEB_SEARCH_COST, fastMultiplier: 1 },
   'gpt-5.3-codex': { inputCostPerToken: 2.5e-6, outputCostPerToken: 10e-6, cacheWriteCostPerToken: 2.5e-6, cacheReadCostPerToken: 1.25e-6, webSearchCostPerRequest: WEB_SEARCH_COST, fastMultiplier: 1 },
-  'gpt-5.4': { inputCostPerToken: 2.5e-6, outputCostPerToken: 10e-6, cacheWriteCostPerToken: 2.5e-6, cacheReadCostPerToken: 1.25e-6, webSearchCostPerRequest: WEB_SEARCH_COST, fastMultiplier: 1 },
+  'gpt-5.4': { inputCostPerToken: 1.25e-6, outputCostPerToken: 5e-6, cacheWriteCostPerToken: 1.25e-6, cacheReadCostPerToken: 0.625e-6, webSearchCostPerRequest: WEB_SEARCH_COST, fastMultiplier: 1 },
+  'gpt-5.5': { inputCostPerToken: 2.65e-6, outputCostPerToken: 10.6e-6, cacheWriteCostPerToken: 2.65e-6, cacheReadCostPerToken: 1.325e-6, webSearchCostPerRequest: WEB_SEARCH_COST, fastMultiplier: 1 },
   'gpt-5.4-mini': { inputCostPerToken: 0.4e-6, outputCostPerToken: 1.6e-6, cacheWriteCostPerToken: 0.4e-6, cacheReadCostPerToken: 0.2e-6, webSearchCostPerRequest: WEB_SEARCH_COST, fastMultiplier: 1 },
   'gpt-5': { inputCostPerToken: 2.5e-6, outputCostPerToken: 10e-6, cacheWriteCostPerToken: 2.5e-6, cacheReadCostPerToken: 1.25e-6, webSearchCostPerRequest: WEB_SEARCH_COST, fastMultiplier: 1 },
   'gpt-5-mini': { inputCostPerToken: 0.4e-6, outputCostPerToken: 1.6e-6, cacheWriteCostPerToken: 0.4e-6, cacheReadCostPerToken: 0.2e-6, webSearchCostPerRequest: WEB_SEARCH_COST, fastMultiplier: 1 },
@@ -137,24 +135,24 @@ function getCanonicalName(model: string): string {
     .replace(/-\d{8}$/, '')
 }
 
-export function getModelCosts(model: string): ModelCosts | null {
+function lookupNames(model: string): string[] {
   const canonical = getCanonicalName(model)
+  const stripped = canonical.replace(/^[^/]+\//, '')
+  return stripped === canonical ? [canonical] : [canonical, stripped]
+}
 
-  if (pricingCache?.has(canonical)) return pricingCache.get(canonical)!
-
-  for (const [key, costs] of Object.entries(FALLBACK_PRICING)) {
-    if (canonical === key || canonical.startsWith(key + '-')) return costs
-  }
-
-  for (const [key, costs] of pricingCache ?? new Map()) {
-    if (canonical.startsWith(key) || key.startsWith(canonical)) return costs
-  }
-
-  for (const [key, costs] of Object.entries(FALLBACK_PRICING)) {
-    if (canonical.startsWith(key)) return costs
+export function getModelCosts(model: string): ModelCosts | null {
+  for (const name of lookupNames(model)) {
+    if (pricingCache?.has(name)) return pricingCache.get(name)!
+    const fallback = FALLBACK_PRICING[name]
+    if (fallback) return fallback
   }
 
   return null
+}
+
+export function getPricingStatus(model: string): PricingStatus {
+  return getModelCosts(model) ? 'estimated' : 'unpriced'
 }
 
 export function calculateCost(
@@ -200,6 +198,7 @@ export function getShortModelName(model: string): string {
     'gpt-4.1-nano': 'GPT-4.1 Nano',
     'gpt-4.1-mini': 'GPT-4.1 Mini',
     'gpt-4.1': 'GPT-4.1',
+    'gpt-5.5': 'GPT-5.5',
     'gpt-5.4-mini': 'GPT-5.4 Mini',
     'gpt-5.4': 'GPT-5.4',
     'gpt-5.3-codex': 'GPT-5.3 Codex',
@@ -211,7 +210,7 @@ export function getShortModelName(model: string): string {
     'o3': 'o3',
   }
   for (const [key, name] of Object.entries(shortNames)) {
-    if (canonical.startsWith(key)) return name
+    if (canonical === key) return name
   }
   return canonical
 }

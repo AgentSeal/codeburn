@@ -40,7 +40,7 @@ export type BillingConfig = {
 
 export type BillingResult = {
   mode: BillingMode
-  baseCostUsd: number // always computed
+  baseCostUsd: number | null // null when model pricing is unavailable
   surchargeUsd: number | null // null in credits mode
   billedAmountUsd: number | null // null in credits mode
   creditsAugment: number | null // null in token_plus mode or when model unknown
@@ -109,7 +109,7 @@ export function computeBilling(
   config: BillingConfig,
   groundTruthCredits?: number | null,
 ): BillingResult {
-  const baseCostUsd = modelCosts ? calculateBaseCost(tokens, modelCosts) : 0
+  const baseCostUsd = modelCosts ? calculateBaseCost(tokens, modelCosts) : null
 
   if (config.mode === 'credits') {
     // Credits mode: NO surcharge, NO billed USD. Either ground-truth or synthesized.
@@ -119,7 +119,7 @@ export function computeBilling(
 
     if (groundTruthCredits != null) {
       creditsAugment = groundTruthCredits
-    } else if (modelCosts) {
+    } else if (modelCosts && baseCostUsd !== null) {
       creditsSynthesized = synthesizeCredits(baseCostUsd)
       creditsAugment = creditsSynthesized
       synthesized = true
@@ -139,8 +139,8 @@ export function computeBilling(
   }
 
   // Token+ mode: NO credits. Base + surcharge = billed.
-  const surchargeUsd = baseCostUsd * config.surchargeRate
-  const billedAmountUsd = baseCostUsd + surchargeUsd
+  const surchargeUsd = baseCostUsd !== null ? baseCostUsd * config.surchargeRate : null
+  const billedAmountUsd = baseCostUsd !== null && surchargeUsd !== null ? baseCostUsd + surchargeUsd : null
 
   return {
     mode: 'token_plus',

@@ -151,11 +151,49 @@ describe('auggie provider - parsing', () => {
     for (const call of calls) expect(call.model).toBe('claude-haiku-4-5')
   })
 
-  it('aliases the Augment-internal "butler" model id to claude-haiku-4-5 for pricing', async () => {
+  it('keeps an unverified non-empty Augment model id raw and unpriced', async () => {
+    const path = await stageFixture('old-schema.json')
+    const calls = await collectCalls(path)
+    expect(calls).toHaveLength(1)
+    expect(calls[0].model).toBe('butler')
+    expect(calls[0].pricingStatus).toBe('unpriced')
+    expect(calls[0].warnings?.[0]).toContain('butler')
+    expect(calls[0].costUSD).toBe(0)
+    expect(calls[0].billing?.baseCostUsd).toBeNull()
+  })
+
+  it('still respects explicit CODEBURN_AUGGIE_ALIAS overrides', async () => {
+    process.env['CODEBURN_AUGGIE_ALIAS_BUTLER'] = 'claude-haiku-4-5'
     const path = await stageFixture('old-schema.json')
     const calls = await collectCalls(path)
     expect(calls).toHaveLength(1)
     expect(calls[0].model).toBe('claude-haiku-4-5')
+    expect(calls[0].pricingStatus).toBe('estimated')
+    expect(calls[0].warnings).toEqual([])
+    expect(calls[0].costUSD).toBeGreaterThan(0)
+  })
+
+  it('does not fuzzy-price deferred internal GPT ids as public GPT models', async () => {
+    const raw = await readFile(join(FIXTURE_DIR, 'old-schema.json'), 'utf-8')
+    const path = join(sessionsDir, 'gpt-5-5.json')
+    await writeFile(path, raw.replace('"butler"', '"gpt-5-5"'), 'utf-8')
+
+    const calls = await collectCalls(path)
+    expect(calls).toHaveLength(1)
+    expect(calls[0].model).toBe('gpt-5-5')
+    expect(calls[0].pricingStatus).toBe('unpriced')
+    expect(calls[0].costUSD).toBe(0)
+  })
+
+  it('prices public GPT-5.5 ids when they are emitted directly', async () => {
+    const raw = await readFile(join(FIXTURE_DIR, 'old-schema.json'), 'utf-8')
+    const path = join(sessionsDir, 'gpt-5-5-public.json')
+    await writeFile(path, raw.replace('"butler"', '"gpt-5.5"'), 'utf-8')
+
+    const calls = await collectCalls(path)
+    expect(calls).toHaveLength(1)
+    expect(calls[0].model).toBe('gpt-5.5')
+    expect(calls[0].pricingStatus).toBe('estimated')
     expect(calls[0].costUSD).toBeGreaterThan(0)
   })
 

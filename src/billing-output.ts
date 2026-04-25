@@ -5,6 +5,7 @@ export type BillingAggregate = {
   costEstimateUsd: number
   creditsAugment: number | null
   creditsSynthesizedCalls: number
+  subAgentCreditsUsedUnconfirmed: number | null
   baseCostUsd: number | null
   surchargeUsd: number | null
   billedAmountUsd: number | null
@@ -24,6 +25,7 @@ export function emptyBillingAggregate(): BillingAggregate {
     costEstimateUsd: 0,
     creditsAugment: null,
     creditsSynthesizedCalls: 0,
+    subAgentCreditsUsedUnconfirmed: null,
     baseCostUsd: null,
     surchargeUsd: null,
     billedAmountUsd: null,
@@ -34,6 +36,7 @@ export function addBillingAggregate(target: BillingAggregate, source: BillingAgg
   target.costEstimateUsd += source.costEstimateUsd
   target.creditsAugment = addNullable(target.creditsAugment, source.creditsAugment)
   target.creditsSynthesizedCalls += source.creditsSynthesizedCalls
+  target.subAgentCreditsUsedUnconfirmed = addNullable(target.subAgentCreditsUsedUnconfirmed, source.subAgentCreditsUsedUnconfirmed)
   target.baseCostUsd = addNullable(target.baseCostUsd, source.baseCostUsd)
   target.surchargeUsd = addNullable(target.surchargeUsd, source.surchargeUsd)
   target.billedAmountUsd = addNullable(target.billedAmountUsd, source.billedAmountUsd)
@@ -45,6 +48,7 @@ export function billingAggregateFromCall(call: ParsedApiCall): BillingAggregate 
     costEstimateUsd: call.costUSD,
     creditsAugment: call.billing?.creditsAugment ?? call.credits ?? null,
     creditsSynthesizedCalls: call.billing?.synthesized ? 1 : 0,
+    subAgentCreditsUsedUnconfirmed: call.subAgentCreditsUsedUnconfirmed ?? null,
     baseCostUsd: call.billing?.baseCostUsd ?? null,
     surchargeUsd: call.billing?.surchargeUsd ?? null,
     billedAmountUsd: call.billing?.billedAmountUsd ?? null,
@@ -61,6 +65,7 @@ export function billingAggregateFromSession(session: SessionSummary): BillingAgg
     costEstimateUsd: session.totalCostUSD,
     creditsAugment: session.totalCredits ?? fromCalls.creditsAugment,
     creditsSynthesizedCalls: session.creditsSynthesizedCount ?? fromCalls.creditsSynthesizedCalls,
+    subAgentCreditsUsedUnconfirmed: session.subAgentCreditsUsedUnconfirmed ?? fromCalls.subAgentCreditsUsedUnconfirmed,
     baseCostUsd: session.totalBaseCostUsd ?? fromCalls.baseCostUsd,
     surchargeUsd: session.totalSurchargeUsd ?? fromCalls.surchargeUsd,
     billedAmountUsd: session.totalBilledAmountUsd ?? fromCalls.billedAmountUsd,
@@ -77,7 +82,7 @@ export function billingAggregateFromProject(project: ProjectSummary): BillingAgg
 
 export function billingMetricValue(aggregate: BillingAggregate, config: BillingConfig): number {
   if (config.mode === 'credits') return aggregate.creditsAugment ?? 0
-  return aggregate.billedAmountUsd ?? aggregate.costEstimateUsd
+  return aggregate.billedAmountUsd ?? 0
 }
 
 export function buildBillingMetadata(config: BillingConfig): Record<string, unknown> {
@@ -91,6 +96,9 @@ export function buildBillingMetadata(config: BillingConfig): Record<string, unkn
         creditsSynthesizedCalls: 'count_of_calls_with_synthesized_credits',
         costEstimateUsd: 'token_pricing_estimate_usd_not_authoritative_billing',
       },
+      informationalFields: {
+        subAgentCreditsUsedUnconfirmed: 'nonzero Auggie subAgentCreditsUsed; not included in billing totals while creditUsage inclusion is unconfirmed',
+      },
     }
   }
   return {
@@ -102,6 +110,9 @@ export function buildBillingMetadata(config: BillingConfig): Record<string, unkn
       surchargeUsd: 'token_plus_surcharge_usd',
       billedAmountUsd: 'baseCostUsd_plus_surchargeUsd',
     },
+    informationalFields: {
+      subAgentCreditsUsedUnconfirmed: 'nonzero Auggie subAgentCreditsUsed; not included in billing totals while creditUsage inclusion is unconfirmed',
+    },
   }
 }
 
@@ -111,6 +122,7 @@ export function billingJsonFields(aggregate: BillingAggregate, config: BillingCo
       cost: null,
       creditsAugment: aggregate.creditsAugment,
       creditsSynthesizedCalls: aggregate.creditsSynthesizedCalls,
+      subAgentCreditsUsedUnconfirmed: aggregate.subAgentCreditsUsedUnconfirmed,
       costEstimateUsd: round2(aggregate.costEstimateUsd),
     }
   }
@@ -119,7 +131,8 @@ export function billingJsonFields(aggregate: BillingAggregate, config: BillingCo
     baseCostUsd: aggregate.baseCostUsd !== null ? round2(aggregate.baseCostUsd) : null,
     surchargeUsd: aggregate.surchargeUsd !== null ? round2(aggregate.surchargeUsd) : null,
     billedAmountUsd,
-    cost: billedAmountUsd ?? round2(aggregate.costEstimateUsd),
+    subAgentCreditsUsedUnconfirmed: aggregate.subAgentCreditsUsedUnconfirmed,
+    cost: billedAmountUsd,
   }
 }
 
@@ -128,6 +141,7 @@ export function billingCsvFields(aggregate: BillingAggregate, config: BillingCon
     return {
       'Credits (Augment)': aggregate.creditsAugment ?? '',
       'Synthesized Credit Calls': aggregate.creditsSynthesizedCalls,
+      'Sub-Agent Credits (Unconfirmed)': aggregate.subAgentCreditsUsedUnconfirmed ?? '',
       'Cost Estimate (USD)': round2(aggregate.costEstimateUsd),
     }
   }
@@ -135,5 +149,6 @@ export function billingCsvFields(aggregate: BillingAggregate, config: BillingCon
     'Billed Amount (USD)': aggregate.billedAmountUsd !== null ? round2(aggregate.billedAmountUsd) : '',
     'Base Cost (USD)': aggregate.baseCostUsd !== null ? round2(aggregate.baseCostUsd) : '',
     'Surcharge (USD)': aggregate.surchargeUsd !== null ? round2(aggregate.surchargeUsd) : '',
+    'Sub-Agent Credits (Unconfirmed)': aggregate.subAgentCreditsUsedUnconfirmed ?? '',
   }
 }

@@ -95,7 +95,7 @@ Arrow keys switch between Today / 7 Days / 30 Days / Month / All Time. Press `q`
 | Panel | What it contains |
 |---|---|
 | **Overview** | In **credits mode**: shows Augment credits as the primary usage metric plus token totals; the legacy `cost` field is `null` and any USD/token value is labeled as an estimate. In **token_plus (USD-estimate) mode**: shows base cost, surcharge, and billed USD estimates; credits are `null`. Both modes show total calls, sessions, cache-hit %, and legacy-session count when applicable. |
-| **By Model** | Per-model breakdown. In credits mode: credits column. In token_plus mode: base/surcharge/billed USD columns. Pre-Nov-2025 sessions appear under `auggie-legacy`; set-but-unpriced non-empty model IDs stay visible as raw IDs so you can diagnose unknown pricing. |
+| **By Model** | Per-model breakdown. In credits mode: credits column. In token_plus mode: base/surcharge/billed USD columns. Pre-Nov-2025 sessions appear under `auggie-legacy`; set-but-unpriced non-empty model IDs stay visible as raw IDs with `pricingStatus=unpriced` warnings so you can diagnose unknown pricing. |
 | **Daily Activity** | Sparkline of the active billing metric (credits or billed USD estimate) per local day across the selected window |
 | **Projects** | Top projects by the active billing metric, with project/workspace labels propagated from Auggie session metadata when available |
 | **Activities** | Auggie-native tool/activity categories (View/Read, Terminal, Search/Retrieval, File Write/Edit, Browser, Agent/Workspace, …). These are usage categories, not billing-rate multipliers. |
@@ -109,7 +109,7 @@ The `--format json` flag on `report`, `today`, `month`, and `status`, plus `expo
 
 Auggie writes one JSON file per conversation into `~/.augment/sessions/`. CodeBurn walks each file's `response_node` stream, aggregates at the **exchange level** (tool_use nodes + token_usage nodes that belong to the same model turn), and emits one row per `token_usage` node. Dedup key: `auggie:${sessionId}:${request_id}:${response_node.id}`. Sub-agent sessions are tagged with their `rootTaskUuid` in the session label.
 
-**Model selection** prefers `agentState.modelId` (resolved through a small alias table only when a mapping is confirmed). When it's empty, CodeBurn falls back to a provider-aware parser default derived from `metadata.provider` on type-8 THINKING nodes (see `CODEBURN_AUGGIE_DEFAULT_*` and `CODEBURN_AUGGIE_ALIAS_*` in the Environment Variables table below). These defaults are parser fallbacks for missing local metadata, not a statement of your organization's Augment default model. Sessions with neither a `modelId` nor a recoverable provider hint (pre-Nov-2025 sessions) bucket under `auggie-legacy`; non-empty model IDs that CodeBurn cannot price should remain visible as raw IDs with pricing treated as unknown.
+**Model selection** prefers `agentState.modelId`; non-empty IDs remain visible as raw IDs unless you explicitly set `CODEBURN_AUGGIE_ALIAS_<MODELID>`. When CodeBurn cannot price a raw ID, it marks `pricingStatus=unpriced`, emits warnings in JSON/export/status output, and omits that usage from synthesized USD/credit estimates. When `modelId` is empty, CodeBurn falls back to a provider-aware parser default derived from `metadata.provider` on type-8 THINKING nodes (see `CODEBURN_AUGGIE_DEFAULT_*` in the Environment Variables table below). These defaults are parser fallbacks for missing local metadata, not a statement of your organization's Augment default model. Sessions with neither a `modelId` nor a recoverable provider hint (pre-Nov-2025 sessions) bucket under `auggie-legacy`.
 
 **Credits** are best-effort local billing numbers from Auggie session JSON. When numeric `session.creditUsage` is present, CodeBurn treats it as the authoritative local session total and prefers it over recomputing from type-9 `billing_metadata`. Otherwise, CodeBurn sums `billing_metadata.credits_consumed` on type-9 BILLING_METADATA nodes, deduped by `transaction_id`. When neither source is present and model pricing is known, synthesized credits are an estimate. `subAgentCreditsUsed` is currently informational/unconfirmed: do not add it to totals or assume it is included in `creditUsage` until Augment confirms the upstream semantics. In **token_plus mode**, USD cost is computed from token counts using [LiteLLM](https://github.com/BerriAI/litellm) pricing (cached at `~/.cache/codeburn/litellm-pricing.json`); in **credits mode** the legacy USD `cost` field is `null` and `costEstimateUsd` is only a secondary token-pricing estimate.
 
@@ -127,7 +127,7 @@ Parsed calls are cached per session at `~/.cache/codeburn/auggie/<id>.json` (mod
 | `CODEBURN_AUGGIE_DEFAULT_GEMINI` | Fallback model for Gemini (default: `gemini-3-pro`). |
 | `CODEBURN_AUGGIE_DEFAULT_XAI` | Fallback model for xAI (default: `grok-2`). |
 | `CODEBURN_AUGGIE_DEFAULT_MINIMAX` | Fallback model for MiniMax (default: `minimax`). |
-| `CODEBURN_AUGGIE_ALIAS_<MODELID>` | Override the alias for a specific Augment-internal model ID. Example: `CODEBURN_AUGGIE_ALIAS_BUTLER=claude-haiku-4-5`. |
+| `CODEBURN_AUGGIE_ALIAS_<MODELID>` | Optional local alias for a specific Augment-internal model ID after you have verified the mapping. Example: `CODEBURN_AUGGIE_ALIAS_BUTLER=claude-haiku-4-5`. |
 | `CODEBURN_VERBOSE` | Set to `1` to enable verbose logging (same as `--verbose` flag). Prints warnings to stderr on skipped/failed session reads. |
 | `CODEBURN_CACHE_DIR` | Override the cache directory (default: `~/.cache/codeburn`). Affects session cache, daily cache, pricing cache, and FX rate cache. |
 | `BASH_MAX_OUTPUT_LENGTH` | Cap shell command output length in bytes (no default). Prevents unbounded token consumption from long-running commands. |
@@ -229,6 +229,7 @@ JSON/CSV outputs are semi-stable APIs. Current billing-related fields include:
 - `creditsAugment`: Augment credits when available locally, or synthesized credits when marked by `creditsSynthesizedCalls`.
 - `creditsSynthesizedCalls`: number of calls whose credits were estimated from token pricing because local credit data was unavailable.
 - `subAgentCreditsUsedUnconfirmed`: nonzero Auggie `subAgentCreditsUsed` surfaced separately as informational/unconfirmed data. It is not included in credit totals.
+- `pricingStatus` and `warnings`: per-model markers for unpriced raw model IDs; warnings are also surfaced at report/status/export overview level.
 - `costEstimateUsd`: secondary token-pricing estimate in credits mode.
 - `baseCostUsd`, `surchargeUsd`, `billedAmountUsd`: token_plus USD estimate fields.
 - CSV exports label the same informational data as `Sub-Agent Credits (Unconfirmed)`.
@@ -273,7 +274,7 @@ Cache and config files are created with mode `0600` under directories with mode 
 - **`By Model` shows `auggie-legacy`** — these are pre-Nov-2025 sessions with an empty `modelId` and no recoverable provider hint. The model is unrecoverable; the Overview panel shows a parenthetical hint (`(N legacy sessions — model unrecoverable)`) so you can see the blind-spot size. This is expected.
 - **Credits column shows `—`** — the session has no numeric `creditUsage`, no type-9 `billing_metadata` credits, and no safe synthesized-credit estimate. Typical for very old sessions, CLI-offline runs, or unknown/unpriced models.
 - **Core Tools / Shell Commands / MCP Servers tables empty** — confirm `~/.augment/sessions/` contains recent files (`ls -lt ~/.augment/sessions/ | head`). If your Augment data lives elsewhere, set `AUGMENT_HOME`.
-- **Raw model ID with unknown pricing in By Model** — CodeBurn found a non-empty Auggie `modelId` that has no confirmed pricing/alias. The raw ID is intentionally preserved for diagnosability. Add an alias via `CODEBURN_AUGGIE_ALIAS_<MODELID>=<public-model-name>` only when you are confident about the mapping, or file an issue.
+- **Raw model ID with `pricingStatus=unpriced` in By Model** — CodeBurn found a non-empty Auggie `modelId` that has no confirmed pricing/alias. The raw ID is intentionally preserved for diagnosability, and synthesized USD/credit estimates omit that usage. Add an alias via `CODEBURN_AUGGIE_ALIAS_<MODELID>=<public-model-name>` only when you are confident about the mapping, or file an issue.
 
 ## Development
 

@@ -66,9 +66,11 @@ export type ParsedTurn = {
 }
 
 import type { BillingMode, BillingResult } from './billing.js'
+import type { PricingStatus } from './models.js'
 
 export type ParsedApiCall = {
   provider: string
+  workspaceId?: string
   model: string
   usage: TokenUsage
   costUSD: number
@@ -77,6 +79,13 @@ export type ParsedApiCall = {
   credits: number | null
   /// Full billing result from computeBilling(). Present when billing engine is active.
   billing?: BillingResult | null
+  /// Whether token-pricing data was available. `estimated` means USD/credit synthesis
+  /// is based on a pricing table; `unpriced` means raw usage is preserved but omitted from estimates.
+  pricingStatus?: PricingStatus
+  warnings?: string[]
+  /// Nonzero Auggie sub-agent credits reported separately while inclusion in
+  /// creditUsage remains unconfirmed. Informational only; not added to totals.
+  subAgentCreditsUsedUnconfirmed?: number | null
   tools: string[]
   mcpTools: string[]
   hasAgentSpawn: boolean
@@ -88,6 +97,12 @@ export type ParsedApiCall = {
 }
 
 export type TaskCategory =
+  | 'view/read'
+  | 'launch-process/terminal'
+  | 'search/retrieval'
+  | 'browser'
+  | 'file/write/edit'
+  | 'agent/workspace'
   | 'coding'
   | 'debugging'
   | 'feature'
@@ -111,6 +126,7 @@ export type ClassifiedTurn = ParsedTurn & {
 export type SessionSummary = {
   sessionId: string
   project: string
+  workspaceId?: string
   firstTimestamp: string
   lastTimestamp: string
   totalCostUSD: number
@@ -120,6 +136,9 @@ export type SessionSummary = {
   totalCacheWriteTokens: number
   /// Total Augment credits for this session. null = no billing data, 0 = zero usage, positive = usage.
   totalCredits: number | null
+  /// Nonzero Auggie sub-agent credits reported separately while inclusion in
+  /// creditUsage remains unconfirmed. Informational only; not added to totals.
+  subAgentCreditsUsedUnconfirmed?: number | null
   /// Billing mode in effect for this session (credits or token_plus).
   billingMode?: BillingMode
   /// Token+ billing aggregates (null in credits mode).
@@ -140,6 +159,8 @@ export type SessionSummary = {
     surchargeUsd?: number | null
     billedAmountUsd?: number | null
     creditsSynthesizedCount?: number
+    pricingStatus?: PricingStatus
+    warnings?: string[]
   }>
   toolBreakdown: Record<string, { calls: number }>
   mcpBreakdown: Record<string, { calls: number }>
@@ -161,10 +182,14 @@ export type SessionSummary = {
 export type ProjectSummary = {
   project: string
   projectPath: string
+  workspaceIds?: string[]
   sessions: SessionSummary[]
   totalCostUSD: number
   /// Total Augment credits for this project. null = no billing data, 0 = zero usage, positive = usage.
   totalCredits: number | null
+  /// Nonzero Auggie sub-agent credits reported separately while inclusion in
+  /// creditUsage remains unconfirmed. Informational only; not added to totals.
+  subAgentCreditsUsedUnconfirmed?: number | null
   /// Billing mode (from first session with billing data).
   billingMode?: BillingMode
   /// Token+ billing aggregates (null in credits mode).
@@ -182,6 +207,12 @@ export type DateRange = {
 }
 
 export const CATEGORY_LABELS: Record<TaskCategory, string> = {
+  'view/read': 'View/Read',
+  'launch-process/terminal': 'Terminal',
+  'search/retrieval': 'Search/Retrieval',
+  browser: 'Browser',
+  'file/write/edit': 'File Write/Edit',
+  'agent/workspace': 'Agent/Workspace',
   coding: 'Coding',
   debugging: 'Debugging',
   feature: 'Feature Dev',

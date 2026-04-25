@@ -65,6 +65,7 @@ function buildSessionSummary(
   turns: ClassifiedTurn[],
   sessionCreditUsage?: number | null,
   workspaceId?: string,
+  subAgentCreditsUsedUnconfirmed?: number | null,
 ): SessionSummary {
   const modelBreakdown: SessionSummary['modelBreakdown'] = Object.create(null)
   const toolBreakdown: SessionSummary['toolBreakdown'] = Object.create(null)
@@ -137,6 +138,7 @@ function buildSessionSummary(
       }
 
       const modelKey = getShortModelName(call.model)
+      const pricingStatus = call.pricingStatus ?? 'estimated'
       if (!modelBreakdown[modelKey]) {
         modelBreakdown[modelKey] = {
           calls: 0,
@@ -147,7 +149,13 @@ function buildSessionSummary(
           surchargeUsd: null,
           billedAmountUsd: null,
           creditsSynthesizedCount: 0,
+          pricingStatus,
+          warnings: [],
         }
+      }
+      if (pricingStatus === 'unpriced') modelBreakdown[modelKey].pricingStatus = 'unpriced'
+      if (call.warnings?.length) {
+        modelBreakdown[modelKey].warnings = [...new Set([...(modelBreakdown[modelKey].warnings ?? []), ...call.warnings])]
       }
       modelBreakdown[modelKey].calls++
       modelBreakdown[modelKey].costUSD += call.costUSD
@@ -186,8 +194,10 @@ function buildSessionSummary(
     }
   }
 
-  // sessionCreditUsage is Augment's authoritative session total (already deduped,
-  // includes sub-agents); prefer it over per-node summation when present.
+  // sessionCreditUsage is Augment's authoritative local session total; prefer it
+  // over per-node summation when present.
+  // subAgentCreditsUsedUnconfirmed is intentionally kept separate because its
+  // inclusion in creditUsage is deferred pending upstream confirmation.
   // Older sessions lacking sessionCreditUsage fall back to summedCredits.
   const totalCredits = sessionCreditUsage !== undefined && sessionCreditUsage !== null
     ? sessionCreditUsage
@@ -205,6 +215,7 @@ function buildSessionSummary(
     totalCacheReadTokens: totalCacheRead,
     totalCacheWriteTokens: totalCacheWrite,
     totalCredits,
+    ...(subAgentCreditsUsedUnconfirmed ? { subAgentCreditsUsedUnconfirmed } : {}),
     billingMode,
     totalBaseCostUsd,
     totalSurchargeUsd,
@@ -240,6 +251,9 @@ function providerCallToTurn(call: ParsedProviderCall): ParsedTurn {
     costUSD: call.costUSD,
     credits: call.credits ?? null,
     billing: call.billing ?? null,
+    pricingStatus: call.pricingStatus,
+    warnings: call.warnings ?? [],
+    ...(call.sessionSubAgentCreditsUsedUnconfirmed ? { subAgentCreditsUsedUnconfirmed: call.sessionSubAgentCreditsUsedUnconfirmed } : {}),
     tools,
     mcpTools: extractMcpTools(tools),
     hasAgentSpawn: tools.includes('Agent'),
@@ -267,7 +281,7 @@ async function parseProviderSources(
   const provider = await getProvider(providerName)
   if (!provider) return []
 
-  const sessionMap = new Map<string, { sessionId: string; project: string; turns: ClassifiedTurn[]; sessionCreditUsage?: number | null; workspaceId?: string }>()
+  const sessionMap = new Map<string, { sessionId: string; project: string; turns: ClassifiedTurn[]; sessionCreditUsage?: number | null; workspaceId?: string; subAgentCreditsUsedUnconfirmed?: number | null }>()
 
   for (const source of sources) {
     if (dateRange) {
@@ -300,16 +314,19 @@ async function parseProviderSources(
         if (call.sessionCreditUsage !== undefined && existing.sessionCreditUsage === undefined) {
           existing.sessionCreditUsage = call.sessionCreditUsage
         }
+        if (call.sessionSubAgentCreditsUsedUnconfirmed !== undefined && existing.subAgentCreditsUsedUnconfirmed === undefined) {
+          existing.subAgentCreditsUsedUnconfirmed = call.sessionSubAgentCreditsUsedUnconfirmed
+        }
         if (call.workspaceId && !existing.workspaceId) existing.workspaceId = call.workspaceId
       } else {
-        sessionMap.set(key, { sessionId: call.sessionId, project, turns: [classified], sessionCreditUsage: call.sessionCreditUsage, workspaceId: call.workspaceId })
+        sessionMap.set(key, { sessionId: call.sessionId, project, turns: [classified], sessionCreditUsage: call.sessionCreditUsage, workspaceId: call.workspaceId, subAgentCreditsUsedUnconfirmed: call.sessionSubAgentCreditsUsedUnconfirmed })
       }
     }
   }
 
   const projectMap = new Map<string, { sessions: SessionSummary[]; workspaceIds: Set<string> }>()
-  for (const { sessionId, project, turns, sessionCreditUsage, workspaceId } of sessionMap.values()) {
-    const session = buildSessionSummary(sessionId, project, turns, sessionCreditUsage, workspaceId)
+  for (const { sessionId, project, turns, sessionCreditUsage, workspaceId, subAgentCreditsUsedUnconfirmed } of sessionMap.values()) {
+    const session = buildSessionSummary(sessionId, project, turns, sessionCreditUsage, workspaceId, subAgentCreditsUsedUnconfirmed)
     if (session.apiCalls > 0) {
       const existing = projectMap.get(project) ?? { sessions: [], workspaceIds: new Set<string>() }
       existing.sessions.push(session)
@@ -325,6 +342,7 @@ async function parseProviderSources(
       if (acc === null && sess.totalCredits === null) return null
       return (acc ?? 0) + (sess.totalCredits ?? 0)
     }, null)
+    const subAgentCreditsUsedUnconfirmed = sessions.reduce<number | null>((acc, sess) => addNullable(acc, sess.subAgentCreditsUsedUnconfirmed), null)
     projects.push({
       project: dirName,
       projectPath: unsanitizePath(dirName),
@@ -332,6 +350,7 @@ async function parseProviderSources(
       sessions,
       totalCostUSD: sessions.reduce((s, sess) => s + sess.totalCostUSD, 0),
       totalCredits,
+      ...(subAgentCreditsUsedUnconfirmed ? { subAgentCreditsUsedUnconfirmed } : {}),
       totalApiCalls: sessions.reduce((s, sess) => s + sess.apiCalls, 0),
     })
   }
@@ -425,6 +444,7 @@ export async function parseAllSessions(dateRange?: DateRange): Promise<ProjectSu
       } else {
         existing.totalCredits = (existing.totalCredits ?? 0) + (p.totalCredits ?? 0)
       }
+      existing.subAgentCreditsUsedUnconfirmed = addNullable(existing.subAgentCreditsUsedUnconfirmed, p.subAgentCreditsUsedUnconfirmed) ?? undefined
       existing.totalApiCalls += p.totalApiCalls
     } else {
       mergedMap.set(p.project, { ...p })

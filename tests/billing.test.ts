@@ -77,7 +77,19 @@ describe('computeBilling — credits mode', () => {
     expect(result.creditsAugment).toBeNull()
     expect(result.creditsSynthesized).toBeNull()
     expect(result.synthesized).toBe(false)
-    expect(result.baseCostUsd).toBe(0)
+    expect(result.baseCostUsd).toBeNull()
+  })
+
+  it('returns null USD fields in token_plus mode when model is unknown', () => {
+    const config: BillingConfig = { mode: 'token_plus', surchargeRate: 0.3 }
+    const tokens = { input: 1000, output: 500 }
+
+    const result = computeBilling(tokens, null, config, null)
+
+    expect(result.baseCostUsd).toBeNull()
+    expect(result.surchargeUsd).toBeNull()
+    expect(result.billedAmountUsd).toBeNull()
+    expect(result.creditsAugment).toBeNull()
   })
 })
 

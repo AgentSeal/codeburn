@@ -12,7 +12,8 @@ import type { Provider, SessionSource, SessionParser, ParsedProviderCall } from 
 /// Augment Code's CLI ("Auggie") writes one JSON file per conversation into ~/.augment/sessions/.
 /// Each file is pretty-printed JSON (whole-file rewrite on every update). The schema evolved
 /// between Aug 2025 and Apr 2026: newer sessions carry creditUsage / subAgentCreditsUsed /
-/// rootTaskUuid, older ones don't. The parser tolerates both.
+/// rootTaskUuid, older ones don't. The parser tolerates both and keeps sub-agent
+/// credits informational because creditUsage inclusion is not yet confirmed.
 const SESSIONS_SUBDIR = 'sessions'
 const CREDENTIALS_FILENAME = 'session.json'
 const USER_MESSAGE_CAP = 500
@@ -35,23 +36,10 @@ const PROVIDER_DEFAULT_MODEL: Record<string, string> = {
   minimax: 'minimax', // TODO(billing): confirm actual model name for minimax provider
 }
 
-/// Augment-internal model IDs that LiteLLM has no pricing for. The entries here are
-/// best-effort aliases to the closest publicly-priced model so cost displays aren't
-/// stuck at $0 for historical data. Users can override via CODEBURN_AUGGIE_ALIAS_<MODEL>.
-/// Keep conservative: if a model name isn't clearly mappable, leave it unaliased and
-/// accept $0 cost rather than guessing wrong.
-const MODEL_ALIASES: Record<string, string> = {
-  // TODO(billing): confirm public-model mapping with billing team
-  'butler': 'claude-haiku-4-5',
-  // TODO(billing): confirm public-model mapping with billing team — gpt-5-2-codex may map to gpt-5.3-codex
-  'gpt-5-2-codex': 'gpt-5.3-codex',
-  // TODO(billing): confirm public-model mapping with billing team — gpt-5-4 may map to gpt-5.4
-  'gpt-5-4': 'gpt-5.4',
-  // TODO(billing): confirm public-model mapping with billing team — gpt-5-2-medium may map to gpt-5 or gpt-5-mini
-  'gpt-5-2-medium': 'gpt-5',
-  // TODO(billing): confirm public-model mapping with billing team — claude-sonnet-4-6 is close to claude-sonnet-4-5
-  'claude-sonnet-4-6': 'claude-sonnet-4-5',
-}
+/// Built-in aliases are intentionally empty unless a mapping has been verified.
+/// Unknown non-empty model IDs remain visible as raw IDs and are marked unpriced.
+/// Users can still opt in to local aliases via CODEBURN_AUGGIE_ALIAS_<MODEL>.
+const MODEL_ALIASES: Record<string, string> = {}
 
 function lookupOwn(table: Record<string, string>, key: string): string | undefined {
   return Object.prototype.hasOwnProperty.call(table, key) ? table[key] : undefined
@@ -125,7 +113,8 @@ type AuggieSession = {
   /// authoritative total for the session. Per-exchange credits are still parsed for
   /// breakdown purposes but the session total should use this when available.
   creditUsage?: number | null
-  /// Credits consumed by sub-agents spawned from this session.
+  /// Credits consumed by sub-agents spawned from this session. Inclusion in creditUsage
+  /// is unconfirmed, so nonzero values are surfaced separately and never added to totals.
   subAgentCreditsUsed?: number | null
 }
 
@@ -152,16 +141,10 @@ function resolveModelAlias(modelId: string): string {
 }
 
 /// Picks the model name used for pricing and display. Preference order:
-///   1. `agentState.modelId` when populated -> resolved through the alias table
+///   1. `agentState.modelId` when populated -> raw ID unless env/built-in alias exists
 ///   2. provider-aware default keyed off the first non-null provider from response_nodes
 ///   3. `auggie-legacy` when modelId is empty AND no provider hint can be derived
 ///      (pre-Nov-2025 sessions with no recoverable model information)
-///   4. `auggie-unknown` when modelId is set but not found in alias table (shouldn't happen
-///      after step 1, but kept for future model IDs we haven't aliased yet)
-///
-/// Sentinel distinction:
-///   - `auggie-unknown`: we have a modelId but it isn't in the alias table yet
-///   - `auggie-legacy`: pre-Nov-2025 session with no modelId, unrecoverable
 function selectModel(session: AuggieSession, nodeProvider: string | null | undefined): string {
   const modelId = session.agentState?.modelId
   const raw = typeof modelId === 'string' ? modelId.trim() : ''
@@ -170,6 +153,14 @@ function selectModel(session: AuggieSession, nodeProvider: string | null | undef
   if (providerDefault) return providerDefault
   // No modelId AND no provider hint: this is a pre-Nov-2025 legacy session
   return 'auggie-legacy'
+}
+
+function pricingWarnings(model: string, hasPricing: boolean): string[] {
+  if (hasPricing) return []
+  if (model === 'auggie-legacy') {
+    return ['No recoverable Auggie model ID; USD estimates and synthesized credits omit this usage.']
+  }
+  return [`No token pricing available for model "${model}"; raw model ID is preserved and USD estimates/synthesized credits omit this usage.`]
 }
 
 /// Scans response_nodes (in particular type-8 ASSISTANT_CHAT_RESULT nodes) to find
@@ -337,6 +328,7 @@ function* parseExchange(
   exchange: AuggieExchange,
   sessionId: string,
   projectLabel: string,
+  workspaceId: string | undefined,
   seenKeys: Set<string>,
   seenTransactionIds: Set<string>,
   billingConfig: BillingConfig,
@@ -408,7 +400,10 @@ function* parseExchange(
       // Use exchange-level provider hint (from type-8 nodes) rather than per-node,
       // because type-10 billing nodes often have null provider.
       const model = selectModel(session, exchangeProviderHint)
-      const costUSD = calculateCost(model, input, output, cacheWrite, cacheRead, 0)
+      const modelCosts = getModelCosts(model)
+      const pricingStatus = modelCosts ? 'estimated' : 'unpriced'
+      const warnings = pricingWarnings(model, Boolean(modelCosts))
+      const costUSD = modelCosts ? calculateCost(model, input, output, cacheWrite, cacheRead, 0) : 0
       const timestamp = isoFromMs(node.timestamp_ms) ?? session.modified ?? session.created ?? ''
 
       // Attach tools and credits only to first call to prevent inflation
@@ -418,7 +413,6 @@ function* parseExchange(
       firstEmitted = true
 
       // Compute billing using the billing engine
-      const modelCosts = getModelCosts(model)
       const billingResult = computeBilling(
         { input, output, cacheRead, cacheWrite },
         modelCosts,
@@ -431,6 +425,8 @@ function* parseExchange(
 
       yield {
         provider: 'auggie',
+        project: projectLabel || undefined,
+        workspaceId,
         model,
         inputTokens: input,
         outputTokens: output,
@@ -449,6 +445,8 @@ function* parseExchange(
         sessionId,
         credits,
         billing: billingResult,
+        pricingStatus,
+        warnings,
       }
     }
   } else {
@@ -475,7 +473,10 @@ function* parseExchange(
       // For legacy schema, type-8 nodes usually have provider, but we use the
       // exchange-level extraction for consistency.
       const model = selectModel(session, exchangeProviderHint)
-      const costUSD = calculateCost(model, input, output, cacheWrite, cacheRead, 0)
+      const modelCosts = getModelCosts(model)
+      const pricingStatus = modelCosts ? 'estimated' : 'unpriced'
+      const warnings = pricingWarnings(model, Boolean(modelCosts))
+      const costUSD = modelCosts ? calculateCost(model, input, output, cacheWrite, cacheRead, 0) : 0
       const timestamp = isoFromMs(node.timestamp_ms) ?? session.modified ?? session.created ?? ''
 
       // Legacy: extract tool from the same node
@@ -493,7 +494,6 @@ function* parseExchange(
       firstEmitted = true
 
       // Compute billing using the billing engine
-      const modelCosts = getModelCosts(model)
       const billingResult = computeBilling(
         { input, output, cacheRead, cacheWrite },
         modelCosts,
@@ -506,6 +506,8 @@ function* parseExchange(
 
       yield {
         provider: 'auggie',
+        project: projectLabel || undefined,
+        workspaceId,
         model,
         inputTokens: input,
         outputTokens: output,
@@ -524,6 +526,8 @@ function* parseExchange(
         sessionId,
         credits,
         billing: billingResult,
+        pricingStatus,
+        warnings,
       }
     }
   }
@@ -559,6 +563,16 @@ function parseSession(content: string): AuggieSession | null {
   }
 }
 
+function informationalSubAgentCredits(value: number | null | undefined): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return null
+  return value
+}
+
+function numericSessionCredits(value: number | null | undefined): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null
+  return value
+}
+
 /// Sub-agent sessions carry a rootTaskUuid pointing at their parent's task UUID. We preserve
 /// the session as an independent source (so the data is visible) but tag the sessionId to
 /// make the relationship obvious in downstream rollups. If the parent isn't resolvable
@@ -580,11 +594,7 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
       // Cache hit: the session file is unchanged since the last run (same mtime + size).
       // Yield the cached calls directly -- this is the happy path for most of the 700+
       // sessions on a typical install.
-      // NOTE: Cached calls may have billing computed under a different config.
-      // This is acceptable since the cache is keyed by mtime+size, so if the user
-      // changes billing mode, they can touch/edit the session files to invalidate.
-      // In practice, billing mode rarely changes mid-flight.
-      const cached = await readCachedCalls(source.path)
+      const cached = await readCachedCalls(source.path, billingConfig)
       if (cached) {
         for (const call of cached) {
           if (seenKeys.has(call.deduplicationKey)) continue
@@ -619,20 +629,23 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
 
       // Session-level creditUsage fast-path: Newer sessions (Apr 2026+) may have
       // session.creditUsage set. When present, this is Augment's authoritative
-      // session total (already deduped, includes sub-agents); prefer it over
-      // per-node summation for session totals. Per-exchange credits are still
-      // parsed for per-model breakdowns.
-      const sessionCreditUsage = session.creditUsage ?? null
+      // local session total; prefer it over per-node summation for session totals.
+      // Per-exchange credits are still parsed for per-model breakdowns.
+      const sessionCreditUsage = numericSessionCredits(session.creditUsage)
+      const sessionSubAgentCreditsUsedUnconfirmed = informationalSubAgentCredits(session.subAgentCreditsUsed)
 
       const fresh: ParsedProviderCall[] = []
       let isFirstCall = true
       for (const turn of chatHistory) {
         const ex = turn.exchange
         if (!ex) continue
-        for (const call of parseExchange(session, ex, sessionId, projectLabel, seenKeys, seenTransactionIds, billingConfig)) {
-          // Attach session-level creditUsage to the first call so the parser can use it.
-          if (isFirstCall && sessionCreditUsage !== null) {
-            call.sessionCreditUsage = sessionCreditUsage
+        for (const call of parseExchange(session, ex, sessionId, projectLabel, session.workspaceId, seenKeys, seenTransactionIds, billingConfig)) {
+          // Attach session-level metadata to the first call so the parser can use it.
+          if (isFirstCall) {
+            if (sessionCreditUsage !== null) call.sessionCreditUsage = sessionCreditUsage
+            if (sessionSubAgentCreditsUsedUnconfirmed !== null) {
+              call.sessionSubAgentCreditsUsedUnconfirmed = sessionSubAgentCreditsUsedUnconfirmed
+            }
             isFirstCall = false
           }
           fresh.push(call)
@@ -641,7 +654,7 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
       }
       // Persist the parsed calls so the next run short-circuits via readCachedCalls.
       // Fire and forget -- cache-write failures are non-fatal.
-      void writeCachedCalls(source.path, fresh)
+      void writeCachedCalls(source.path, fresh, billingConfig)
     },
   }
 }

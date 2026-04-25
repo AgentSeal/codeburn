@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { copyFile, mkdir, mkdtemp, rm } from 'node:fs/promises'
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -86,5 +86,27 @@ describe('billing-aware report/status JSON', () => {
     const status = runCli(['status', '--format', 'json'], env)
     expect(status.billing.mode).toBe('token_plus')
     expect(status.month.billedAmountUsd).toBe(report.overview.billedAmountUsd)
+  })
+
+  it('marks unpriced raw model ids without authoritative token_plus totals', async () => {
+    await rm(join(workDir, 'sessions', 'single-call.json'))
+    const raw = await readFile(join(fixtureDir, 'single-call.json'), 'utf-8')
+    await writeFile(join(workDir, 'sessions', 'unknown-model.json'), raw.replace('"claude-sonnet-4-5"', '"butler"'), 'utf-8')
+
+    const report = runCli(['report', '--period', 'all', '--format', 'json'], { CODEBURN_BILLING_MODE: 'token_plus' })
+    const rawModel = report.models.find((model: { name: string }) => model.name === 'butler')
+
+    expect(rawModel).toMatchObject({
+      name: 'butler',
+      pricingStatus: 'unpriced',
+      baseCostUsd: null,
+      billedAmountUsd: null,
+      cost: null,
+    })
+    expect(rawModel.warnings[0]).toContain('butler')
+    expect(report.warnings.some((warning: string) => warning.includes('butler'))).toBe(true)
+
+    const status = runCli(['status', '--format', 'json'], { CODEBURN_BILLING_MODE: 'token_plus' })
+    expect(status.month.warnings.some((warning: string) => warning.includes('butler'))).toBe(true)
   })
 })
