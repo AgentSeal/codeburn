@@ -109,4 +109,22 @@ describe('billing-aware report/status JSON', () => {
     const status = runCli(['status', '--format', 'json'], { CODEBURN_BILLING_MODE: 'token_plus' })
     expect(status.month.warnings.some((warning: string) => warning.includes('butler'))).toBe(true)
   })
+
+  it('updates report pricing when an alias is configured after a raw model was cached', async () => {
+    await rm(join(workDir, 'sessions', 'single-call.json'))
+    await copyFile(join(fixtureDir, 'old-schema.json'), join(workDir, 'sessions', 'old-schema.json'))
+
+    const rawReport = runCli(['report', '--period', 'all', '--format', 'json'])
+    const rawModel = rawReport.models.find((model: { name: string }) => model.name === 'butler')
+    expect(rawModel).toMatchObject({ name: 'butler', pricingStatus: 'unpriced' })
+    expect(rawModel.warnings[0]).toContain('butler')
+    await readFile(join(workDir, 'cache', 'auggie', 'old-schema.json'), 'utf-8')
+
+    const aliasReport = runCli(['report', '--period', 'all', '--format', 'json'], {
+      CODEBURN_AUGGIE_ALIAS_BUTLER: 'claude-haiku-4-5',
+    })
+
+    expect(aliasReport.models.some((model: { name: string }) => model.name === 'butler')).toBe(false)
+    expect(aliasReport.models[0]).toMatchObject({ name: 'Haiku 4.5', pricingStatus: 'estimated', warnings: [] })
+  })
 })
