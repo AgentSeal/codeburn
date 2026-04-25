@@ -7,21 +7,12 @@ import { formatCost, formatTokens, formatCredits } from './format.js'
 import { parseAllSessions, filterProjectsByName } from './parser.js'
 import { loadPricing } from './models.js'
 import { loadBillingConfig, type BillingMode } from './billing.js'
+import { getDateRange, localDateString, PERIOD_LABELS, PERIODS, type Period } from './cli-date.js'
 
 import { scanAndDetect, type WasteFinding, type WasteAction, type OptimizeResult } from './optimize.js'
 import { TUI_THEME, gradientColor } from './theme.js'
 
-type Period = 'today' | 'week' | '30days' | 'month' | 'all'
 type View = 'dashboard' | 'optimize'
-
-const PERIODS: Period[] = ['today', 'week', '30days', 'month', 'all']
-const PERIOD_LABELS: Record<Period, string> = {
-  today: 'Today',
-  week: '7 Days',
-  '30days': '30 Days',
-  month: 'This Month',
-  all: 'All Time',
-}
 
 const MIN_WIDE = 90
 const ACCENT = TUI_THEME.accent.primary
@@ -71,18 +62,6 @@ const CATEGORY_COLORS: Record<TaskCategory, string> = {
 }
 
 const IMPACT_PANEL_COLORS: Record<string, string> = { high: TUI_THEME.state.error, medium: TUI_THEME.state.warning, low: TUI_THEME.state.success }
-
-function getDateRange(period: Period): { start: Date; end: Date } {
-  const now = new Date()
-  const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
-  switch (period) {
-    case 'today': return { start: new Date(now.getFullYear(), now.getMonth(), now.getDate()), end }
-    case 'week': return { start: new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7), end }
-    case '30days': return { start: new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30), end }
-    case 'month': return { start: new Date(now.getFullYear(), now.getMonth(), 1), end }
-    case 'all': return { start: new Date(0), end }
-  }
-}
 
 type Layout = { dashWidth: number; wide: boolean; halfWidth: number; barWidth: number }
 
@@ -227,7 +206,7 @@ function DailyActivity({ projects, days = 14, pw, bw, billingMode }: { projects:
     for (const session of project.sessions) {
       for (const turn of session.turns) {
         if (!turn.timestamp) continue
-        const day = turn.timestamp.slice(0, 10)
+        const day = localDateString(new Date(turn.timestamp))
         // In credits mode: sum credits. In token_plus mode: sum billedAmountUsd
         const value = turn.assistantCalls.reduce((s, c) => {
           if (billingMode === 'credits') {
@@ -685,14 +664,14 @@ function Row({ wide, width, children }: { wide: boolean; width: number; children
   return <>{children}</>
 }
 
-function DashboardContent({ projects, period, columns, billingMode, surchargeRate }: { projects: ProjectSummary[]; period: Period; columns?: number; billingMode: BillingMode; surchargeRate: number }) {
+function DashboardContent({ projects, period, label, columns, billingMode, surchargeRate }: { projects: ProjectSummary[]; period: Period; label: string; columns?: number; billingMode: BillingMode; surchargeRate: number }) {
   const { dashWidth, wide, halfWidth, barWidth } = getLayout(columns)
-  if (projects.length === 0) return <Panel title="CodeBurn" color={ACCENT} width={dashWidth}><Text dimColor>No usage data found for {PERIOD_LABELS[period]}.</Text></Panel>
+  if (projects.length === 0) return <Panel title="CodeBurn" color={ACCENT} width={dashWidth}><Text dimColor>No usage data found for {label}.</Text></Panel>
   const pw = wide ? halfWidth : dashWidth
   const days = period === 'all' ? undefined : (period === 'month' || period === '30days' ? 31 : 14)
   return (
     <Box flexDirection="column" width={dashWidth}>
-      <Overview projects={projects} label={PERIOD_LABELS[period]} width={dashWidth} billingMode={billingMode} surchargeRate={surchargeRate} />
+      <Overview projects={projects} label={label} width={dashWidth} billingMode={billingMode} surchargeRate={surchargeRate} />
       <Row wide={wide} width={dashWidth}><DailyActivity projects={projects} days={days} pw={pw} bw={barWidth} billingMode={billingMode} /><ProjectBreakdown projects={projects} pw={pw} bw={barWidth} billingMode={billingMode} /></Row>
       <TopSessions projects={projects} pw={dashWidth} bw={barWidth} billingMode={billingMode} />
       <Row wide={wide} width={dashWidth}><ActivityBreakdown projects={projects} pw={pw} bw={barWidth} billingMode={billingMode} /><ModelBreakdown projects={projects} pw={pw} bw={barWidth} billingMode={billingMode} /></Row>
@@ -702,9 +681,10 @@ function DashboardContent({ projects, period, columns, billingMode, surchargeRat
   )
 }
 
-function InteractiveDashboard({ initialProjects, initialPeriod, refreshSeconds, projectFilter, excludeFilter, billingMode, surchargeRate }: {
+function InteractiveDashboard({ initialProjects, initialPeriod, initialLabel, refreshSeconds, projectFilter, excludeFilter, billingMode, surchargeRate }: {
   initialProjects: ProjectSummary[]
   initialPeriod: Period
+  initialLabel?: string
   refreshSeconds?: number
   projectFilter?: string[]
   excludeFilter?: string[]
@@ -713,6 +693,7 @@ function InteractiveDashboard({ initialProjects, initialPeriod, refreshSeconds, 
 }) {
   const { exit } = useApp()
   const [period, setPeriod] = useState<Period>(initialPeriod)
+  const [label, setLabel] = useState(initialLabel ?? PERIOD_LABELS[initialPeriod])
   const [projects, setProjects] = useState<ProjectSummary[]>(initialProjects)
   const [loading, setLoading] = useState(false)
   const [view, setView] = useState<View>('dashboard')
@@ -726,7 +707,7 @@ function InteractiveDashboard({ initialProjects, initialPeriod, refreshSeconds, 
     let cancelled = false
     async function scan() {
       if (projects.length === 0) { setOptimizeResult(null); return }
-      const result = await scanAndDetect(projects, getDateRange(period))
+      const result = await scanAndDetect(projects, getDateRange(period).range)
       if (!cancelled) setOptimizeResult(result)
     }
     scan()
@@ -736,7 +717,7 @@ function InteractiveDashboard({ initialProjects, initialPeriod, refreshSeconds, 
   const reloadData = useCallback(async (p: Period) => {
     setLoading(true)
     setOptimizeResult(null)
-    const range = getDateRange(p)
+    const range = getDateRange(p).range
     const data = filterProjectsByName(await parseAllSessions(range), projectFilter, excludeFilter)
     setProjects(data)
     setLoading(false)
@@ -751,6 +732,7 @@ function InteractiveDashboard({ initialProjects, initialPeriod, refreshSeconds, 
   const switchPeriod = useCallback((np: Period) => {
     if (np === period) return
     setPeriod(np); setView('dashboard')
+    setLabel(PERIOD_LABELS[np])
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => { reloadData(np) }, 600)
   }, [period, reloadData])
@@ -758,6 +740,7 @@ function InteractiveDashboard({ initialProjects, initialPeriod, refreshSeconds, 
   const switchPeriodImmediate = useCallback(async (np: Period) => {
     if (np === period) return
     setPeriod(np); setView('dashboard')
+    setLabel(PERIOD_LABELS[np])
     if (debounceRef.current) clearTimeout(debounceRef.current)
     await reloadData(np)
   }, [period, reloadData])
@@ -780,7 +763,7 @@ function InteractiveDashboard({ initialProjects, initialPeriod, refreshSeconds, 
     return (
       <Box flexDirection="column" width={dashWidth}>
         <PeriodTabs active={period} />
-        <Panel title="CodeBurn" color={ACCENT} width={dashWidth}><Text dimColor>Loading {PERIOD_LABELS[period]}...</Text></Panel>
+        <Panel title="CodeBurn" color={ACCENT} width={dashWidth}><Text dimColor>Loading {label}...</Text></Panel>
         <StatusBar width={dashWidth} view="dashboard" findingCount={0} />
       </Box>
     )
@@ -790,37 +773,38 @@ function InteractiveDashboard({ initialProjects, initialPeriod, refreshSeconds, 
     <Box flexDirection="column" width={dashWidth}>
       <PeriodTabs active={period} />
       {view === 'optimize' && optimizeResult
-        ? <OptimizeView findings={optimizeResult.findings} costRate={optimizeResult.costRate} projects={projects} label={PERIOD_LABELS[period]} width={dashWidth} healthScore={optimizeResult.healthScore} healthGrade={optimizeResult.healthGrade} />
-        : <DashboardContent projects={projects} period={period} columns={columns} billingMode={billingMode} surchargeRate={surchargeRate} />}
+        ? <OptimizeView findings={optimizeResult.findings} costRate={optimizeResult.costRate} projects={projects} label={label} width={dashWidth} healthScore={optimizeResult.healthScore} healthGrade={optimizeResult.healthGrade} />
+        : <DashboardContent projects={projects} period={period} label={label} columns={columns} billingMode={billingMode} surchargeRate={surchargeRate} />}
       <StatusBar width={dashWidth} view={view} findingCount={findingCount} />
     </Box>
   )
 }
 
-function StaticDashboard({ projects, period, billingMode, surchargeRate }: { projects: ProjectSummary[]; period: Period; billingMode: BillingMode; surchargeRate: number }) {
+function StaticDashboard({ projects, period, label, billingMode, surchargeRate }: { projects: ProjectSummary[]; period: Period; label: string; billingMode: BillingMode; surchargeRate: number }) {
   const { columns } = useWindowSize()
   const { dashWidth } = getLayout(columns)
   return (
     <Box flexDirection="column" width={dashWidth}>
       <PeriodTabs active={period} />
-      <DashboardContent projects={projects} period={period} columns={columns} billingMode={billingMode} surchargeRate={surchargeRate} />
+      <DashboardContent projects={projects} period={period} label={label} columns={columns} billingMode={billingMode} surchargeRate={surchargeRate} />
     </Box>
   )
 }
 
-export async function renderDashboard(period: Period = 'week', refreshSeconds?: number, projectFilter?: string[], excludeFilter?: string[], customRange?: DateRange | null): Promise<void> {
+export async function renderDashboard(period: Period = 'week', refreshSeconds?: number, projectFilter?: string[], excludeFilter?: string[], customRange?: DateRange | null, customLabel?: string): Promise<void> {
   await loadPricing()
   const billingConfig = loadBillingConfig()
-  const range = customRange ?? getDateRange(period)
+  const range = customRange ?? getDateRange(period).range
+  const label = customLabel ?? PERIOD_LABELS[period]
   const projects = filterProjectsByName(await parseAllSessions(range), projectFilter, excludeFilter)
   const isTTY = process.stdin.isTTY && process.stdout.isTTY
   if (isTTY) {
     const { waitUntilExit } = render(
-      <InteractiveDashboard initialProjects={projects} initialPeriod={period} refreshSeconds={refreshSeconds} projectFilter={projectFilter} excludeFilter={excludeFilter} billingMode={billingConfig.mode} surchargeRate={billingConfig.surchargeRate} />
+      <InteractiveDashboard initialProjects={projects} initialPeriod={period} initialLabel={label} refreshSeconds={refreshSeconds} projectFilter={projectFilter} excludeFilter={excludeFilter} billingMode={billingConfig.mode} surchargeRate={billingConfig.surchargeRate} />
     )
     await waitUntilExit()
   } else {
-    const { unmount } = render(<StaticDashboard projects={projects} period={period} billingMode={billingConfig.mode} surchargeRate={billingConfig.surchargeRate} />, { patchConsole: false })
+    const { unmount } = render(<StaticDashboard projects={projects} period={period} label={label} billingMode={billingConfig.mode} surchargeRate={billingConfig.surchargeRate} />, { patchConsole: false })
     unmount()
   }
 }
