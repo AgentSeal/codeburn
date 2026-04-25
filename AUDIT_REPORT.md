@@ -1,5 +1,7 @@
 # CodeBurn Audit Report (1.0.0)
 
+> **Historical snapshot:** This audit was generated for CodeBurn 1.0.0 before the Auggie-only CLI/readiness waves. It references removed macOS app files, older test counts, and pre-readiness billing semantics. Use the README billing/data-privacy sections and the current test/build/typecheck results as the customer-readiness source of truth.
+
 Generated: 2026-04-19Branch: feat/auggie-only
 
 ## Executive Summary

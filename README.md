@@ -2,9 +2,9 @@
 
 # CodeBurn
 
-See where your Auggie tokens (and credits) go.
+See where your Auggie credits and token estimates go.
 
-A usage analytics tool for [Augment Code (Auggie)](https://www.augmentcode.com/) CLI sessions. Reads `~/.augment/sessions/*.json` directly from disk and surfaces cost, Augment credits, tools, shell commands, MCP servers, models, and per-project spend in an interactive terminal dashboard. No wrapper, no proxy, no API keys.
+A usage analytics tool for [Augment Code (Auggie)](https://www.augmentcode.com/) CLI sessions. Reads `~/.augment/sessions/*.json` directly from disk and surfaces Augment credits, token-pricing estimates, tools, shell commands, MCP servers, models, and per-project usage in an interactive terminal dashboard. No wrapper, no proxy, no API keys.
 
 ![node version](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)
 ![license](https://img.shields.io/npm/l/codeburn.svg)
@@ -16,7 +16,7 @@ A usage analytics tool for [Augment Code (Auggie)](https://www.augmentcode.com/)
 ## Project status
 
 - **Version:** 2.0.1 (Auggie-only, CLI-only fork)
-- **Tests:** 160+ passing
+- **Tests:** Vitest suite, build, typecheck, and `./run.sh --check` used for readiness verification
 - **What's new in 2.0.1:** Removed macOS menubar app (CLI-only fork), added GPT-5.2 pricing. See [CHANGELOG.md](./CHANGELOG.md) for details.
 
 ## Prerequisites
@@ -94,24 +94,24 @@ Arrow keys switch between Today / 7 Days / 30 Days / Month / All Time. Press `q`
 
 | Panel | What it contains |
 |---|---|
-| **Overview** | In **credits mode**: shows Augment credits (ground-truth and synthesized) plus token totals; USD fields are `null`. In **token_plus (USD-estimate) mode**: shows base cost, surcharge, and billed USD; credits are `null`. Both modes show total calls, sessions, cache-hit %, and legacy-session count when applicable. |
-| **By Model** | Per-model breakdown. In credits mode: credits column. In token_plus mode: base/surcharge/billed USD columns. Pre-Nov-2025 sessions appear under `auggie-legacy`; set-but-unpriced IDs under `auggie-unknown`. |
-| **Daily Activity** | Sparkline of cost per day across the selected window |
-| **Projects** | Top projects by cost, with `avgCostPerSession` in JSON output |
-| **Activities** | 13 deterministic task categories (Coding, Debugging, Refactoring, Testing, …) with one-shot success rate |
+| **Overview** | In **credits mode**: shows Augment credits as the primary usage metric plus token totals; the legacy `cost` field is `null` and any USD/token value is labeled as an estimate. In **token_plus (USD-estimate) mode**: shows base cost, surcharge, and billed USD estimates; credits are `null`. Both modes show total calls, sessions, cache-hit %, and legacy-session count when applicable. |
+| **By Model** | Per-model breakdown. In credits mode: credits column. In token_plus mode: base/surcharge/billed USD columns. Pre-Nov-2025 sessions appear under `auggie-legacy`; set-but-unpriced non-empty model IDs stay visible as raw IDs so you can diagnose unknown pricing. |
+| **Daily Activity** | Sparkline of the active billing metric (credits or billed USD estimate) per local day across the selected window |
+| **Projects** | Top projects by the active billing metric, with project/workspace labels propagated from Auggie session metadata when available |
+| **Activities** | Auggie-native tool/activity categories (View/Read, Terminal, Search/Retrieval, File Write/Edit, Browser, Agent/Workspace, …). These are usage categories, not billing-rate multipliers. |
 | **Core Tools** | Non-shell, non-MCP tool invocations aggregated at the exchange level (so counts don't double from multi-node exchanges) |
 | **Shell Commands** | `launch-process` command lines pulled from every tool-use node |
 | **MCP Servers** | MCP tool calls routed by `tool_use.mcp_server_name` when present, suffix-parsed as fallback for older sessions |
 
-The `--format json` flag on `report`, `today`, and `month` emits a structured payload. In v2+, output includes a top-level `billing` block (`mode`, `creditsPerDollar`, `surchargeRate`, `activityMultiplier`) and per-row fields: `creditsAugment`, `creditsSynthesized`, `baseCostUsd`, `surchargeUsd`, `billedAmountUsd`. Pipe to `jq` for filtering.
+The `--format json` flag on `report`, `today`, `month`, and `status`, plus `export --format json`, emits machine-readable data. Treat JSON and CSV as **semi-stable customer-facing APIs**: fields may be added, but billing fields are labeled to distinguish authoritative local credits from estimates. Current report/status payloads include a top-level `billing` block and per-row fields such as `creditsAugment`, `creditsSynthesizedCalls`, `subAgentCreditsUsedUnconfirmed`, `costEstimateUsd`, `baseCostUsd`, `surchargeUsd`, and `billedAmountUsd`. Export JSON currently includes `schema: "codeburn.export.v2"`; report/status do not yet emit a separate `schemaVersion` field.
 
 ## How Auggie sessions are parsed
 
 Auggie writes one JSON file per conversation into `~/.augment/sessions/`. CodeBurn walks each file's `response_node` stream, aggregates at the **exchange level** (tool_use nodes + token_usage nodes that belong to the same model turn), and emits one row per `token_usage` node. Dedup key: `auggie:${sessionId}:${request_id}:${response_node.id}`. Sub-agent sessions are tagged with their `rootTaskUuid` in the session label.
 
-**Model selection** prefers `agentState.modelId` (resolved through an alias table). When it's empty, CodeBurn falls back to a provider-aware default derived from `metadata.provider` on type-8 THINKING nodes (see `CODEBURN_AUGGIE_DEFAULT_*` and `CODEBURN_AUGGIE_ALIAS_*` in the Environment Variables table below). Sessions with neither a `modelId` nor a recoverable provider hint (pre-Nov-2025 sessions) bucket under `auggie-legacy`; `auggie-unknown` is reserved for sessions where the `modelId` is set but not yet in the alias table.
+**Model selection** prefers `agentState.modelId` (resolved through a small alias table only when a mapping is confirmed). When it's empty, CodeBurn falls back to a provider-aware parser default derived from `metadata.provider` on type-8 THINKING nodes (see `CODEBURN_AUGGIE_DEFAULT_*` and `CODEBURN_AUGGIE_ALIAS_*` in the Environment Variables table below). These defaults are parser fallbacks for missing local metadata, not a statement of your organization's Augment default model. Sessions with neither a `modelId` nor a recoverable provider hint (pre-Nov-2025 sessions) bucket under `auggie-legacy`; non-empty model IDs that CodeBurn cannot price should remain visible as raw IDs with pricing treated as unknown.
 
-**Credits** come from Augment's own billing metadata: `billing_metadata.credits_consumed` on type-9 BILLING_METADATA nodes, deduped by `transaction_id`. When the top-level `session.creditUsage` is present it's used as the authoritative session total (it already includes sub-agent credits). In **token_plus mode**, USD cost is computed from token counts using [LiteLLM](https://github.com/BerriAI/litellm) pricing (cached at `~/.cache/codeburn/litellm-pricing.json`); in **credits mode** the USD column is `null`.
+**Credits** are best-effort local billing numbers from Auggie session JSON. When numeric `session.creditUsage` is present, CodeBurn treats it as the authoritative local session total and prefers it over recomputing from type-9 `billing_metadata`. Otherwise, CodeBurn sums `billing_metadata.credits_consumed` on type-9 BILLING_METADATA nodes, deduped by `transaction_id`. When neither source is present and model pricing is known, synthesized credits are an estimate. `subAgentCreditsUsed` is currently informational/unconfirmed: do not add it to totals or assume it is included in `creditUsage` until Augment confirms the upstream semantics. In **token_plus mode**, USD cost is computed from token counts using [LiteLLM](https://github.com/BerriAI/litellm) pricing (cached at `~/.cache/codeburn/litellm-pricing.json`); in **credits mode** the legacy USD `cost` field is `null` and `costEstimateUsd` is only a secondary token-pricing estimate.
 
 Parsed calls are cached per session at `~/.cache/codeburn/auggie/<id>.json` (mode `0600`) and invalidated on mtime+size change. The credentials file at `~/.augment/session.json` is never read by the CLI.
 
@@ -157,21 +157,24 @@ Detects files re-read across sessions, low Read:Edit ratios, uncapped bash outpu
 
 ## Billing modes
 
-CodeBurn supports two billing modes for tracking Auggie usage:
+CodeBurn supports two billing modes for tracking Auggie usage. Neither mode promises invoice-grade accounting; use Augment's official ledger/invoice for billing reconciliation.
 
 ### `credits` (default)
 
-Shows **Augment credits** consumed per session and per model. Credits are the authoritative billing unit for most users.
+Shows **Augment credits** consumed per session and per model. Credits are the primary customer-facing metric in CodeBurn.
 
-- **Ground-truth credits**: When present in session data (via `billing_metadata.credits_consumed`), these are used directly
-- **Synthesized credits**: When ground-truth is missing but model pricing is known, credits are computed as `⌈ base_cost_usd × 1600 ⌉`
+- **Authoritative local credits**: numeric `session.creditUsage` wins when present.
+- **Billing metadata fallback**: when `creditUsage` is absent, CodeBurn dedupes and sums type-9 `billing_metadata.credits_consumed` values by `transaction_id`.
+- **Synthesized credits**: when no local credit source exists but token pricing is known, credits are estimated as `⌈ base_cost_usd × 1600 ⌉`. The `1600` multiplier is CodeBurn's current implementation default, not a contract-grade tenant invariant.
+- **Sub-agent credits**: `subAgentCreditsUsed` is shown only as informational/unconfirmed data when surfaced; it is not added to totals until upstream semantics are confirmed.
 
 ### `token_plus` (a.k.a. "USD estimate")
 
-Shows estimated **USD cost** instead of credits. Useful for enterprise users with contracted USD rates.
+Shows estimated **USD cost** instead of credits. Use this when you want a token-pricing view or have a separate contracted USD surcharge to model.
 
 - Displays `base cost`, `surcharge`, and `billed amount` columns
 - Formula: `billed = base_cost_usd × (1 + surcharge_rate)`
+- Values are derived from local token counts plus LiteLLM pricing and are secondary to Augment credits.
 
 ### Environment variables
 
@@ -207,24 +210,35 @@ CODEBURN_BILLING_MODE=token_plus CODEBURN_SURCHARGE_RATE=0.3 node dist/cli.js to
 
 ### Limitations
 
-> **⚠️ Token+ mode is approximate.** The USD values shown are synthesized from token counts plus a configured surcharge. They are **not invoice-accurate**. True per-request USD (`billed_amount_usd`) lives in Augment's server-side metering pipeline and isn't written to local session logs.
+> **⚠️ Billing numbers are local best-effort analytics.** CodeBurn reads local Auggie session JSON, not Augment's invoice system. Numeric `creditUsage` is treated as authoritative for local session usage when present, but totals may still differ from invoices because tenant policy, upstream billing adjustments, and server-side metering are outside the local files.
 
-- `CREDITS_PER_DOLLAR = 1600` is the platform default but is a feature flag; some tenants may use a different rate.
-- Activity multiplier is hardcoded to 1.0 (correct for `Chat` / `Agent` / `CliNoninteractive`). ContextEngine activities (3.0x) and CodeReview (2.0x) would be under-counted, but these aren't exercised through the Auggie CLI path codeburn reads.
-- Legacy sessions missing `modelId` (~22% in observed corpora) are reported as `null` credits / cost.
+- Token+ USD values and `costEstimateUsd` are token-pricing estimates, not authoritative Augment credit billing.
+- The `CREDITS_PER_DOLLAR = 1600` multiplier is an implementation default used only for estimates when local credit data is missing; do not treat it as a contractual rate.
+- Activity rows categorize work by observed Auggie tool/session usage. They are not billing-rate multipliers; CodeBurn keeps activity multiplier assumptions at `1.0` until authoritative values exist.
+- Unknown/unpriced non-empty model IDs remain visible as raw IDs with pricing unknown. They do not contribute to authoritative credit totals unless a local credit source exists.
+- Legacy sessions missing both `modelId` and a recoverable provider hint are reported under `auggie-legacy` with `null` credits/cost unless local credit data exists.
+- Nonzero `subAgentCreditsUsed` semantics are not confirmed. Treat the field as informational and avoid adding it to totals manually, to prevent double counting.
 
-### Migration from v1.x
+### Machine-readable field notes
 
-JSON schema v2 is **breaking**:
-- `overview.cost` is `null` in credits mode (callers that indexed `overview.cost` as a number must handle null)
-- New fields: `creditsAugment`, `creditsSynthesized`, `baseCostUsd`, `surchargeUsd`, `billedAmountUsd`, and top-level `billing` block
-- Cache format versioned to v2 (pre-v2 caches auto-invalidated on upgrade)
+JSON/CSV outputs are semi-stable APIs. Current billing-related fields include:
+
+- `billing.mode`: `credits` or `token_plus`.
+- `billing.amountFields`: machine-readable descriptions of which amount fields are authoritative or estimated in the active mode.
+- `cost`: legacy compatibility field. It is `null` in credits mode and aliases `billedAmountUsd` in token_plus mode.
+- `creditsAugment`: Augment credits when available locally, or synthesized credits when marked by `creditsSynthesizedCalls`.
+- `creditsSynthesizedCalls`: number of calls whose credits were estimated from token pricing because local credit data was unavailable.
+- `subAgentCreditsUsedUnconfirmed`: nonzero Auggie `subAgentCreditsUsed` surfaced separately as informational/unconfirmed data. It is not included in credit totals.
+- `costEstimateUsd`: secondary token-pricing estimate in credits mode.
+- `baseCostUsd`, `surchargeUsd`, `billedAmountUsd`: token_plus USD estimate fields.
+- CSV exports label the same informational data as `Sub-Agent Credits (Unconfirmed)`.
+- `schema: "codeburn.export.v2"`: present on `export --format json`; report/status JSON currently rely on the top-level `billing` block and field names rather than a separate `schemaVersion`.
 
 ### Rate-card reference
 
-The credit pricing table is cross-referenced against [docs.augmentcode.com/models/credit-based-pricing](https://docs.augmentcode.com/models/credit-based-pricing) (advisory). Internal `billing_configs.jsonnet` is Augment's actual source of truth.
+The credit pricing table is cross-referenced against [docs.augmentcode.com/models/credit-based-pricing](https://docs.augmentcode.com/models/credit-based-pricing) (advisory, checked 2026-04-25). Augment's internal billing configuration and your tenant policy remain the source of truth.
 
-**Models in CodeBurn's pricing table:**
+**Public Augment credit reference:**
 
 | Model | Relative to Sonnet | Notes |
 |---|---|---|
@@ -234,29 +248,32 @@ The credit pricing table is cross-referenced against [docs.augmentcode.com/model
 | Gemini 3.1 Pro | 92% | 268 credits per standard task |
 | GPT-5.1 | 75% | 219 credits per standard task |
 | GPT-5.2 | 133% | 390 credits per standard task |
-| GPT-5.4 | 143% | 420 credits per standard task |
+| GPT-5.4 | 72% | 210 credits per standard task |
+| GPT-5.5 | 143% | 420 credits per standard task |
 
-Models in our table that aren't on the docs page: `gpt-4o`, `gpt-4o-mini`, `gpt-4.1*`, `gpt-5`, `gpt-5-mini`, `gpt-5.3-codex`, `gpt-5.4-mini`, `o3`, `o4-mini`, `claude-3-5-sonnet`, `claude-3-7-sonnet`, `claude-3-5-haiku`, `gemini-2.5-pro`, `auggie-legacy`, `auggie-unknown`.
+Models in CodeBurn's local token-pricing table that aren't on the public credit page are token-cost fallbacks, not authoritative credit-rate entries: `gpt-4o`, `gpt-4o-mini`, `gpt-4.1*`, `gpt-5`, `gpt-5-mini`, `gpt-5.3-codex`, `gpt-5.4-mini`, `o3`, `o4-mini`, `claude-3-5-sonnet`, `claude-3-7-sonnet`, `claude-3-5-haiku`, `gemini-2.5-pro`, `auggie-legacy`, and any raw unpriced Auggie model IDs that appear in local sessions.
 
-GPT-5.2 is now included in models.ts (added in v2.0.1).
+GPT-5.2 is included in `models.ts` (added in v2.0.1). GPT-5.5 public credit pricing is documented above; only use internal Auggie aliases for GPT-5.5 after they are confirmed in code.
 
 ## Data and privacy
 
-All session parsing is local; no prompt or response text is sent off your machine. The network calls CodeBurn makes are:
+CodeBurn reads Auggie session history from local JSON files under `~/.augment/sessions/` (or `AUGMENT_HOME/sessions`). Session parsing, grouping, billing aggregation, CSV generation, and JSON export all happen on your machine. CodeBurn does **not** upload prompts, responses, tool inputs, session JSON, or billing data to a CodeBurn service.
+
+The network calls CodeBurn makes are limited to public metadata refreshes:
 
 | Caller | Endpoint | Payload | When |
 |---|---|---|---|
 | CLI | `raw.githubusercontent.com/BerriAI/litellm/...` | none (GET) | LiteLLM model-price refresh (cached at `~/.cache/codeburn/litellm-pricing.json`) |
 | CLI | `api.frankfurter.app` | none (GET) | currency FX rate refresh (cached 24h) |
 
-Cache and config files are created with mode `0600` under directories with mode `0700`.
+Cache and config files are created with mode `0600` under directories with mode `0700`. The Augment credentials file at `~/.augment/session.json` is explicitly skipped and never parsed.
 
 ## Troubleshooting
 
 - **`By Model` shows `auggie-legacy`** — these are pre-Nov-2025 sessions with an empty `modelId` and no recoverable provider hint. The model is unrecoverable; the Overview panel shows a parenthetical hint (`(N legacy sessions — model unrecoverable)`) so you can see the blind-spot size. This is expected.
-- **Credits column shows `—`** — the session has no `billing_metadata` nodes and no top-level `creditUsage`. Typical for very old sessions or CLI-offline runs.
+- **Credits column shows `—`** — the session has no numeric `creditUsage`, no type-9 `billing_metadata` credits, and no safe synthesized-credit estimate. Typical for very old sessions, CLI-offline runs, or unknown/unpriced models.
 - **Core Tools / Shell Commands / MCP Servers tables empty** — confirm `~/.augment/sessions/` contains recent files (`ls -lt ~/.augment/sessions/ | head`). If your Augment data lives elsewhere, set `AUGMENT_HOME`.
-- **`auggie-unknown` in By Model** — CodeBurn has a `modelId` it doesn't know how to price. Add an alias via `CODEBURN_AUGGIE_ALIAS_<MODELID>=<public-model-name>` or file an issue.
+- **Raw model ID with unknown pricing in By Model** — CodeBurn found a non-empty Auggie `modelId` that has no confirmed pricing/alias. The raw ID is intentionally preserved for diagnosability. Add an alias via `CODEBURN_AUGGIE_ALIAS_<MODELID>=<public-model-name>` only when you are confident about the mapping, or file an issue.
 
 ## Development
 
@@ -269,7 +286,7 @@ npm run build                  # tsup → dist/cli.js (target: node20¹)
 npm run dev -- report          # run CLI directly from src/ via tsx
 ```
 
-Full version history is in [CHANGELOG.md](./CHANGELOG.md). Security and quality findings are in [AUDIT_REPORT.md](./AUDIT_REPORT.md).
+Full version history is in [CHANGELOG.md](./CHANGELOG.md). Historical security and quality findings are in [AUDIT_REPORT.md](./AUDIT_REPORT.md); that report is a 1.0.0 snapshot and is not the current readiness source of truth.
 
 ## Project structure
 
@@ -279,7 +296,7 @@ src/
   dashboard.tsx       Ink TUI (React for terminals)
   parser.ts           Session reader, dedup, date filter, MCP extraction
   models.ts           LiteLLM pricing, cost calculation
-  classifier.ts       13-category task classifier
+  classifier.ts       Auggie-native activity classifier
   format.ts           Text rendering (cost, tokens, credits)
   export.ts           CSV/JSON multi-period export
   config.ts           Config file management (~/.config/codeburn/)

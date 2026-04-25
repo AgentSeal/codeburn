@@ -1,5 +1,7 @@
 # Changelog
 
+> Current Auggie billing semantics are documented in [README.md](./README.md). Older release notes below are historical and may predate `creditUsage` precedence, unknown-model, and sub-agent-credit readiness decisions.
+
 ## [2.0.1] - 2026-04-20
 
 ### Removed (breaking)
