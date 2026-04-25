@@ -3,10 +3,11 @@ import { describe, it, expect } from 'vitest'
 import { filterProjectsByName } from '../src/parser.js'
 import type { ProjectSummary } from '../src/types.js'
 
-function makeProject(project: string, projectPath = project): ProjectSummary {
+function makeProject(project: string, projectPath = project, workspaceIds: string[] = []): ProjectSummary {
   return {
     project,
     projectPath,
+    workspaceIds,
     sessions: [],
     totalCostUSD: 0,
     totalApiCalls: 0,
@@ -16,7 +17,7 @@ function makeProject(project: string, projectPath = project): ProjectSummary {
 describe('filterProjectsByName', () => {
   const projects = [
     makeProject('codeburn', '/Users/alice/codeburn'),
-    makeProject('AgentSeal', '/Users/alice/projects/AgentSeal'),
+    makeProject('AgentSeal', '/Users/alice/projects/AgentSeal', ['ws-agentseal']),
     makeProject('dashboard', '/Users/alice/AgentSeal/dashboard'),
     makeProject('sandbox', '/tmp/sandbox'),
   ]
@@ -42,6 +43,11 @@ describe('filterProjectsByName', () => {
     expect(result.map(p => p.project)).toEqual(['AgentSeal'])
   })
 
+  it('include matches workspace IDs', () => {
+    const result = filterProjectsByName(projects, ['ws-agentseal'])
+    expect(result.map(p => p.project)).toEqual(['AgentSeal'])
+  })
+
   it('include uses OR semantics across patterns', () => {
     const result = filterProjectsByName(projects, ['codeburn', 'sandbox'])
     expect(result.map(p => p.project).sort()).toEqual(['codeburn', 'sandbox'])
@@ -55,6 +61,11 @@ describe('filterProjectsByName', () => {
   it('exclude matches path substring', () => {
     const result = filterProjectsByName(projects, undefined, ['/tmp'])
     expect(result.map(p => p.project)).not.toContain('sandbox')
+  })
+
+  it('exclude matches workspace IDs', () => {
+    const result = filterProjectsByName(projects, undefined, ['ws-agentseal'])
+    expect(result.map(p => p.project)).not.toContain('AgentSeal')
   })
 
   it('exclude is applied after include', () => {

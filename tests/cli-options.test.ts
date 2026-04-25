@@ -1,15 +1,17 @@
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 const cliPath = fileURLToPath(new URL('../src/cli.ts', import.meta.url))
+const fixtureDir = fileURLToPath(new URL('./fixtures/auggie/', import.meta.url))
 
-function runCli(args: string[]) {
+function runCli(args: string[], setup?: (home: string) => void) {
   const home = mkdtempSync(join(tmpdir(), 'codeburn-cli-test-'))
   try {
+    setup?.(home)
     const result = spawnSync(process.execPath, ['--import', 'tsx', cliPath, ...args], {
       encoding: 'utf8',
       env: {
@@ -69,5 +71,21 @@ describe('CLI help wording', () => {
     expect(help).toContain('choices: "tui", "json"')
     expect(help).toContain('default: "week"')
     expect(help).toContain('default: "tui"')
+  })
+})
+
+describe('CLI project attribution smoke', () => {
+  it('filters JSON reports by Auggie workspace ID and reports project labels', () => {
+    const result = runCli(['report', '--period', 'all', '--format', 'json', '--project', 'ws-aaaaaaaa'], home => {
+      const sessionsDir = join(home, '.augment', 'sessions')
+      mkdirSync(sessionsDir, { recursive: true })
+      copyFileSync(join(fixtureDir, 'single-call.json'), join(sessionsDir, 'single-call.json'))
+    })
+
+    expect(result.error).toBeUndefined()
+    expect(result.status).toBe(0)
+    const report = JSON.parse(result.stdout) as { projects: Array<Record<string, unknown>>; topSessions: Array<Record<string, unknown>> }
+    expect(report.projects).toContainEqual(expect.objectContaining({ name: 'demo-project/repo', path: 'demo-project/repo', workspaceIds: ['ws-aaaaaaaa'] }))
+    expect(report.topSessions[0]).toEqual(expect.objectContaining({ project: 'demo-project/repo', workspaceId: 'ws-aaaaaaaa' }))
   })
 })

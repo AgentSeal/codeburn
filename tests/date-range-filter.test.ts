@@ -1,5 +1,9 @@
-import { describe, it, expect } from 'vitest'
-import { parseDateRangeFlags } from '../src/cli-date.js'
+import { afterEach, describe, it, expect, vi } from 'vitest'
+import { formatCustomDateRangeLabel, getDateRange, localDateString, parseDateRangeFlags, PERIOD_LABELS } from '../src/cli-date.js'
+
+afterEach(() => {
+  vi.useRealTimers()
+})
 
 describe('parseDateRangeFlags', () => {
   it('returns null when neither flag is provided', () => {
@@ -53,5 +57,27 @@ describe('parseDateRangeFlags', () => {
     expect(range).not.toBeNull()
     expect(range!.start.getDate()).toBe(10)
     expect(range!.end.getDate()).toBe(10)
+  })
+})
+
+describe('period labels and ranges', () => {
+  it('returns canonical labels from getDateRange', () => {
+    vi.useFakeTimers().setSystemTime(new Date(2026, 3, 15, 12))
+
+    expect(getDateRange('today').label).toBe(PERIOD_LABELS.today)
+    expect(getDateRange('week').label).toBe(PERIOD_LABELS.week)
+    expect(getDateRange('30days').label).toBe(PERIOD_LABELS['30days'])
+    expect(getDateRange('month').label).toBe(PERIOD_LABELS.month)
+    expect(getDateRange('all').label).toBe(PERIOD_LABELS.all)
+  })
+
+  it('uses local dates for range boundaries and labels', () => {
+    vi.useFakeTimers().setSystemTime(new Date(2026, 3, 15, 12))
+
+    const { range } = getDateRange('today')
+    expect(localDateString(range.start)).toBe('2026-04-15')
+    expect(range.start.getHours()).toBe(0)
+    expect(range.end.getHours()).toBe(23)
+    expect(formatCustomDateRangeLabel('2026-04-01', undefined)).toBe('2026-04-01 to Today')
   })
 })
