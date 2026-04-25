@@ -393,8 +393,34 @@ describe('billing-aware export outputs', () => {
 
       const folder = await exportCsv(periods, join(tmpDir, 'credits.csv'))
       const summary = await readFile(join(folder, 'summary.csv'), 'utf-8')
-      expect(summary).toContain('Credits (Augment),Synthesized Credit Calls,Cost Estimate (USD)')
+      expect(summary).toContain('Credits (Augment),Synthesized Credit Calls,Sub-Agent Credits (Unconfirmed),Cost Estimate (USD)')
       expect(summary).not.toContain('Cost (USD)')
+    } finally {
+      if (origMode !== undefined) process.env['CODEBURN_BILLING_MODE'] = origMode
+      else delete process.env['CODEBURN_BILLING_MODE']
+    }
+  })
+
+  it('labels sub-agent credits as unconfirmed CSV info without adding them to credits', async () => {
+    const origMode = process.env['CODEBURN_BILLING_MODE']
+    process.env['CODEBURN_BILLING_MODE'] = 'credits'
+    try {
+      const project = withCredits(makeProject('test-project'), 25)
+      project.sessions[0].subAgentCreditsUsedUnconfirmed = 6.5
+      project.subAgentCreditsUsedUnconfirmed = 6.5
+      const periods: PeriodExport[] = [{ label: '30 Days', projects: [project] }]
+
+      const folder = await exportCsv(periods, join(tmpDir, 'sub-agent-credits.csv'))
+      const [summary, sessions] = await Promise.all([
+        readFile(join(folder, 'summary.csv'), 'utf-8'),
+        readFile(join(folder, 'sessions.csv'), 'utf-8'),
+      ])
+
+      expect(summary).toContain('Sub-Agent Credits (Unconfirmed)')
+      expect(summary).toContain('30 Days,25,1,6.5,1.23')
+      expect(sessions).toContain('Sub-Agent Credits (Unconfirmed)')
+      expect(sessions).toContain('sess-001')
+      expect(sessions).toContain(',25,1,6.5,1.23,')
     } finally {
       if (origMode !== undefined) process.env['CODEBURN_BILLING_MODE'] = origMode
       else delete process.env['CODEBURN_BILLING_MODE']
@@ -418,7 +444,7 @@ describe('billing-aware export outputs', () => {
 
       const folder = await exportCsv(periods, join(tmpDir, 'token-plus.csv'))
       const sessions = await readFile(join(folder, 'sessions.csv'), 'utf-8')
-      expect(sessions).toContain('Billed Amount (USD),Base Cost (USD),Surcharge (USD)')
+      expect(sessions).toContain('Billed Amount (USD),Base Cost (USD),Surcharge (USD),Sub-Agent Credits (Unconfirmed)')
       expect(sessions).toContain('13,10,3')
     } finally {
       if (origMode !== undefined) process.env['CODEBURN_BILLING_MODE'] = origMode

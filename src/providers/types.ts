@@ -1,4 +1,5 @@
 import type { BillingMode, BillingResult } from '../billing.js'
+import type { PricingStatus } from '../models.js'
 
 export type SessionSource = {
   path: string
@@ -36,12 +37,18 @@ export type ParsedProviderCall = {
   /// DEPRECATED: Use billing.creditsAugment instead. Kept for back-compat.
   credits?: number | null
   /// Session-level credit usage (fast-path). When present on any call in a session,
-  /// this is Augment's authoritative session total (already deduped, includes sub-agents).
+  /// this is Augment's authoritative session total for known local usage.
   /// The parser should prefer this over summing per-call credits for session totals.
   /// Per-call credits are still used for per-model breakdowns.
   sessionCreditUsage?: number | null
+  /// Nonzero session-level subAgentCreditsUsed reported by Auggie. Inclusion in
+  /// sessionCreditUsage is unconfirmed, so this must remain informational only and
+  /// must not be added into billing totals.
+  sessionSubAgentCreditsUsedUnconfirmed?: number | null
   /// Full billing result from computeBilling(). Present when billing engine is active.
   billing?: BillingResult | null
+  pricingStatus?: PricingStatus
+  warnings?: string[]
 }
 
 export type Provider = {

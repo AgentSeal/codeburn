@@ -1,0 +1,77 @@
+{
+  "sessionId": "66666666-6666-4666-8666-666666666666",
+  "created": "2026-04-11T10:00:00.000Z",
+  "modified": "2026-04-11T10:01:00.000Z",
+  "creditUsage": 40,
+  "subAgentCreditsUsed": 6.5,
+  "workspaceId": "ws-subcredits",
+  "agentState": {
+    "modelId": "claude-sonnet-4-5",
+    "userEmail": "",
+    "userGuidelines": "",
+    "workspaceGuidelines": "",
+    "agentMemories": ""
+  },
+  "chatHistory": [
+    {
+      "exchange": {
+        "request_id": "req-subcredits01",
+        "request_message": "REDACTED sub-agent credit policy test",
+        "response_text": "ok",
+        "request_nodes": [
+          {
+            "id": 0,
+            "type": 0,
+            "text_node": { "content": "REDACTED sub-agent credit policy test" }
+          },
+          {
+            "id": 1,
+            "type": 4,
+            "ide_state_node": {
+              "current_terminal": {
+                "terminal_id": 0,
+                "current_working_directory": "/Users/tester/projects/sub-agent-policy"
+              },
+              "workspace_folders": [
+                {
+                  "repository_root": "/Users/tester/projects/sub-agent-policy",
+                  "folder_root": "/Users/tester/projects/sub-agent-policy"
+                }
+              ],
+              "workspace_folders_unchanged": false
+            }
+          }
+        ],
+        "response_nodes": [
+          {
+            "id": 0,
+            "type": 8,
+            "content": "",
+            "tool_use": null,
+            "thinking": { "summary": "plan", "encrypted_content": "REDACTED", "content": null },
+            "billing_metadata": null,
+            "metadata": { "provider": "anthropic", "phase": null },
+            "token_usage": {
+              "input_tokens": 50,
+              "output_tokens": 125,
+              "cache_read_input_tokens": 0,
+              "cache_creation_input_tokens": 250
+            },
+            "timestamp_ms": 1775815260000
+          },
+          {
+            "id": 1,
+            "type": 9,
+            "billing_metadata": {
+              "transaction_id": "txn-subcredits-001",
+              "credits_consumed": 40
+            },
+            "token_usage": null,
+            "metadata": null,
+            "timestamp_ms": 1775815260000
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -121,15 +121,18 @@ function buildJsonReport(projects: ProjectSummary[], period: string, periodKey: 
     }
   })
 
-  const modelMap: Record<string, { calls: number; billing: BillingAggregate; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number }> = {}
+  const modelMap: Record<string, { calls: number; billing: BillingAggregate; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; pricingStatus: string; warnings: Set<string> }> = {}
   for (const sess of sessions) {
     for (const [model, d] of Object.entries(sess.modelBreakdown)) {
-      if (!modelMap[model]) modelMap[model] = { calls: 0, billing: emptyBillingAggregate(), inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }
+      if (!modelMap[model]) modelMap[model] = { calls: 0, billing: emptyBillingAggregate(), inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, pricingStatus: d.pricingStatus ?? 'estimated', warnings: new Set() }
+      if (d.pricingStatus === 'unpriced') modelMap[model].pricingStatus = 'unpriced'
+      for (const warning of d.warnings ?? []) modelMap[model].warnings.add(warning)
       modelMap[model].calls += d.calls
       addBillingAggregate(modelMap[model].billing, {
         costEstimateUsd: d.costUSD,
         creditsAugment: d.credits,
         creditsSynthesizedCalls: d.creditsSynthesizedCount ?? 0,
+        subAgentCreditsUsedUnconfirmed: null,
         baseCostUsd: d.baseCostUsd ?? null,
         surchargeUsd: d.surchargeUsd ?? null,
         billedAmountUsd: d.billedAmountUsd ?? null,
@@ -142,7 +145,7 @@ function buildJsonReport(projects: ProjectSummary[], period: string, periodKey: 
   }
   const models = Object.entries(modelMap)
     .sort(([, a], [, b]) => billingMetricValue(b.billing, billingConfig) - billingMetricValue(a.billing, billingConfig))
-    .map(([name, { billing, ...rest }]) => ({ name, ...rest, ...billingJsonFields(billing, billingConfig) }))
+    .map(([name, { billing, warnings, ...rest }]) => ({ name, ...rest, warnings: [...warnings], ...billingJsonFields(billing, billingConfig) }))
 
   const catMap: Record<string, { turns: number; billing: BillingAggregate; editTurns: number; oneShotTurns: number }> = {}
   for (const sess of sessions) {
@@ -215,6 +218,7 @@ function buildJsonReport(projects: ProjectSummary[], period: string, periodKey: 
       cacheWrite: totalCacheWrite,
     },
     ...billingJsonFields(overviewBilling, billingConfig),
+    warnings: [...new Set(models.flatMap(model => model.warnings as string[]))],
   }
 
   return {
@@ -224,6 +228,7 @@ function buildJsonReport(projects: ProjectSummary[], period: string, periodKey: 
     period,
     periodKey,
     overview,
+    warnings: overview.warnings,
     daily,
     projects: projectList,
     models,
@@ -274,11 +279,20 @@ program
     await renderDashboard(period, opts.refresh, opts.project, opts.exclude, customRange, customRange ? formatCustomDateRangeLabel(opts.from, opts.to) : undefined)
   })
 
+function collectPricingWarnings(projects: ProjectSummary[]): string[] {
+  return [...new Set(projects.flatMap(project =>
+    project.sessions.flatMap(session =>
+      Object.values(session.modelBreakdown).flatMap(model => model.warnings ?? []),
+    ),
+  ))]
+}
+
 function buildStatusData(projects: ProjectSummary[], billingConfig = loadBillingConfig()): Record<string, unknown> {
   const billing = aggregateSessionsBilling(projects.flatMap(p => p.sessions))
   return {
     calls: projects.reduce((s, p) => s + p.totalApiCalls, 0),
     ...billingJsonFields(billing, billingConfig),
+    warnings: collectPricingWarnings(projects),
   }
 }
 

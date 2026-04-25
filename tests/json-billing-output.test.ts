@@ -55,6 +55,21 @@ describe('billing-aware report/status JSON', () => {
     expect(status.month.creditsSynthesizedCalls).toBe(1)
   })
 
+  it('reports nonzero sub-agent credits separately without adding them to credit totals', async () => {
+    await rm(join(workDir, 'sessions', 'single-call.json'), { force: true })
+    await copyFile(join(fixtureDir, 'sub-agent-credits-nonzero.json'), join(workDir, 'sessions', 'sub-agent-credits-nonzero.json'))
+
+    const report = runCli(['report', '--period', 'all', '--format', 'json'], { CODEBURN_BILLING_MODE: 'credits' })
+
+    expect(report.billing.informationalFields.subAgentCreditsUsedUnconfirmed).toContain('not included in billing totals')
+    expect(report.overview.creditsAugment).toBe(40)
+    expect(report.overview.subAgentCreditsUsedUnconfirmed).toBe(6.5)
+    expect(report.projects[0].creditsAugment).toBe(40)
+    expect(report.projects[0].subAgentCreditsUsedUnconfirmed).toBe(6.5)
+    expect(report.topSessions[0].creditsAugment).toBe(40)
+    expect(report.topSessions[0].subAgentCreditsUsedUnconfirmed).toBe(6.5)
+  })
+
   it('uses base surcharge and billed USD fields for token_plus rows', () => {
     const env = { CODEBURN_BILLING_MODE: 'token_plus', CODEBURN_SURCHARGE_RATE: '0.3' }
     const report = runCli(['report', '--period', 'all', '--format', 'json'], env)

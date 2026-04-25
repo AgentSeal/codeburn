@@ -286,6 +286,15 @@ describe('auggie provider - modern schema', () => {
     // sessionCreditUsage should be on first call for session-level total
     expect(calls[0].sessionCreditUsage).toBe(42.5)
   })
+
+  it('keeps nonzero subAgentCreditsUsed informational and separate from creditUsage', async () => {
+    const path = await stageFixture('sub-agent-credits-nonzero.json')
+    const calls = await collectCalls(path)
+    expect(calls).toHaveLength(1)
+    expect(calls[0].credits).toBe(40)
+    expect(calls[0].sessionCreditUsage).toBe(40)
+    expect(calls[0].sessionSubAgentCreditsUsedUnconfirmed).toBe(6.5)
+  })
 })
 
 describe('auggie provider - legacy schema', () => {
