@@ -9,6 +9,7 @@ import { loadPricing } from './models.js'
 import { loadBillingConfig, type BillingMode } from './billing.js'
 
 import { scanAndDetect, type WasteFinding, type WasteAction, type OptimizeResult } from './optimize.js'
+import { TUI_THEME, gradientColor } from './theme.js'
 
 type Period = 'today' | 'week' | '30days' | 'month' | 'all'
 type View = 'dashboard' | 'optimize'
@@ -23,9 +24,11 @@ const PERIOD_LABELS: Record<Period, string> = {
 }
 
 const MIN_WIDE = 90
-const ORANGE = '#FF8C42'
-const DIM = '#555555'
-const GOLD = '#FFD700'
+const ACCENT = TUI_THEME.accent.primary
+const ACCENT_BRIGHT = TUI_THEME.accent.bright
+const DIM = TUI_THEME.chrome.disabled
+const DIM_TEXT = TUI_THEME.text.dim
+const VALUE = TUI_THEME.value.primary
 
 const LANG_DISPLAY_NAMES: Record<string, string> = {
   javascript: 'JavaScript', typescript: 'TypeScript', python: 'Python',
@@ -38,57 +41,36 @@ const LANG_DISPLAY_NAMES: Record<string, string> = {
 }
 
 const PANEL_COLORS = {
-  overview: '#FF8C42',
-  daily: '#5B9EF5',
-  project: '#5BF5A0',
-  sessions: '#FF6B6B',
-  model: '#E05BF5',
-  activity: '#F5C85B',
-  tools: '#5BF5E0',
-  mcp: '#F55BE0',
-  bash: '#F5A05B',
+  overview: TUI_THEME.chrome.border,
+  daily: TUI_THEME.chrome.borderMuted,
+  project: TUI_THEME.chrome.border,
+  sessions: TUI_THEME.accent.bright,
+  model: TUI_THEME.accent.muted,
+  activity: TUI_THEME.chrome.borderNeutral,
+  tools: TUI_THEME.chrome.borderMuted,
+  mcp: TUI_THEME.chrome.border,
+  bash: TUI_THEME.chrome.borderNeutral,
 }
 
 
 
 const CATEGORY_COLORS: Record<TaskCategory, string> = {
-  coding: '#5B9EF5',
-  debugging: '#F55B5B',
-  feature: '#5BF58C',
-  refactoring: '#F5E05B',
-  testing: '#E05BF5',
-  exploration: '#5BF5E0',
-  planning: '#7B9EF5',
-  delegation: '#F5C85B',
-  git: '#CCCCCC',
-  'build/deploy': '#5BF5A0',
-  conversation: '#888888',
-  brainstorming: '#F55BE0',
-  general: '#666666',
+  coding: TUI_THEME.category.coding,
+  debugging: TUI_THEME.category.debugging,
+  feature: TUI_THEME.category.feature,
+  refactoring: TUI_THEME.category.refactoring,
+  testing: TUI_THEME.category.testing,
+  exploration: TUI_THEME.category.exploration,
+  planning: TUI_THEME.category.planning,
+  delegation: TUI_THEME.category.delegation,
+  git: TUI_THEME.category.git,
+  'build/deploy': TUI_THEME.category['build/deploy'],
+  conversation: TUI_THEME.category.conversation,
+  brainstorming: TUI_THEME.category.brainstorming,
+  general: TUI_THEME.category.general,
 }
 
-const IMPACT_PANEL_COLORS: Record<string, string> = { high: '#F55B5B', medium: ORANGE, low: DIM }
-
-function toHex(r: number, g: number, b: number): string {
-  return '#' + [r, g, b].map(v => Math.round(v).toString(16).padStart(2, '0')).join('')
-}
-
-function lerp(a: number, b: number, t: number): number {
-  return a + t * (b - a)
-}
-
-function gradientColor(pct: number): string {
-  if (pct <= 0.33) {
-    const t = pct / 0.33
-    return toHex(lerp(91, 245, t), lerp(158, 200, t), lerp(245, 91, t))
-  }
-  if (pct <= 0.66) {
-    const t = (pct - 0.33) / 0.33
-    return toHex(lerp(245, 255, t), lerp(200, 140, t), lerp(91, 66, t))
-  }
-  const t = (pct - 0.66) / 0.34
-  return toHex(lerp(255, 245, t), lerp(140, 91, t), lerp(66, 91, t))
-}
+const IMPACT_PANEL_COLORS: Record<string, string> = { high: TUI_THEME.state.error, medium: TUI_THEME.state.warning, low: TUI_THEME.state.success }
 
 function getDateRange(period: Period): { start: Date; end: Date } {
   const now = new Date()
@@ -119,12 +101,12 @@ function HBar({ value, max, width }: { value: number; max: number; width: number
   const filled = Math.round((value / max) * width)
   const fillChars: React.ReactNode[] = []
   for (let i = 0; i < Math.min(filled, width); i++) {
-    fillChars.push(<Text key={i} color={gradientColor(i / width)}>{'█'}</Text>)
+    fillChars.push(<Text key={i} color={gradientColor(TUI_THEME.bars.usageGradient, i / Math.max(width - 1, 1))}>{'█'}</Text>)
   }
   return (
     <Text>
       {fillChars}
-      <Text color="#333333">{'░'.repeat(Math.max(width - filled, 0))}</Text>
+      <Text color={TUI_THEME.bars.empty}>{'░'.repeat(Math.max(width - filled, 0))}</Text>
     </Text>
   )
 }
@@ -181,7 +163,7 @@ function Overview({ projects, label, width, billingMode, surchargeRate }: { proj
   return (
     <Box flexDirection="column" borderStyle="round" borderColor={PANEL_COLORS.overview} paddingX={1} width={width}>
       <Text wrap="truncate-end">
-        <Text bold color={ORANGE}>CodeBurn</Text>
+        <Text bold color={ACCENT}>CodeBurn</Text>
         <Text dimColor>  {label}   </Text>
         <Text dimColor>{billingSubtitle}</Text>
       </Text>
@@ -194,7 +176,7 @@ function Overview({ projects, label, width, billingMode, surchargeRate }: { proj
           <>
             {totalCredits !== null && (
               <>
-                <Text bold color={GOLD}>{formatCredits(totalCredits)}</Text>
+                <Text bold color={VALUE}>{formatCredits(totalCredits)}</Text>
                 <Text dimColor> credits   </Text>
               </>
             )}
@@ -204,13 +186,13 @@ function Overview({ projects, label, width, billingMode, surchargeRate }: { proj
           <>
             {totalBaseCostUsd !== null && (
               <>
-                <Text bold color={GOLD}>{formatCost(totalBaseCostUsd)}</Text>
+                <Text bold color={VALUE}>{formatCost(totalBaseCostUsd)}</Text>
                 <Text dimColor> base   </Text>
               </>
             )}
             {totalBilledAmountUsd !== null && (
               <>
-                <Text bold color={GOLD}>{formatCost(totalBilledAmountUsd)}</Text>
+                <Text bold color={VALUE}>{formatCost(totalBilledAmountUsd)}</Text>
                 <Text dimColor> billed   </Text>
               </>
             )}
@@ -223,8 +205,11 @@ function Overview({ projects, label, width, billingMode, surchargeRate }: { proj
         <Text bold>{cacheHit.toFixed(1)}%</Text>
         <Text dimColor> cache hit</Text>
       </Text>
-      <Text dimColor wrap="truncate-end">
-        {formatTokens(totalInput)} in   {formatTokens(totalOutput)} out   {formatTokens(totalCacheRead)} cached   {formatTokens(totalCacheWrite)} written
+      <Text wrap="truncate-end">
+        <Text color={VALUE}>{formatTokens(totalInput)}</Text><Text dimColor> in   </Text>
+        <Text color={VALUE}>{formatTokens(totalOutput)}</Text><Text dimColor> out   </Text>
+        <Text color={VALUE}>{formatTokens(totalCacheRead)}</Text><Text dimColor> cached   </Text>
+        <Text color={VALUE}>{formatTokens(totalCacheWrite)}</Text><Text dimColor> written</Text>
       </Text>
       {legacySessions > 0 && (
         <Text dimColor wrap="truncate-end">
@@ -269,7 +254,7 @@ function DailyActivity({ projects, days = 14, pw, bw, billingMode }: { projects:
         <Text key={day} wrap="truncate-end">
           <Text dimColor>{day.slice(5)} </Text>
           <HBar value={dailyValues[day] ?? 0} max={maxValue} width={bw} />
-          <Text color={GOLD}>{formatValue(dailyValues[day] ?? 0).padStart(8)}</Text>
+          <Text color={VALUE}>{formatValue(dailyValues[day] ?? 0).padStart(8)}</Text>
           <Text>{String(dailyCalls[day] ?? 0).padStart(6)}</Text>
         </Text>
       ))}
@@ -324,8 +309,8 @@ function ProjectBreakdown({ projects, pw, bw, billingMode }: { projects: Project
           <Text key={`${project.project}-${i}`} wrap="truncate-end">
             <HBar value={totalValue} max={maxValue} width={bw} />
             <Text dimColor> {fit(shortProject(project.project), nw)}</Text>
-            <Text color={GOLD}>{formatValue(totalValue).padStart(8)}</Text>
-            <Text color={GOLD}>{avgValue.padStart(PROJECT_COL_AVG)}</Text>
+            <Text color={VALUE}>{formatValue(totalValue).padStart(8)}</Text>
+            <Text color={VALUE}>{avgValue.padStart(PROJECT_COL_AVG)}</Text>
             <Text>{String(project.sessions.length).padStart(6)}</Text>
           </Text>
         )
@@ -399,7 +384,7 @@ function ModelBreakdown({ projects, pw, bw, billingMode }: { projects: ProjectSu
           <Text key={`${model}-${i}`} wrap="truncate-end">
             <HBar value={displayValue ?? 0} max={maxValue} width={bw} />
             <Text> {fit(model, MODEL_NAME_WIDTH)}</Text>
-            <Text color={GOLD}>{formatValue(displayValue ?? 0).padStart(MODEL_COL_VALUE)}</Text>
+            <Text color={VALUE}>{formatValue(displayValue ?? 0).padStart(MODEL_COL_VALUE)}</Text>
             <Text>{cacheLabel.padStart(MODEL_COL_CACHE)}</Text>
             <Text>{String(data.calls).padStart(MODEL_COL_CALLS)}</Text>
           </Text>
@@ -455,10 +440,10 @@ function ActivityBreakdown({ projects, pw, bw, billingMode }: { projects: Projec
         return (
           <Text key={cat} wrap="truncate-end">
             <HBar value={displayValue ?? 0} max={maxValue} width={bw} />
-            <Text color={CATEGORY_COLORS[cat as TaskCategory] ?? '#666666'}> {fit(CATEGORY_LABELS[cat as TaskCategory] ?? cat, 13)}</Text>
-            <Text color={GOLD}>{formatValue(displayValue ?? 0).padStart(8)}</Text>
+            <Text color={CATEGORY_COLORS[cat as TaskCategory] ?? TUI_THEME.category.general}> {fit(CATEGORY_LABELS[cat as TaskCategory] ?? cat, 13)}</Text>
+            <Text color={VALUE}>{formatValue(displayValue ?? 0).padStart(8)}</Text>
             <Text>{String(data.turns).padStart(6)}</Text>
-            <Text color={data.editTurns === 0 ? DIM : oneShotPct === '100%' ? '#5BF58C' : ORANGE}>{String(oneShotPct).padStart(7)}</Text>
+            <Text color={data.editTurns === 0 ? DIM : oneShotPct === '100%' ? TUI_THEME.state.success : TUI_THEME.state.warning}>{String(oneShotPct).padStart(7)}</Text>
           </Text>
         )
       })}
@@ -538,7 +523,7 @@ function TopSessions({ projects, pw, bw, billingMode }: { projects: ProjectSumma
           <Text key={`${session.sessionId}-${i}`} wrap="truncate-end">
             <HBar value={displayValue} max={maxValue} width={bw} />
             <Text dimColor> {fit(label, nw - 1)}</Text>
-            <Text color={GOLD}>{formatValue(displayValue).padStart(TOP_SESSIONS_VALUE_COL)}</Text>
+            <Text color={VALUE}>{formatValue(displayValue).padStart(TOP_SESSIONS_VALUE_COL)}</Text>
             <Text>{String(session.apiCalls).padStart(TOP_SESSIONS_CALLS_COL)}</Text>
           </Text>
         )
@@ -586,7 +571,7 @@ function PeriodTabs({ active }: { active: Period }) {
     <Box justifyContent="space-between" paddingX={1}>
       <Box gap={1}>
         {PERIODS.map(p => (
-          <Text key={p} bold={active === p} color={active === p ? ORANGE : DIM}>
+          <Text key={p} bold={active === p} color={active === p ? ACCENT : DIM}>
             {active === p ? `[ ${PERIOD_LABELS[p]} ]` : `  ${PERIOD_LABELS[p]}  `}
           </Text>
         ))}
@@ -597,7 +582,7 @@ function PeriodTabs({ active }: { active: Period }) {
 
 function FindingAction({ action }: { action: WasteAction }) {
   const lines = action.type === 'file-content' ? action.content.split('\n') : action.type === 'command' ? action.text.split('\n') : [action.text]
-  return (<><Text dimColor>{action.label}</Text>{lines.map((line, i) => <Text key={i} color="#5BF5E0">  {line}</Text>)}</>)
+  return (<><Text color={DIM_TEXT}>{action.label}</Text>{lines.map((line, i) => <Text key={i} color={TUI_THEME.action.code}>  {line}</Text>)}</>)
 }
 
 function FindingPanel({ index, finding, costRate, width }: { index: number; finding: WasteFinding; costRate: number; width: number }) {
@@ -611,17 +596,17 @@ function FindingPanel({ index, finding, costRate, width }: { index: number; find
         <Text bold>{index}. {finding.title}</Text>
         <Text>  </Text>
         <Text color={color}>{label}</Text>
-        {trendBadge && <Text color="#5BF5A0">{trendBadge}</Text>}
+        {trendBadge && <Text color={TUI_THEME.state.success}>{trendBadge}</Text>}
       </Text>
       <Text dimColor wrap="wrap">{finding.explanation}</Text>
-      <Text color={GOLD}>Savings: ~{formatTokens(finding.tokensSaved)} tokens (~{formatCost(costSaved)})</Text>
+      <Text color={VALUE}>Savings: ~{formatTokens(finding.tokensSaved)} tokens (~{formatCost(costSaved)})</Text>
       <Text> </Text>
       <FindingAction action={finding.fix} />
     </Box>
   )
 }
 
-const GRADE_COLORS: Record<string, string> = { A: '#5BF5A0', B: '#5BF5A0', C: GOLD, D: ORANGE, F: '#F55B5B' }
+const GRADE_COLORS: Record<string, string> = { A: TUI_THEME.state.success, B: TUI_THEME.state.success, C: TUI_THEME.state.warning, D: TUI_THEME.state.warning, F: TUI_THEME.state.error }
 
 function OptimizeView({ findings, costRate, projects, label, width, healthScore, healthGrade }: { findings: WasteFinding[]; costRate: number; projects: ProjectSummary[]; label: string; width: number; healthScore: number; healthGrade: string }) {
   const periodCost = projects.reduce((s, p) => s + p.totalCostUSD, 0)
@@ -632,14 +617,14 @@ function OptimizeView({ findings, costRate, projects, label, width, healthScore,
   const gradeColor = GRADE_COLORS[healthGrade] ?? DIM
   return (
     <Box flexDirection="column" width={width}>
-      <Box flexDirection="column" borderStyle="round" borderColor={ORANGE} paddingX={1} width={width}>
+      <Box flexDirection="column" borderStyle="round" borderColor={ACCENT} paddingX={1} width={width}>
         <Text wrap="truncate-end">
-          <Text bold color={ORANGE}>CodeBurn Optimize</Text>
+          <Text bold color={ACCENT}>CodeBurn Optimize</Text>
           <Text dimColor>  {label}   Setup: </Text>
           <Text bold color={gradeColor}>{healthGrade}</Text>
           <Text dimColor> ({healthScore}/100)</Text>
         </Text>
-        <Text color="#5BF5A0" wrap="truncate-end">Savings: ~{formatTokens(totalTokens)} tokens (~{formatCost(totalCost)}, ~{pct}% of spend)</Text>
+        <Text color={VALUE} wrap="truncate-end">Savings: ~{formatTokens(totalTokens)} tokens (~{formatCost(totalCost)}, ~{pct}% of spend)</Text>
       </Box>
       {findings.map((f, i) => <FindingPanel key={i} index={i + 1} finding={f} costRate={costRate} width={width} />)}
       <Box paddingX={1} width={width}><Text dimColor>Token estimates are approximate.</Text></Box>
@@ -650,19 +635,19 @@ function OptimizeView({ findings, costRate, projects, label, width, healthScore,
 function StatusBar({ width, view, findingCount }: { width: number; view?: View; findingCount?: number }) {
   const isOptimize = view === 'optimize'
   return (
-    <Box borderStyle="round" borderColor={DIM} width={width} justifyContent="center" paddingX={1}>
+    <Box borderStyle="round" borderColor={TUI_THEME.chrome.borderNeutral} width={width} justifyContent="center" paddingX={1}>
       <Text>
         {isOptimize
-          ? <><Text color={ORANGE} bold>b</Text><Text dimColor> back   </Text></>
-          : <><Text color={ORANGE} bold>{'<'}</Text><Text color={ORANGE}>{'>'}</Text><Text dimColor> switch   </Text></>}
-        <Text color={ORANGE} bold>q</Text><Text dimColor> quit   </Text>
-        <Text color={ORANGE} bold>1</Text><Text dimColor> today   </Text>
-        <Text color={ORANGE} bold>2</Text><Text dimColor> week   </Text>
-        <Text color={ORANGE} bold>3</Text><Text dimColor> 30 days   </Text>
-        <Text color={ORANGE} bold>4</Text><Text dimColor> month   </Text>
-        <Text color={ORANGE} bold>5</Text><Text dimColor> all time</Text>
+          ? <><Text color={ACCENT_BRIGHT} bold>b</Text><Text color={DIM_TEXT}> back   </Text></>
+          : <><Text color={ACCENT_BRIGHT} bold>{'<'}</Text><Text color={ACCENT_BRIGHT}>{'>'}</Text><Text color={DIM_TEXT}> switch   </Text></>}
+        <Text color={ACCENT_BRIGHT} bold>q</Text><Text color={DIM_TEXT}> quit   </Text>
+        <Text color={ACCENT_BRIGHT} bold>1</Text><Text color={DIM_TEXT}> today   </Text>
+        <Text color={ACCENT_BRIGHT} bold>2</Text><Text color={DIM_TEXT}> week   </Text>
+        <Text color={ACCENT_BRIGHT} bold>3</Text><Text color={DIM_TEXT}> 30 days   </Text>
+        <Text color={ACCENT_BRIGHT} bold>4</Text><Text color={DIM_TEXT}> month   </Text>
+        <Text color={ACCENT_BRIGHT} bold>5</Text><Text color={DIM_TEXT}> all time</Text>
         {!isOptimize && findingCount != null && findingCount > 0 && (
-          <><Text dimColor>   </Text><Text color={ORANGE} bold>o</Text><Text dimColor> optimize</Text><Text color="#F55B5B"> ({findingCount})</Text></>
+          <><Text color={DIM_TEXT}>   </Text><Text color={ACCENT_BRIGHT} bold>o</Text><Text color={DIM_TEXT}> optimize</Text><Text color={TUI_THEME.state.error}> ({findingCount})</Text></>
         )}
       </Text>
     </Box>
@@ -676,7 +661,7 @@ function Row({ wide, width, children }: { wide: boolean; width: number; children
 
 function DashboardContent({ projects, period, columns, billingMode, surchargeRate }: { projects: ProjectSummary[]; period: Period; columns?: number; billingMode: BillingMode; surchargeRate: number }) {
   const { dashWidth, wide, halfWidth, barWidth } = getLayout(columns)
-  if (projects.length === 0) return <Panel title="CodeBurn" color={ORANGE} width={dashWidth}><Text dimColor>No usage data found for {PERIOD_LABELS[period]}.</Text></Panel>
+  if (projects.length === 0) return <Panel title="CodeBurn" color={ACCENT} width={dashWidth}><Text dimColor>No usage data found for {PERIOD_LABELS[period]}.</Text></Panel>
   const pw = wide ? halfWidth : dashWidth
   const days = period === 'all' ? undefined : (period === 'month' || period === '30days' ? 31 : 14)
   return (
@@ -769,7 +754,7 @@ function InteractiveDashboard({ initialProjects, initialPeriod, refreshSeconds, 
     return (
       <Box flexDirection="column" width={dashWidth}>
         <PeriodTabs active={period} />
-        <Panel title="CodeBurn" color={ORANGE} width={dashWidth}><Text dimColor>Loading {PERIOD_LABELS[period]}...</Text></Panel>
+        <Panel title="CodeBurn" color={ACCENT} width={dashWidth}><Text dimColor>Loading {PERIOD_LABELS[period]}...</Text></Panel>
         <StatusBar width={dashWidth} view="dashboard" findingCount={0} />
       </Box>
     )
