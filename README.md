@@ -57,6 +57,8 @@ codeburn export                 # CSV with today, 7 days, 30 days
 codeburn export -f json         # JSON export
 codeburn optimize               # find waste, get copy-paste fixes
 codeburn optimize -p week       # scope the scan to last 7 days
+codeburn yield                  # track productive vs reverted/abandoned spend (experimental)
+codeburn yield -p 30days        # yield analysis for last 30 days
 ```
 
 Arrow keys switch between Today / 7 Days / 30 Days / Month / All Time. Press `q` to quit, `1` `2` `3` `4` `5` as shortcuts, `c` to open model comparison. The dashboard auto-refreshes every 30 seconds by default (`--refresh 0` to disable). The dashboard also shows average cost per session and the five most expensive sessions across all projects.
@@ -322,6 +324,27 @@ Or press `c` in the dashboard to enter compare mode. Arrow keys switch periods, 
 **Working style.** Compares delegation rate (agent spawns), planning rate (TaskCreate, TaskUpdate, TodoWrite usage), average tools per turn, and fast mode usage.
 
 All metrics are computed from your local session data. No LLM calls, fully deterministic.
+
+## Yield (experimental)
+
+Track whether your AI spend actually shipped to main or got reverted/abandoned.
+
+```bash
+codeburn yield                  # last 7 days (default)
+codeburn yield -p today         # today only
+codeburn yield -p 30days        # last 30 days
+codeburn yield -p month         # this calendar month
+```
+
+Correlates AI sessions with git commits by timestamp. Sessions are categorized as:
+
+| Category | Meaning |
+|----------|---------|
+| Productive | Commits from this session landed in main |
+| Reverted | Commits were later reverted |
+| Abandoned | No commits near session, or commits never merged |
+
+Requires a git repository. Run from your project directory. Output shows cost and session count per category with percentages.
 
 ## How it reads data
 
