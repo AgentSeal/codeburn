@@ -263,7 +263,7 @@ async function parseProviderSources(
   const provider = await getProvider(providerName)
   if (!provider) return []
 
-  const sessionMap = new Map<string, { project: string; turns: ClassifiedTurn[]; sessionCreditUsage?: number | null }>()
+  const sessionMap = new Map<string, { sessionId: string; project: string; turns: ClassifiedTurn[]; sessionCreditUsage?: number | null }>()
 
   for (const source of sources) {
     if (dateRange) {
@@ -286,7 +286,7 @@ async function parseProviderSources(
 
       const turn = providerCallToTurn(call)
       const classified = classifyTurn(turn)
-      const key = `${providerName}:${call.sessionId}:${source.project}`
+      const key = JSON.stringify([providerName, call.sessionId, source.project])
 
       const existing = sessionMap.get(key)
       if (existing) {
@@ -296,14 +296,13 @@ async function parseProviderSources(
           existing.sessionCreditUsage = call.sessionCreditUsage
         }
       } else {
-        sessionMap.set(key, { project: source.project, turns: [classified], sessionCreditUsage: call.sessionCreditUsage })
+        sessionMap.set(key, { sessionId: call.sessionId, project: source.project, turns: [classified], sessionCreditUsage: call.sessionCreditUsage })
       }
     }
   }
 
   const projectMap = new Map<string, SessionSummary[]>()
-  for (const [key, { project, turns, sessionCreditUsage }] of sessionMap) {
-    const sessionId = key.split(':')[1] ?? key
+  for (const { sessionId, project, turns, sessionCreditUsage } of sessionMap.values()) {
     const session = buildSessionSummary(sessionId, project, turns, sessionCreditUsage)
     if (session.apiCalls > 0) {
       const existing = projectMap.get(project) ?? []
