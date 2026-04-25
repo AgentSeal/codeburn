@@ -99,6 +99,7 @@ export type WasteFinding = {
   explanation: string
   impact: Impact
   tokensSaved: number
+  savingsScope?: 'aggregate' | 'per-call'
   fix: WasteAction
   trend?: Trend
 }
@@ -175,6 +176,78 @@ function normalizeToolInput(name: string, input: Record<string, unknown>): Recor
     return { ...input, file_path: input.path }
   }
   return input
+}
+
+function normalizedReadPath(call: ToolCall): string | null {
+  const filePath = call.input.file_path ?? call.input.path
+  return typeof filePath === 'string' && filePath.length > 0 ? filePath : null
+}
+
+function normalizedRange(value: unknown): string | null | undefined {
+  if (value === undefined) return undefined
+  if (!Array.isArray(value) || value.length === 0) return null
+  if (!value.every(v => typeof v === 'number' && Number.isFinite(v))) return null
+  return value.join(':')
+}
+
+function normalizedLineField(input: Record<string, unknown>, key: string): string | null | undefined {
+  const value = input[key]
+  if (value === undefined) return undefined
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+  return null
+}
+
+type ReadSignature = {
+  key: string
+  label: string
+  targeted: boolean
+}
+
+function duplicateReadSignature(call: ToolCall): ReadSignature | null {
+  if (!isReadTool(call.name)) return null
+  if (call.input.type === 'directory') return null
+
+  const filePath = normalizedReadPath(call)
+  if (!filePath || JUNK_PATTERN.test(filePath)) return null
+
+  const range = normalizedRange(call.input.view_range)
+  if (range === null) return null
+
+  const search = call.input.search_query_regex
+  if (search !== undefined && typeof search !== 'string') return null
+  const caseSensitive = call.input.case_sensitive
+  if (caseSensitive !== undefined && typeof caseSensitive !== 'boolean') return null
+
+  const offset = normalizedLineField(call.input, 'offset')
+  const limit = normalizedLineField(call.input, 'limit')
+  const startLine = normalizedLineField(call.input, 'start_line')
+  const endLine = normalizedLineField(call.input, 'end_line')
+  const contextBefore = normalizedLineField(call.input, 'context_lines_before')
+  const contextAfter = normalizedLineField(call.input, 'context_lines_after')
+  if ([offset, limit, startLine, endLine, contextBefore, contextAfter].some(v => v === null)) return null
+
+  const targetedParts: string[] = []
+  if (range !== undefined) targetedParts.push(`range=${range}`)
+  if (search !== undefined) {
+    targetedParts.push(`regex=${search}`)
+    targetedParts.push(`case=${caseSensitive === true}`)
+    targetedParts.push(`before=${contextBefore ?? ''}`)
+    targetedParts.push(`after=${contextAfter ?? ''}`)
+  }
+  if (offset !== undefined) targetedParts.push(`offset=${offset}`)
+  if (limit !== undefined) targetedParts.push(`limit=${limit}`)
+  if (startLine !== undefined) targetedParts.push(`start=${startLine}`)
+  if (endLine !== undefined) targetedParts.push(`end=${endLine}`)
+
+  if (targetedParts.length === 0) {
+    return { key: `${filePath}#full`, label: `${basename(filePath)} full file`, targeted: false }
+  }
+
+  return {
+    key: `${filePath}#${targetedParts.join('|')}`,
+    label: `${basename(filePath)} targeted view`,
+    targeted: true,
+  }
 }
 
 function toolInputOf(toolUse: Record<string, unknown>): Record<string, unknown> {
@@ -416,7 +489,7 @@ export function detectJunkReads(calls: ToolCall[], dateRange?: DateRange): Waste
 
   for (const call of calls) {
     if (!isReadTool(call.name)) continue
-    const filePath = call.input.file_path as string | undefined
+    const filePath = normalizedReadPath(call)
     if (!filePath || !JUNK_PATTERN.test(filePath)) continue
     totalJunkReads++
     if (call.recent) recentJunkReads++
@@ -458,33 +531,33 @@ export function detectJunkReads(calls: ToolCall[], dateRange?: DateRange): Waste
 }
 
 export function detectDuplicateReads(calls: ToolCall[], dateRange?: DateRange): WasteFinding | null {
-  const sessionFiles = new Map<string, Map<string, { count: number; recent: number }>>()
+  const sessionFiles = new Map<string, Map<string, { count: number; recent: number; label: string; targeted: boolean }>>()
 
   for (const call of calls) {
-    if (!isReadTool(call.name)) continue
-    const filePath = call.input.file_path as string | undefined
-    if (!filePath || JUNK_PATTERN.test(filePath)) continue
+    const signature = duplicateReadSignature(call)
+    if (!signature) continue
     const key = `${call.project}:${call.sessionId}`
     if (!sessionFiles.has(key)) sessionFiles.set(key, new Map())
     const fm = sessionFiles.get(key)!
-    const entry = fm.get(filePath) ?? { count: 0, recent: 0 }
+    const entry = fm.get(signature.key) ?? { count: 0, recent: 0, label: signature.label, targeted: signature.targeted }
     entry.count++
     if (call.recent) entry.recent++
-    fm.set(filePath, entry)
+    fm.set(signature.key, entry)
   }
 
   let totalDuplicates = 0
   let recentDuplicates = 0
   const fileDupes = new Map<string, number>()
+  let targetedDuplicateInputs = 0
 
   for (const fm of sessionFiles.values()) {
-    for (const [file, entry] of fm) {
+    for (const entry of fm.values()) {
       if (entry.count <= 1) continue
       const extra = entry.count - 1
       totalDuplicates += extra
       if (entry.recent > 1) recentDuplicates += entry.recent - 1
-      const name = basename(file)
-      fileDupes.set(name, (fileDupes.get(name) ?? 0) + extra)
+      if (entry.targeted) targetedDuplicateInputs += extra
+      fileDupes.set(entry.label, (fileDupes.get(entry.label) ?? 0) + extra)
     }
   }
 
@@ -501,10 +574,13 @@ export function detectDuplicateReads(calls: ToolCall[], dateRange?: DateRange): 
     .join(', ')
 
   const tokensSaved = totalDuplicates * AVG_TOKENS_PER_READ
+  const targetedNote = targetedDuplicateInputs > 0
+    ? ` Includes ${targetedDuplicateInputs} exact repeated targeted inspection${targetedDuplicateInputs === 1 ? '' : 's'}; different ranges or regex searches are not counted as identical content.`
+    : ' Ranged or regex inspections are counted only when the tool input is identical.'
 
   return {
     title: 'Agent is re-reading the same files',
-    explanation: `${totalDuplicates} redundant re-reads across sessions. Top repeats: ${worst}. Each re-read loads the same content into context again.`,
+    explanation: `${totalDuplicates} redundant same-input re-reads within sessions. Top repeats: ${worst}. Full-file reads must match the same file, and targeted views must repeat the same range or regex input before they count.${targetedNote}`,
     impact: totalDuplicates > DUPLICATE_READS_HIGH_THRESHOLD ? 'high' : totalDuplicates > DUPLICATE_READS_MEDIUM_THRESHOLD ? 'medium' : 'low',
     tokensSaved,
     fix: {
@@ -659,9 +735,10 @@ export function detectBashBloat(): WasteFinding | null {
 
   return {
     title: 'Shrink bash output limit',
-    explanation: `Your bash output cap is ${(limit / 1000).toFixed(0)}K chars (${configured ? 'configured' : 'default'}). Most output fits in ${(BASH_RECOMMENDED_LIMIT / 1000).toFixed(0)}K. The extra ~${formatTokens(tokensSaved)} tokens per bash call is trailing noise.`,
+    explanation: `Your bash output cap is ${(limit / 1000).toFixed(0)}K chars (${configured ? 'configured from your environment' : 'environment default'}). Most output fits in ${(BASH_RECOMMENDED_LIMIT / 1000).toFixed(0)}K. The extra ~${formatTokens(tokensSaved)} tokens is a per-call estimate from that cap, not an aggregate session total.`,
     impact: 'medium',
     tokensSaved,
+    savingsScope: 'per-call',
     fix: {
       type: 'paste',
       label: 'Add to ~/.zshrc or ~/.bashrc:',
@@ -828,12 +905,18 @@ function wrap(text: string, width: number, indent: string): string {
   return lines.join('\n')
 }
 
-function renderFinding(n: number, f: WasteFinding, costRate: number): string[] {
+function formatSavings(tokens: number, costRate: number): string {
+  const costSaved = tokens * costRate
+  const costText = costRate > 0 ? ` (~${formatCost(costSaved)} token-pricing estimate)` : ''
+  return `~${formatTokens(tokens)} tokens${costText}`
+}
+
+export function renderFinding(n: number, f: WasteFinding, costRate: number): string[] {
   const lines: string[] = []
-  const costSaved = f.tokensSaved * costRate
   const impactLabel = f.impact.charAt(0).toUpperCase() + f.impact.slice(1)
   const trendBadge = f.trend === 'improving' ? ' improving \u2193 ' : ''
-  const savings = `~${formatTokens(f.tokensSaved)} tokens (~${formatCost(costSaved)})`
+  const savings = formatSavings(f.tokensSaved, costRate)
+  const savingsLabel = f.savingsScope === 'per-call' ? 'Potential savings per affected call' : 'Potential savings'
   const titlePad = PANEL_WIDTH - f.title.length - impactLabel.length - trendBadge.length - 8
   const pad = titlePad > 0 ? ' ' + SEP.repeat(titlePad) + ' ' : '  '
 
@@ -846,7 +929,7 @@ function renderFinding(n: number, f: WasteFinding, costRate: number): string[] {
   lines.push('')
   lines.push(wrap(f.explanation, PANEL_WIDTH - 4, '  '))
   lines.push('')
-  lines.push(chalk.hex(VALUE)(`  Potential savings: ${savings}`))
+  lines.push(chalk.hex(VALUE)(`  ${savingsLabel}: ${savings}`))
   lines.push('')
 
   const a = f.fix
@@ -864,7 +947,7 @@ function renderFinding(n: number, f: WasteFinding, costRate: number): string[] {
   return lines
 }
 
-function renderOptimize(
+export function renderOptimize(
   findings: WasteFinding[],
   costRate: number,
   periodLabel: string,
@@ -897,13 +980,21 @@ function renderOptimize(
     return lines.join('\n')
   }
 
-  const totalTokens = findings.reduce((s, f) => s + f.tokensSaved, 0)
+  const aggregateFindings = findings.filter(f => f.savingsScope !== 'per-call')
+  const perCallFindings = findings.filter(f => f.savingsScope === 'per-call')
+  const totalTokens = aggregateFindings.reduce((s, f) => s + f.tokensSaved, 0)
   const totalCost = totalTokens * costRate
   const pctRaw = periodCost > 0 ? (totalCost / periodCost) * 100 : 0
   const pct = pctRaw >= 1 ? pctRaw.toFixed(0) : pctRaw.toFixed(1)
 
-  const costText = costRate > 0 ? ` (~${formatCost(totalCost)}, ~${pct}% of spend)` : ''
-  lines.push(chalk.hex(VALUE)(`  Potential savings: ~${formatTokens(totalTokens)} tokens${costText}`))
+  if (totalTokens > 0) {
+    const costText = costRate > 0 ? ` (~${formatCost(totalCost)} token-pricing estimate, ~${pct}% of token-priced spend)` : ''
+    lines.push(chalk.hex(VALUE)(`  Potential aggregate savings: ~${formatTokens(totalTokens)} tokens${costText}`))
+  }
+  const perCallTokens = perCallFindings.reduce((s, f) => s + f.tokensSaved, 0)
+  if (perCallTokens > 0) {
+    lines.push(chalk.hex(VALUE)(`  Potential per-call savings: ${formatSavings(perCallTokens, costRate)}`))
+  }
   lines.push('')
 
   for (let i = 0; i < findings.length; i++) {

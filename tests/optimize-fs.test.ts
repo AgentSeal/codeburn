@@ -88,6 +88,16 @@ describe('detectBashBloat', () => {
     const finding = detectBashBloat()
     expect(finding).not.toBeNull()
   })
+
+  it('describes bash savings as environment-derived per-call estimates', () => {
+    process.env['BASH_MAX_OUTPUT_LENGTH'] = '50000'
+    const finding = detectBashBloat()
+    expect(finding).not.toBeNull()
+    expect(finding!.savingsScope).toBe('per-call')
+    expect(finding!.explanation).toContain('configured from your environment')
+    expect(finding!.explanation).toContain('per-call estimate')
+    expect(finding!.explanation).toContain('not an aggregate session total')
+  })
 })
 
 // ============================================================================
@@ -176,6 +186,37 @@ describe('scanJsonlFile', () => {
     expect(result.calls[0].input.file_path).toBe('/x/node_modules/a.js')
     expect(result.apiCalls[0].cacheCreationTokens).toBe(90000)
     expect(result.cwds).toContain(root)
+  })
+
+  it('preserves Auggie view range and regex metadata from input_json', async () => {
+    const root = makeFixtureRoot()
+    const filePath = join(root, 'session.json')
+    writeFile(filePath, JSON.stringify({
+      sessionId: 'auggie-session',
+      modified: new Date().toISOString(),
+      chatHistory: [{
+        exchange: {
+          response_nodes: [{
+            timestamp_ms: Date.now(),
+            tool_use: {
+              tool_name: 'view',
+              input_json: JSON.stringify({
+                path: '/x/src/a.ts',
+                view_range: [10, 20],
+                search_query_regex: 'function a',
+                context_lines_before: 2,
+                context_lines_after: 3,
+              }),
+            },
+          }],
+        },
+      }],
+    }, null, 2))
+    const result = await scanJsonlFile(filePath, 'p1', undefined)
+    expect(result.calls).toHaveLength(1)
+    expect(result.calls[0].input.file_path).toBe('/x/src/a.ts')
+    expect(result.calls[0].input.view_range).toEqual([10, 20])
+    expect(result.calls[0].input.search_query_regex).toBe('function a')
   })
 })
 

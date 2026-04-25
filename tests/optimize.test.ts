@@ -7,6 +7,8 @@ import {
   detectCacheBloat,
   computeHealth,
   computeTrend,
+  renderFinding,
+  renderOptimize,
   type ToolCall,
   type ApiCallMeta,
   type WasteFinding,
@@ -116,6 +118,46 @@ describe('detectDuplicateReads', () => {
     const calls = [
       call('Read', { file_path: '/src/a.ts' }, 's1'),
       call('Read', { file_path: '/src/b.ts' }, 's1'),
+    ]
+    expect(detectDuplicateReads(calls)).toBeNull()
+  })
+
+  it('counts duplicate full-file Auggie view reads by path input', () => {
+    const calls = Array.from({ length: 6 }, () =>
+      call('view', { path: '/src/a.ts' }, 's1')
+    )
+    const finding = detectDuplicateReads(calls)
+    expect(finding).not.toBeNull()
+    expect(finding!.explanation).toContain('full file')
+  })
+
+  it('does not count different Auggie view ranges as identical file content', () => {
+    const calls = Array.from({ length: 6 }, (_, i) =>
+      call('view', { path: '/src/a.ts', view_range: [i * 10 + 1, i * 10 + 10] }, 's1')
+    )
+    expect(detectDuplicateReads(calls)).toBeNull()
+  })
+
+  it('counts repeated targeted Auggie view input only when the range matches exactly', () => {
+    const calls = Array.from({ length: 6 }, () =>
+      call('view', { path: '/src/a.ts', view_range: [10, 20] }, 's1')
+    )
+    const finding = detectDuplicateReads(calls)
+    expect(finding).not.toBeNull()
+    expect(finding!.explanation).toContain('exact repeated targeted')
+  })
+
+  it('does not count malformed range metadata as a duplicate read', () => {
+    const calls = Array.from({ length: 6 }, () =>
+      call('view', { path: '/src/a.ts', view_range: '10-20' }, 's1')
+    )
+    expect(detectDuplicateReads(calls)).toBeNull()
+  })
+
+  it('does not merge full-file and regex inspections of the same Auggie view path', () => {
+    const calls = [
+      ...Array.from({ length: 3 }, () => call('view', { path: '/src/a.ts' }, 's1')),
+      ...Array.from({ length: 3 }, () => call('view', { path: '/src/a.ts', search_query_regex: 'foo' }, 's1')),
     ]
     expect(detectDuplicateReads(calls)).toBeNull()
   })
@@ -297,5 +339,34 @@ describe('computeTrend', () => {
       hasRecentActivity: true,
     })
     expect(trend).toBe('active')
+  })
+})
+
+describe('optimize rendering semantics', () => {
+  const finding: WasteFinding = {
+    title: 'Finding',
+    explanation: 'Explanation',
+    impact: 'medium',
+    tokensSaved: 100000,
+    fix: { type: 'paste', label: 'Fix', text: 'Do it' },
+  }
+
+  it('labels rendered USD and percent savings as token-pricing estimates', () => {
+    const output = renderOptimize([finding], 0.00001, '30 Days', 10, 1, 1, 90, 'A')
+    expect(output).toContain('Potential aggregate savings')
+    expect(output).toContain('token-pricing estimate')
+    expect(output).toContain('token-priced spend')
+  })
+
+  it('labels per-call findings separately from aggregate savings', () => {
+    const perCall: WasteFinding = { ...finding, tokensSaved: 3000, savingsScope: 'per-call' }
+    const output = renderOptimize([finding, perCall], 0, '30 Days', 0, 1, 1, 90, 'A')
+    expect(output).toContain('Potential aggregate savings: ~100.0K tokens')
+    expect(output).toContain('Potential per-call savings: ~3.0K tokens')
+  })
+
+  it('labels individual per-call finding savings as per affected call', () => {
+    const lines = renderFinding(1, { ...finding, savingsScope: 'per-call' }, 0)
+    expect(lines.join('\n')).toContain('Potential savings per affected call')
   })
 })
