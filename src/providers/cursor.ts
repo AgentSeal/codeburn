@@ -33,6 +33,8 @@ type BubbleRow = {
   created_at: string | null
   conversation_id: string | null
   user_text: string | null
+  text_length: number | null
+  bubble_type: number | null
   code_blocks: string | null
 }
 
@@ -104,10 +106,11 @@ const BUBBLE_QUERY_BASE = `
     json_extract(value, '$.createdAt') as created_at,
     json_extract(value, '$.conversationId') as conversation_id,
     substr(json_extract(value, '$.text'), 1, 500) as user_text,
+    length(json_extract(value, '$.text')) as text_length,
+    json_extract(value, '$.type') as bubble_type,
     json_extract(value, '$.codeBlocks') as code_blocks
   FROM cursorDiskKV
   WHERE key LIKE 'bubbleId:%'
-    AND json_extract(value, '$.tokenCount.inputTokens') > 0
 `
 
 const AGENTKV_QUERY = `
@@ -131,13 +134,13 @@ const USER_MESSAGES_QUERY = `
   FROM cursorDiskKV
   WHERE key LIKE 'bubbleId:%'
     AND json_extract(value, '$.type') = 1
-    AND json_extract(value, '$.createdAt') > ?
-  ORDER BY json_extract(value, '$.createdAt') ASC
+    AND (json_extract(value, '$.createdAt') > ? OR json_extract(value, '$.createdAt') IS NULL)
+  ORDER BY ROWID ASC
 `
 
 const BUBBLE_QUERY_SINCE = BUBBLE_QUERY_BASE + `
-    AND json_extract(value, '$.createdAt') > ?
-  ORDER BY json_extract(value, '$.createdAt') ASC
+    AND (json_extract(value, '$.createdAt') > ? OR json_extract(value, '$.createdAt') IS NULL)
+  ORDER BY ROWID ASC
 `
 
 function validateSchema(db: SqliteDatabase): boolean {
@@ -185,9 +188,19 @@ function parseBubbles(db: SqliteDatabase, seenKeys: Set<string>): { calls: Parse
 
   for (const row of rows) {
     try {
-      const inputTokens = row.input_tokens ?? 0
-      const outputTokens = row.output_tokens ?? 0
-      if (inputTokens === 0 && outputTokens === 0) continue
+      let inputTokens = row.input_tokens ?? 0
+      let outputTokens = row.output_tokens ?? 0
+
+      // Cursor v3 stores zero token counts — estimate from text length
+      if (inputTokens === 0 && outputTokens === 0) {
+        const textLen = row.text_length ?? 0
+        if (textLen === 0) continue
+        if (row.bubble_type === 1) {
+          inputTokens = Math.ceil(textLen / CHARS_PER_TOKEN)
+        } else {
+          outputTokens = Math.ceil(textLen / CHARS_PER_TOKEN)
+        }
+      }
 
       const createdAt = row.created_at ?? ''
       const conversationId = row.conversation_id ?? 'unknown'
@@ -201,7 +214,7 @@ function parseBubbles(db: SqliteDatabase, seenKeys: Set<string>): { calls: Parse
 
       const costUSD = calculateCost(pricingModel, inputTokens, outputTokens, 0, 0, 0)
 
-      const timestamp = createdAt || ''
+      const timestamp = createdAt || new Date().toISOString()
       const convMessages = userMessages.get(conversationId) ?? []
       const userQuestion = convMessages.length > 0 ? convMessages.shift()! : ''
       const assistantText = row.user_text ?? ''
@@ -278,11 +291,18 @@ function parseAgentKv(db: SqliteDatabase, seenKeys: Set<string>): { calls: Parse
     if (!row.role || !row.content) continue
 
     let content: AgentKvContent[]
+    let plainTextLength = 0
     try {
-      content = JSON.parse(row.content)
-      if (!Array.isArray(content)) continue
+      const parsed = JSON.parse(row.content)
+      if (Array.isArray(parsed)) {
+        content = parsed
+      } else {
+        content = []
+        plainTextLength = row.content.length
+      }
     } catch {
-      continue
+      content = []
+      plainTextLength = row.content.length
     }
 
     const requestId = row.request_id ?? currentRequestId
@@ -291,14 +311,14 @@ function parseAgentKv(db: SqliteDatabase, seenKeys: Set<string>): { calls: Parse
       turnIndex = 0
     }
 
-    const textLength = extractTextLength(content)
+    const textLength = plainTextLength || extractTextLength(content)
     const model = extractModelFromContent(content)
 
     if (row.role === 'user') {
       const existing = sessions.get(requestId) ?? { inputChars: 0, outputChars: 0, model: null, userText: '' }
       existing.inputChars += textLength
-      if (!existing.userText && content[0]?.text) {
-        const text = content[0].text
+      if (!existing.userText) {
+        const text = content[0]?.text ?? row.content
         const queryMatch = text.match(/<user_query>([\s\S]*?)<\/user_query>/)
         existing.userText = queryMatch ? queryMatch[1].trim().slice(0, 500) : text.slice(0, 500)
       }
@@ -385,12 +405,9 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
           return
         }
 
-        let { calls } = parseBubbles(db, seenKeys)
-
-        if (calls.length === 0) {
-          const agentKvResult = parseAgentKv(db, seenKeys)
-          calls = agentKvResult.calls
-        }
+        const { calls: bubbleCalls } = parseBubbles(db, seenKeys)
+        const { calls: agentKvCalls } = parseAgentKv(db, seenKeys)
+        const calls = [...bubbleCalls, ...agentKvCalls]
 
         await writeCachedResults(source.path, calls)
 
