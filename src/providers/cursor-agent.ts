@@ -464,14 +464,26 @@ export function createCursorAgentProvider(baseDirOverride?: string): Provider {
             const subdir = join(transcriptDir, transcript.name)
             const subEntries = await readdir(subdir, { withFileTypes: true }).catch(() => [])
             for (const sub of subEntries) {
-              if (!sub.isFile()) continue
-              if (!sub.name.endsWith('.jsonl') && !sub.name.endsWith('.txt')) continue
-              const filePath = join(subdir, sub.name)
-              sources.push({
-                path: filePath,
-                project: projectId,
-                provider: 'cursor-agent',
-              })
+              if (sub.isFile() && (sub.name.endsWith('.jsonl') || sub.name.endsWith('.txt'))) {
+                sources.push({
+                  path: join(subdir, sub.name),
+                  project: projectId,
+                  provider: 'cursor-agent',
+                })
+              }
+              // Subagent transcripts inside a subagents/ directory
+              if (sub.isDirectory() && sub.name === 'subagents') {
+                const subagentEntries = await readdir(join(subdir, sub.name), { withFileTypes: true }).catch(() => [])
+                for (const sa of subagentEntries) {
+                  if (!sa.isFile()) continue
+                  if (!sa.name.endsWith('.jsonl') && !sa.name.endsWith('.txt')) continue
+                  sources.push({
+                    path: join(subdir, sub.name, sa.name),
+                    project: projectId,
+                    provider: 'cursor-agent',
+                  })
+                }
+              }
             }
           }
         }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { aggregateProjectsIntoDays, buildPeriodDataFromDays } from '../src/day-aggregator.js'
+import { aggregateProjectsIntoDays, buildPeriodDataFromDays, dateKey } from '../src/day-aggregator.js'
 import type { ProjectSummary } from '../src/types.js'
 
 function makeProject(overrides: Partial<ProjectSummary> & { sessions: ProjectSummary['sessions'] }): ProjectSummary {
@@ -147,7 +147,8 @@ describe('aggregateProjectsIntoDays', () => {
       }),
     ]
     const days = aggregateProjectsIntoDays(projects)
-    expect(days[0]!.date).toBe('2026-04-09')
+    const expectedDate = dateKey('2026-04-09T23:59:00Z')
+    expect(days[0]!.date).toBe(expectedDate)
     expect(days[0]!.sessions).toBe(1)
   })
 
