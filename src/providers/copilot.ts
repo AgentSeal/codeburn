@@ -1,4 +1,5 @@
-import { readdir, stat } from 'fs/promises'
+import { existsSync } from 'fs'
+import { readdir, readFile, stat } from 'fs/promises'
 import { basename, dirname, join } from 'path'
 import { homedir } from 'os'
 
@@ -24,63 +25,223 @@ const modelDisplayNames: Record<string, string> = {
 
 const toolNameMap: Record<string, string> = {
   bash: 'Bash',
+  run_in_terminal: 'Bash',
   read_file: 'Read',
   write_file: 'Edit',
   edit_file: 'Edit',
+  replace_string_in_file: 'Edit',
   create_file: 'Write',
   delete_file: 'Delete',
   search_files: 'Grep',
+  file_search: 'Grep',
   find_files: 'Glob',
   list_directory: 'LS',
+  list_dir: 'LS',
   web_search: 'WebSearch',
   fetch_webpage: 'WebFetch',
   github_repo: 'GitHub',
+  memory: 'Memory',
+  kill_terminal: 'Bash',
 }
 
-// Pre-sorted by key length descending so longer/more-specific keys match first
+const CHARS_PER_TOKEN = 4
+
 const modelDisplayEntries = Object.entries(modelDisplayNames).sort((a, b) => b[0].length - a[0].length)
 
-// Fields marked optional document the on-disk schema; they are not read by the parser
-type ToolRequest = {
+// --- Legacy format (session-state/events.jsonl with outputTokens) ---
+
+type LegacyToolRequest = {
   name?: string
   toolCallId?: string
   type?: string
 }
 
-type ModelChangeData = {
-  newModel: string
-  previousModel?: string
+type LegacyCopilotEvent =
+  | { type: 'session.model_change'; timestamp?: string; data: { newModel: string } }
+  | { type: 'user.message'; timestamp?: string; data: { content: string; interactionId?: string } }
+  | { type: 'assistant.message'; timestamp?: string; data: { messageId: string; outputTokens: number; interactionId?: string; toolRequests?: LegacyToolRequest[] } }
+
+function parseLegacyEvents(content: string, sessionId: string, seenKeys: Set<string>): ParsedProviderCall[] {
+  const results: ParsedProviderCall[] = []
+  const lines = content.split('\n').filter(l => l.trim())
+  let currentModel = ''
+  let pendingUserMessage = ''
+
+  for (const line of lines) {
+    let event: LegacyCopilotEvent
+    try {
+      event = JSON.parse(line)
+    } catch {
+      continue
+    }
+
+    if (event.type === 'session.model_change') {
+      currentModel = event.data.newModel ?? currentModel
+      continue
+    }
+
+    if (event.type === 'user.message') {
+      pendingUserMessage = event.data.content ?? ''
+      continue
+    }
+
+    if (event.type === 'assistant.message') {
+      const { messageId, outputTokens, toolRequests = [] } = event.data
+      if (outputTokens === 0) continue
+      if (!currentModel) continue
+
+      const dedupKey = `copilot:${sessionId}:${messageId}`
+      if (seenKeys.has(dedupKey)) continue
+      seenKeys.add(dedupKey)
+
+      const tools = toolRequests
+        .map(t => t.name ?? '')
+        .filter(Boolean)
+        .map(n => toolNameMap[n] ?? n)
+
+      const costUSD = calculateCost(currentModel, 0, outputTokens, 0, 0, 0)
+
+      results.push({
+        provider: 'copilot',
+        model: currentModel,
+        inputTokens: 0,
+        outputTokens,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 0,
+        cachedInputTokens: 0,
+        reasoningTokens: 0,
+        webSearchRequests: 0,
+        costUSD,
+        tools,
+        bashCommands: [],
+        timestamp: event.timestamp ?? '',
+        speed: 'standard',
+        deduplicationKey: dedupKey,
+        userMessage: pendingUserMessage,
+        sessionId,
+      })
+
+      pendingUserMessage = ''
+    }
+  }
+
+  return results
 }
 
-type UserMessageData = {
-  content: string
-  interactionId?: string
+// --- VS Code transcript format (workspaceStorage transcripts) ---
+
+type TranscriptToolRequest = {
+  toolCallId?: string
+  name?: string
+  arguments?: string
+  type?: string
 }
 
-type AssistantMessageData = {
-  messageId: string
-  outputTokens: number
-  interactionId?: string
-  toolRequests?: ToolRequest[]
+type TranscriptEvent =
+  | { type: 'session.start'; timestamp?: string; data: { sessionId: string; producer?: string } }
+  | { type: 'user.message'; timestamp?: string; data: { content: string; attachments?: unknown[] } }
+  | { type: 'assistant.message'; timestamp?: string; data: { messageId: string; content?: string; reasoningText?: string; toolRequests?: TranscriptToolRequest[]; outputTokens?: number } }
+  | { type: string; timestamp?: string; data: Record<string, unknown> }
+
+function inferModelFromToolCallIds(events: TranscriptEvent[]): string {
+  for (const e of events) {
+    if (e.type !== 'assistant.message') continue
+    const msg = e as { data: { toolRequests?: TranscriptToolRequest[] } }
+    for (const t of msg.data.toolRequests ?? []) {
+      if (t.toolCallId?.startsWith('toolu_bdrk_')) return 'claude-sonnet-4-5'
+      if (t.toolCallId?.startsWith('call_')) return 'gpt-4.1'
+    }
+  }
+  return 'gpt-4.1'
 }
 
-type CopilotEvent =
-  | { type: 'session.model_change'; timestamp?: string; data: ModelChangeData }
-  | { type: 'user.message'; timestamp?: string; data: UserMessageData }
-  | { type: 'assistant.message'; timestamp?: string; data: AssistantMessageData }
+function parseTranscriptEvents(content: string, sessionId: string, seenKeys: Set<string>): ParsedProviderCall[] {
+  const results: ParsedProviderCall[] = []
+  const lines = content.split('\n').filter(l => l.trim())
+  const events: TranscriptEvent[] = []
 
-function getCopilotSessionStateDir(override?: string): string {
-  return override ?? join(homedir(), '.copilot', 'session-state')
+  for (const line of lines) {
+    try {
+      events.push(JSON.parse(line))
+    } catch {
+      continue
+    }
+  }
+
+  const model = inferModelFromToolCallIds(events)
+  let pendingUserMessage = ''
+
+  for (const event of events) {
+    if (event.type === 'user.message') {
+      const data = event.data as { content?: string }
+      pendingUserMessage = (data.content ?? '').slice(0, 500)
+      continue
+    }
+
+    if (event.type === 'assistant.message') {
+      const data = event.data as { messageId: string; content?: string; reasoningText?: string; toolRequests?: TranscriptToolRequest[]; outputTokens?: number }
+      const contentText = data.content ?? ''
+      const reasoningText = data.reasoningText ?? ''
+
+      if (contentText.length === 0 && reasoningText.length === 0 && (data.toolRequests ?? []).length === 0) continue
+
+      const dedupKey = `copilot:${sessionId}:${data.messageId}`
+      if (seenKeys.has(dedupKey)) continue
+      seenKeys.add(dedupKey)
+
+      let outputTokens = data.outputTokens ?? 0
+      let reasoningTokens = 0
+      if (outputTokens === 0) {
+        outputTokens = Math.ceil(contentText.length / CHARS_PER_TOKEN)
+        reasoningTokens = Math.ceil(reasoningText.length / CHARS_PER_TOKEN)
+      }
+
+      const inputTokens = Math.ceil(pendingUserMessage.length / CHARS_PER_TOKEN)
+
+      const tools = (data.toolRequests ?? [])
+        .map(t => t.name ?? '')
+        .filter(Boolean)
+        .map(n => toolNameMap[n] ?? n)
+
+      const costUSD = calculateCost(model, inputTokens, outputTokens + reasoningTokens, 0, 0, 0)
+
+      results.push({
+        provider: 'copilot',
+        model,
+        inputTokens,
+        outputTokens,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 0,
+        cachedInputTokens: 0,
+        reasoningTokens,
+        webSearchRequests: 0,
+        costUSD,
+        tools,
+        bashCommands: [],
+        timestamp: event.timestamp ?? '',
+        speed: 'standard',
+        deduplicationKey: dedupKey,
+        userMessage: pendingUserMessage,
+        sessionId,
+      })
+
+      pendingUserMessage = ''
+    }
+  }
+
+  return results
 }
 
-function parseCwd(yaml: string): string | null {
-  const match = yaml.match(/^cwd:\s*(.+)$/m)
-  if (!match?.[1]) return null
-  const raw = match[1]
-    .replace(/\s*#.*$/, '')    // strip trailing comment
-    .replace(/^['"]|['"]$/g, '') // strip surrounding quotes
-    .trim()
-  return raw || null
+// --- Parser ---
+
+function isTranscriptFormat(content: string): boolean {
+  const firstLine = content.split('\n')[0] ?? ''
+  try {
+    const event = JSON.parse(firstLine)
+    return event.type === 'session.start' && event.data?.producer === 'copilot-agent'
+  } catch {
+    return false
+  }
 }
 
 function createParser(source: SessionSource, seenKeys: Set<string>): SessionParser {
@@ -88,76 +249,60 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
     async *parse(): AsyncGenerator<ParsedProviderCall> {
       const content = await readSessionFile(source.path)
       if (content === null) return
-      const sessionId = basename(dirname(source.path))
-      const lines = content.split('\n').filter(l => l.trim())
-      let currentModel = ''
-      let pendingUserMessage = ''
+      const sessionId = basename(source.path, '.jsonl').length === 36
+        ? basename(source.path, '.jsonl')
+        : basename(dirname(source.path))
 
-      for (const line of lines) {
-        let event: CopilotEvent
-        try {
-          event = JSON.parse(line) as CopilotEvent
-        } catch {
-          continue
-        }
+      const calls = isTranscriptFormat(content)
+        ? parseTranscriptEvents(content, sessionId, seenKeys)
+        : parseLegacyEvents(content, sessionId, seenKeys)
 
-        if (event.type === 'session.model_change') {
-          currentModel = event.data.newModel ?? currentModel
-          continue
-        }
-
-        if (event.type === 'user.message') {
-          pendingUserMessage = event.data.content ?? ''
-          continue
-        }
-
-        if (event.type === 'assistant.message') {
-          const { messageId, outputTokens, toolRequests = [] } = event.data
-          if (outputTokens === 0) continue
-          // Skip if no model has been identified yet - avoids silent misattribution
-          if (!currentModel) continue
-
-          const dedupKey = `copilot:${sessionId}:${messageId}`
-          if (seenKeys.has(dedupKey)) continue
-          seenKeys.add(dedupKey)
-
-          const tools = toolRequests
-            .map(t => t.name ?? '')
-            .filter(Boolean)
-            .map(n => toolNameMap[n] ?? n)
-
-          // Copilot only logs outputTokens; inputTokens are not available in session logs.
-          // Cost will be lower than actual API cost.
-          const costUSD = calculateCost(currentModel, 0, outputTokens, 0, 0, 0)
-
-          yield {
-            provider: 'copilot',
-            model: currentModel,
-            inputTokens: 0,
-            outputTokens,
-            cacheCreationInputTokens: 0,
-            cacheReadInputTokens: 0,
-            cachedInputTokens: 0,
-            reasoningTokens: 0,
-            webSearchRequests: 0,
-            costUSD,
-            tools,
-            bashCommands: [],
-            timestamp: event.timestamp ?? '',
-            speed: 'standard',
-            deduplicationKey: dedupKey,
-            userMessage: pendingUserMessage,
-            sessionId,
-          }
-
-          pendingUserMessage = ''
-        }
+      for (const call of calls) {
+        yield call
       }
     },
   }
 }
 
-async function discoverSessionsInDir(sessionStateDir: string): Promise<SessionSource[]> {
+// --- Discovery ---
+
+function getCopilotSessionStateDir(override?: string): string {
+  return override ?? join(homedir(), '.copilot', 'session-state')
+}
+
+function getVSCodeWorkspaceStorageDir(): string {
+  if (process.platform === 'darwin') {
+    return join(homedir(), 'Library', 'Application Support', 'Code', 'User', 'workspaceStorage')
+  }
+  if (process.platform === 'win32') {
+    return join(homedir(), 'AppData', 'Roaming', 'Code', 'User', 'workspaceStorage')
+  }
+  return join(homedir(), '.config', 'Code', 'User', 'workspaceStorage')
+}
+
+function parseCwd(yaml: string): string | null {
+  const match = yaml.match(/^cwd:\s*(.+)$/m)
+  if (!match?.[1]) return null
+  const raw = match[1]
+    .replace(/\s*#.*$/, '')
+    .replace(/^['"]|['"]$/g, '')
+    .trim()
+  return raw || null
+}
+
+async function readWorkspaceProject(workspaceDir: string): Promise<string> {
+  try {
+    const raw = await readFile(join(workspaceDir, 'workspace.json'), 'utf-8')
+    const data = JSON.parse(raw) as { folder?: string }
+    if (data.folder) {
+      const url = data.folder.replace(/^file:\/\//, '')
+      return basename(decodeURIComponent(url))
+    }
+  } catch {}
+  return basename(workspaceDir)
+}
+
+async function discoverLegacySessions(sessionStateDir: string): Promise<SessionSource[]> {
   const sources: SessionSource[] = []
 
   let sessionDirs: string[]
@@ -185,8 +330,44 @@ async function discoverSessionsInDir(sessionStateDir: string): Promise<SessionSo
   return sources
 }
 
-export function createCopilotProvider(sessionStateDir?: string): Provider {
-  const dir = getCopilotSessionStateDir(sessionStateDir)
+async function discoverVSCodeTranscripts(workspaceStorageDir: string): Promise<SessionSource[]> {
+  const sources: SessionSource[] = []
+
+  let workspaceDirs: string[]
+  try {
+    workspaceDirs = await readdir(workspaceStorageDir)
+  } catch {
+    return sources
+  }
+
+  for (const wsDir of workspaceDirs) {
+    const transcriptsDir = join(workspaceStorageDir, wsDir, 'GitHub.copilot-chat', 'transcripts')
+    if (!existsSync(transcriptsDir)) continue
+
+    const project = await readWorkspaceProject(join(workspaceStorageDir, wsDir))
+
+    let files: string[]
+    try {
+      files = await readdir(transcriptsDir)
+    } catch {
+      continue
+    }
+
+    for (const file of files) {
+      if (!file.endsWith('.jsonl')) continue
+      const filePath = join(transcriptsDir, file)
+      const s = await stat(filePath).catch(() => null)
+      if (!s?.isFile()) continue
+      sources.push({ path: filePath, project, provider: 'copilot' })
+    }
+  }
+
+  return sources
+}
+
+export function createCopilotProvider(sessionStateDir?: string, workspaceStorageDirOverride?: string): Provider {
+  const legacyDir = getCopilotSessionStateDir(sessionStateDir)
+  const vscodeDir = workspaceStorageDirOverride ?? getVSCodeWorkspaceStorageDir()
 
   return {
     name: 'copilot',
@@ -204,7 +385,11 @@ export function createCopilotProvider(sessionStateDir?: string): Provider {
     },
 
     async discoverSessions(): Promise<SessionSource[]> {
-      return discoverSessionsInDir(dir)
+      const [legacy, vscode] = await Promise.all([
+        discoverLegacySessions(legacyDir),
+        discoverVSCodeTranscripts(vscodeDir),
+      ])
+      return [...legacy, ...vscode]
     },
 
     createSessionParser(source: SessionSource, seenKeys: Set<string>): SessionParser {

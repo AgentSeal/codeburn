@@ -174,7 +174,7 @@ describe('copilot provider - discoverSessions', () => {
     await createSessionDir('sess-disc-001', [modelChange('gpt-4.1')])
     await createSessionDir('sess-disc-002', [modelChange('gpt-4.1')])
 
-    const provider = createCopilotProvider(tmpDir)
+    const provider = createCopilotProvider(tmpDir, '/nonexistent/vscode')
     const sessions = await provider.discoverSessions()
 
     expect(sessions).toHaveLength(2)
@@ -185,7 +185,7 @@ describe('copilot provider - discoverSessions', () => {
   it('reads project name from workspace.yaml cwd', async () => {
     await createSessionDir('sess-disc-003', [modelChange('gpt-4.1')], '/home/user/myapp')
 
-    const provider = createCopilotProvider(tmpDir)
+    const provider = createCopilotProvider(tmpDir, '/nonexistent/vscode')
     const sessions = await provider.discoverSessions()
 
     expect(sessions).toHaveLength(1)
@@ -198,7 +198,7 @@ describe('copilot provider - discoverSessions', () => {
     await writeFile(join(sessionDir, 'workspace.yaml'), 'cwd: "/home/user/myapp"  # project root\n')
     await writeFile(join(sessionDir, 'events.jsonl'), '\n')
 
-    const provider = createCopilotProvider(tmpDir)
+    const provider = createCopilotProvider(tmpDir, '/nonexistent/vscode')
     const sessions = await provider.discoverSessions()
 
     expect(sessions).toHaveLength(1)
@@ -206,7 +206,7 @@ describe('copilot provider - discoverSessions', () => {
   })
 
   it('returns empty when directory does not exist', async () => {
-    const provider = createCopilotProvider('/nonexistent/path')
+    const provider = createCopilotProvider('/nonexistent/path', '/nonexistent/vscode')
     const sessions = await provider.discoverSessions()
     expect(sessions).toHaveLength(0)
   })
@@ -215,9 +215,24 @@ describe('copilot provider - discoverSessions', () => {
     const emptyDir = join(tmpDir, 'empty-session')
     await mkdir(emptyDir, { recursive: true })
 
-    const provider = createCopilotProvider(tmpDir)
+    const provider = createCopilotProvider(tmpDir, '/nonexistent/vscode')
     const sessions = await provider.discoverSessions()
     expect(sessions).toHaveLength(0)
+  })
+
+  it('discovers VS Code workspace transcripts', async () => {
+    const wsDir = join(tmpDir, 'vscode-ws')
+    const transcriptsDir = join(wsDir, 'abc123', 'GitHub.copilot-chat', 'transcripts')
+    await mkdir(transcriptsDir, { recursive: true })
+    await writeFile(join(wsDir, 'abc123', 'workspace.json'), JSON.stringify({ folder: 'file:///home/user/myapp' }))
+    await writeFile(join(transcriptsDir, 'session-1.jsonl'), JSON.stringify({ type: 'session.start', data: { sessionId: 's1', producer: 'copilot-agent' } }) + '\n')
+
+    const provider = createCopilotProvider('/nonexistent/legacy', wsDir)
+    const sessions = await provider.discoverSessions()
+
+    expect(sessions).toHaveLength(1)
+    expect(sessions[0]!.project).toBe('myapp')
+    expect(sessions[0]!.path).toContain('session-1.jsonl')
   })
 })
 
