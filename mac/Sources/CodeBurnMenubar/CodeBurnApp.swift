@@ -281,14 +281,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         let valueText = compact
             ? (formatted?.asCompactCurrencyWhole() ?? fallback)
             : " " + (formatted?.asCompactCurrency() ?? fallback)
-        let color: NSColor = hasPayload ? .labelColor : .secondaryLabelColor
+
+        var textAttrs: [NSAttributedString.Key: Any] = [.font: font, .baselineOffset: -1.0]
+        if !hasPayload {
+            textAttrs[.foregroundColor] = NSColor.secondaryLabelColor
+        }
 
         let composed = NSMutableAttributedString()
         composed.append(NSAttributedString(attachment: attachment))
-        composed.append(NSAttributedString(
-            string: valueText,
-            attributes: [.font: font, .foregroundColor: color, .baselineOffset: -1.0]
-        ))
+        composed.append(NSAttributedString(string: valueText, attributes: textAttrs))
         button.attributedTitle = composed
     }
 
