@@ -55,6 +55,7 @@ struct MenuBarContent: View {
 
             StarBanner()
         }
+        .id(store.accentPreset)
     }
 
     /// True when a specific provider tab is selected and that provider has no spend in the
@@ -147,7 +148,7 @@ private struct BurnFlame: View {
             // Soft outer glow that pulses, matching the brand terracotta palette.
             Image(systemName: "flame.fill")
                 .font(.system(size: size, weight: .regular))
-                .foregroundStyle(Theme.brandEmberGlow.opacity(glowing ? 0.55 : 0.20))
+                .foregroundStyle(Theme.brandAccentGlow.opacity(glowing ? 0.55 : 0.20))
                 .blur(radius: glowing ? 14 : 6)
 
             // Empty (cool) flame as base
@@ -161,10 +162,10 @@ private struct BurnFlame: View {
                 .foregroundStyle(
                     LinearGradient(
                         colors: [
-                            Theme.brandEmberGlow,
-                            Theme.brandAccentDark,
+                            Theme.brandAccentGlow,
+                            Theme.brandAccentLight,
                             Theme.brandAccent,
-                            Theme.brandEmberDeep
+                            Theme.brandAccentDeep
                         ],
                         startPoint: .bottom,
                         endPoint: .top
@@ -184,13 +185,12 @@ private struct BurnFlame: View {
 
 private struct Header: View {
     @Environment(UpdateChecker.self) private var updateChecker
-
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 1) {
                 (
                     Text("Code").foregroundStyle(.primary)
-                    + Text("Burn").foregroundStyle(Theme.brandAccent)
+                    + Text("Burn").foregroundStyle(Theme.brandEmber)
                 )
                 .font(.system(size: 13, weight: .semibold))
                 .tracking(-0.15)
@@ -202,10 +202,65 @@ private struct Header: View {
             if updateChecker.updateAvailable {
                 UpdateBadge()
             }
+            AccentPicker()
         }
         .padding(.horizontal, 14)
         .padding(.top, 10)
         .padding(.bottom, 8)
+    }
+}
+
+private struct AccentPicker: View {
+    @Environment(AppStore.self) private var store
+
+    var body: some View {
+        HStack(spacing: 0) {
+            if store.showingAccentPicker {
+                HStack(spacing: 5) {
+                    ForEach(AccentPreset.allCases) { preset in
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.15)) {
+                                store.accentPreset = preset
+                            }
+                        } label: {
+                            Circle()
+                                .fill(preset.base)
+                                .frame(width: 12, height: 12)
+                                .overlay(
+                                    Circle()
+                                        .stroke(.white.opacity(store.accentPreset == preset ? 0.9 : 0), lineWidth: 1.5)
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(preset.rawValue)
+                    }
+                }
+                .padding(.horizontal, 6)
+                .padding(.vertical, 4)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.secondary.opacity(0.08))
+                )
+                .transition(.opacity.combined(with: .move(edge: .trailing)))
+            }
+
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    store.showingAccentPicker.toggle()
+                }
+            } label: {
+                Circle()
+                    .fill(store.accentPreset.base)
+                    .frame(width: 14, height: 14)
+                    .overlay(
+                        Circle()
+                            .stroke(.white.opacity(0.3), lineWidth: 0.5)
+                    )
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Change accent color")
+            .padding(.leading, 4)
+        }
     }
 }
 
@@ -244,7 +299,7 @@ struct FlameMark: View {
             RoundedRectangle(cornerRadius: 5)
                 .fill(
                     LinearGradient(
-                        colors: [Theme.brandAccentDark, Theme.brandEmberDeep],
+                        colors: [Theme.brandAccentLight, Theme.brandAccentDeep],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )

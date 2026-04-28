@@ -20,6 +20,10 @@ final class AppStore {
     var selectedProvider: ProviderFilter = .all
     var selectedPeriod: Period = .today
     var selectedInsight: InsightMode = .trend
+    var accentPreset: AccentPreset = ThemeState.shared.preset {
+        didSet { ThemeState.shared.preset = accentPreset }
+    }
+    var showingAccentPicker: Bool = false
     var currency: String = "USD"
     var isLoading: Bool = false
     var lastError: String?

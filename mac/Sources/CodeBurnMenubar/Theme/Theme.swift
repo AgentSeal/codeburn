@@ -1,11 +1,14 @@
 import SwiftUI
 
-/// Design tokens. Warm terracotta-ember palette, not generic orange.
+/// Design tokens. Accent colors are driven by ThemeState so the user can switch palettes.
+@MainActor
 enum Theme {
-    static let brandAccent       = Color(red: 0xC9/255.0, green: 0x52/255.0, blue: 0x1D/255.0)
-    static let brandAccentDark   = Color(red: 0xE8/255.0, green: 0x77/255.0, blue: 0x4A/255.0)
-    static let brandEmberDeep    = Color(red: 0x8B/255.0, green: 0x3E/255.0, blue: 0x13/255.0)
-    static let brandEmberGlow    = Color(red: 0xF0/255.0, green: 0xA0/255.0, blue: 0x70/255.0)
+    static let brandEmber        = Color(red: 0xC9/255.0, green: 0x52/255.0, blue: 0x1D/255.0)
+
+    static var brandAccent: Color { ThemeState.shared.preset.base }
+    static var brandAccentLight: Color { ThemeState.shared.preset.light }
+    static var brandAccentDeep: Color { ThemeState.shared.preset.deep }
+    static var brandAccentGlow: Color { ThemeState.shared.preset.glow }
 
     static let warmSurface       = Color(red: 0xFA/255.0, green: 0xF7/255.0, blue: 0xF3/255.0)
     static let warmSurfaceDark   = Color(red: 0x1C/255.0, green: 0x18/255.0, blue: 0x16/255.0)

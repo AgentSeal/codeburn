@@ -82,7 +82,7 @@ private struct AgentTab: View {
 }
 
 extension ProviderFilter {
-    var color: Color {
+    @MainActor var color: Color {
         switch self {
         case .all: return Theme.brandAccent
         case .claude: return Theme.categoricalClaude

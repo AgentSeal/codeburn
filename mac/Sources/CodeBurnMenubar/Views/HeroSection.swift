@@ -14,7 +14,7 @@ struct HeroSection: View {
                     .tracking(-1)
                     .foregroundStyle(
                         LinearGradient(
-                            colors: [Theme.brandAccent, Theme.brandEmberDeep],
+                            colors: [Theme.brandAccent, Theme.brandAccentDeep],
                             startPoint: .top,
                             endPoint: .bottom
                         )
