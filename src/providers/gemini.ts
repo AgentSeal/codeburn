@@ -144,6 +144,40 @@ function parseSession(data: GeminiSession, seenKeys: Set<string>): ParsedProvide
   return results
 }
 
+function parseJsonl(raw: string): GeminiSession | null {
+  const lines = raw.split('\n').filter(l => l.trim())
+  if (lines.length === 0) return null
+
+  let sessionId = ''
+  let startTime = ''
+  let projectHash: string | undefined
+  let lastUpdated: string | undefined
+  let kind: string | undefined
+  const messages: GeminiMessage[] = []
+
+  for (const line of lines) {
+    let obj: Record<string, unknown>
+    try {
+      obj = JSON.parse(line)
+    } catch {
+      continue
+    }
+    if (obj['$set'] !== undefined) continue
+    if (obj['sessionId'] && obj['startTime'] && !sessionId) {
+      sessionId = obj['sessionId'] as string
+      startTime = obj['startTime'] as string
+      projectHash = obj['projectHash'] as string | undefined
+      lastUpdated = obj['lastUpdated'] as string | undefined
+      kind = obj['kind'] as string | undefined
+    } else if (obj['id'] && obj['type']) {
+      messages.push(obj as unknown as GeminiMessage)
+    }
+  }
+
+  if (!sessionId) return null
+  return { sessionId, projectHash, startTime, lastUpdated, kind, messages }
+}
+
 function createParser(source: SessionSource, seenKeys: Set<string>): SessionParser {
   return {
     async *parse(): AsyncGenerator<ParsedProviderCall> {
@@ -154,14 +188,21 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
         return
       }
 
-      let data: GeminiSession
+      let data: GeminiSession | null = null
+
+      // Try single JSON first (Gemini CLI <=0.38), then JSONL (>=0.39)
       try {
-        data = JSON.parse(raw)
-      } catch {
-        return
+        const parsed = JSON.parse(raw)
+        if (parsed.messages && parsed.sessionId) {
+          data = parsed
+        }
+      } catch { /* not single JSON */ }
+
+      if (!data) {
+        data = parseJsonl(raw)
       }
 
-      if (!data.messages || !data.sessionId) return
+      if (!data?.messages || !data.sessionId) return
 
       const calls = parseSession(data, seenKeys)
       for (const call of calls) {

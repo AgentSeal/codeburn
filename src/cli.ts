@@ -286,7 +286,7 @@ program
   .option('-p, --period <period>', 'Starting period: today, week, 30days, month, all', 'week')
   .option('--from <date>', 'Start date (YYYY-MM-DD). Overrides --period when set')
   .option('--to <date>', 'End date (YYYY-MM-DD). Overrides --period when set')
-  .option('--provider <provider>', 'Filter by provider: all, claude, codex, cursor', 'all')
+  .option('--provider <provider>', 'Filter by provider (e.g. claude, gemini, cursor, copilot)', 'all')
   .option('--format <format>', 'Output format: tui, json', 'tui')
   .option('--project <name>', 'Show only projects matching name (repeatable)', collect, [])
   .option('--exclude <name>', 'Exclude projects matching name (repeatable)', collect, [])
@@ -364,7 +364,7 @@ program
   .command('status')
   .description('Compact status output (today + week + month)')
   .option('--format <format>', 'Output format: terminal, menubar-json, json', 'terminal')
-  .option('--provider <provider>', 'Filter by provider: all, claude, codex, cursor', 'all')
+  .option('--provider <provider>', 'Filter by provider (e.g. claude, gemini, cursor, copilot)', 'all')
   .option('--project <name>', 'Show only projects matching name (repeatable)', collect, [])
   .option('--exclude <name>', 'Exclude projects matching name (repeatable)', collect, [])
   .option('--period <period>', 'Primary period for menubar-json: today, week, 30days, month, all', 'today')
@@ -557,7 +557,7 @@ program
 program
   .command('today')
   .description('Today\'s usage dashboard')
-  .option('--provider <provider>', 'Filter by provider: all, claude, codex, cursor', 'all')
+  .option('--provider <provider>', 'Filter by provider (e.g. claude, gemini, cursor, copilot)', 'all')
   .option('--format <format>', 'Output format: tui, json', 'tui')
   .option('--project <name>', 'Show only projects matching name (repeatable)', collect, [])
   .option('--exclude <name>', 'Exclude projects matching name (repeatable)', collect, [])
@@ -573,7 +573,7 @@ program
 program
   .command('month')
   .description('This month\'s usage dashboard')
-  .option('--provider <provider>', 'Filter by provider: all, claude, codex, cursor', 'all')
+  .option('--provider <provider>', 'Filter by provider (e.g. claude, gemini, cursor, copilot)', 'all')
   .option('--format <format>', 'Output format: tui, json', 'tui')
   .option('--project <name>', 'Show only projects matching name (repeatable)', collect, [])
   .option('--exclude <name>', 'Exclude projects matching name (repeatable)', collect, [])
@@ -591,7 +591,7 @@ program
   .description('Export usage data to CSV or JSON (includes 1 day, 7 days, 30 days)')
   .option('-f, --format <format>', 'Export format: csv, json', 'csv')
   .option('-o, --output <path>', 'Output file path')
-  .option('--provider <provider>', 'Filter by provider: all, claude, codex, cursor', 'all')
+  .option('--provider <provider>', 'Filter by provider (e.g. claude, gemini, cursor, copilot)', 'all')
   .option('--project <name>', 'Show only projects matching name (repeatable)', collect, [])
   .option('--exclude <name>', 'Exclude projects matching name (repeatable)', collect, [])
   .action(async (opts) => {
@@ -870,7 +870,7 @@ program
   .command('optimize')
   .description('Find token waste and get exact fixes')
   .option('-p, --period <period>', 'Analysis period: today, week, 30days, month, all', '30days')
-  .option('--provider <provider>', 'Filter by provider: all, claude, codex, cursor', 'all')
+  .option('--provider <provider>', 'Filter by provider (e.g. claude, gemini, cursor, copilot)', 'all')
   .action(async (opts) => {
     await loadPricing()
     const { range, label } = getDateRange(opts.period)
@@ -882,7 +882,7 @@ program
   .command('compare')
   .description('Compare two AI models side-by-side')
   .option('-p, --period <period>', 'Analysis period: today, week, 30days, month, all', 'all')
-  .option('--provider <provider>', 'Filter by provider: all, claude, codex, cursor', 'all')
+  .option('--provider <provider>', 'Filter by provider (e.g. claude, gemini, cursor, copilot)', 'all')
   .action(async (opts) => {
     await loadPricing()
     const { range } = getDateRange(opts.period)
