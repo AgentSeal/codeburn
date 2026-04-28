@@ -136,6 +136,10 @@ const BUILTIN_ALIASES: Record<string, string> = {
   'anthropic--claude-4.5-opus':    'claude-opus-4-5',
   'anthropic--claude-4.5-sonnet':  'claude-sonnet-4-5',
   'anthropic--claude-4.5-haiku':   'claude-haiku-4-5',
+  'cursor-auto':                    'claude-sonnet-4-5',
+  'cursor-agent-auto':             'claude-sonnet-4-5',
+  'copilot-auto':                  'claude-sonnet-4-5',
+  'kiro-auto':                     'claude-sonnet-4-5',
 }
 
 let userAliases: Record<string, string> = {}
@@ -201,7 +205,15 @@ export function calculateCost(
   )
 }
 
+const autoModelNames: Record<string, string> = {
+  'cursor-auto': 'Cursor (auto)',
+  'cursor-agent-auto': 'Cursor (auto)',
+  'copilot-auto': 'Copilot (auto)',
+  'kiro-auto': 'Kiro (auto)',
+}
+
 export function getShortModelName(model: string): string {
+  if (autoModelNames[model]) return autoModelNames[model]
   const canonical = resolveAlias(getCanonicalName(model))
   const shortNames: Record<string, string> = {
     'claude-opus-4-7': 'Opus 4.7',

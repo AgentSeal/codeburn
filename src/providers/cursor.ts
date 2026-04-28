@@ -7,7 +7,7 @@ import { readCachedResults, writeCachedResults } from '../cursor-cache.js'
 import { isSqliteAvailable, getSqliteLoadError, openDatabase, type SqliteDatabase } from '../sqlite.js'
 import type { Provider, SessionSource, SessionParser, ParsedProviderCall } from './types.js'
 
-const CURSOR_DEFAULT_MODEL = 'claude-sonnet-4-5'
+const CURSOR_COST_MODEL = 'claude-sonnet-4-5'
 
 const modelDisplayNames: Record<string, string> = {
   'claude-4.5-opus-high-thinking': 'Opus 4.5 (Thinking)',
@@ -23,7 +23,7 @@ const modelDisplayNames: Record<string, string> = {
   'gpt-5.1-codex-high': 'GPT-5.1 Codex',
   'gpt-5': 'GPT-5',
   'gpt-4.1': 'GPT-4.1',
-  'default': 'Auto (Sonnet est.)',
+  'cursor-auto': 'Cursor (auto)',
 }
 
 type BubbleRow = {
@@ -89,12 +89,12 @@ function extractLanguages(codeBlocksJson: string | null): string[] {
 }
 
 function resolveModel(raw: string | null): string {
-  if (!raw || raw === 'default') return CURSOR_DEFAULT_MODEL
+  if (!raw || raw === 'default') return CURSOR_COST_MODEL
   return raw
 }
 
 function modelForDisplay(raw: string | null): string {
-  if (!raw || raw === 'default') return 'default'
+  if (!raw || raw === 'default') return 'cursor-auto'
   return raw
 }
 

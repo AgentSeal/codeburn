@@ -152,7 +152,7 @@ function inferModelFromToolCallIds(events: TranscriptEvent[]): string {
       if (t.toolCallId?.startsWith('call_')) return 'gpt-4.1'
     }
   }
-  return 'gpt-4.1'
+  return 'copilot-auto'
 }
 
 function parseTranscriptEvents(content: string, sessionId: string, seenKeys: Set<string>): ParsedProviderCall[] {
@@ -374,6 +374,7 @@ export function createCopilotProvider(sessionStateDir?: string, workspaceStorage
     displayName: 'Copilot',
 
     modelDisplayName(model: string): string {
+      if (model === 'copilot-auto') return 'Copilot (auto)'
       for (const [key, name] of modelDisplayEntries) {
         if (model === key || model.startsWith(key + '-')) return name
       }

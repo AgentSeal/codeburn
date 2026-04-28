@@ -31,7 +31,7 @@ type ParsedTurn = {
   assistant: AssistantTurn
 }
 
-const CURSOR_AGENT_DEFAULT_MODEL = 'claude-sonnet-4-5'
+const CURSOR_AGENT_COST_MODEL = 'claude-sonnet-4-5'
 const CHARS_PER_TOKEN = 4
 const MAX_USER_TEXT_LENGTH = 500
 const DIGITS_ONLY = /^\d+$/
@@ -129,8 +129,12 @@ function prettifyProjectId(raw: string): string {
 }
 
 function resolveModel(raw: string | null | undefined): string {
-  if (!raw || raw === 'default') return CURSOR_AGENT_DEFAULT_MODEL
+  if (!raw || raw === 'default') return 'cursor-agent-auto'
   return raw
+}
+
+function costModel(model: string): string {
+  return model === 'cursor-agent-auto' ? CURSOR_AGENT_COST_MODEL : model
 }
 
 function toConversationId(transcriptPath: string): string {
@@ -378,7 +382,7 @@ function createParser(
           seenKeys.add(deduplicationKey)
 
           const costUSD = calculateCost(
-            model,
+            costModel(model),
             inputTokens,
             outputTokens + reasoningTokens,
             0,
@@ -424,7 +428,7 @@ export function createCursorAgentProvider(baseDirOverride?: string): Provider {
     displayName: 'Cursor Agent',
 
     modelDisplayName(model: string): string {
-      if (model === 'default') return modelDisplayNames.default
+      if (model === 'cursor-agent-auto') return 'Cursor (auto)'
       const label = modelDisplayNames[model] ?? model
       return `${label} (est.)`
     },

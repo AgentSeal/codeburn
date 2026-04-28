@@ -1,6 +1,7 @@
 import { claude } from './claude.js'
 import { codex } from './codex.js'
 import { copilot } from './copilot.js'
+import { kiro } from './kiro.js'
 import { pi, omp } from './pi.js'
 import type { Provider, SessionSource } from './types.js'
 
@@ -49,7 +50,7 @@ async function loadCursorAgent(): Promise<Provider | null> {
   }
 }
 
-const coreProviders: Provider[] = [claude, codex, copilot, pi, omp]
+const coreProviders: Provider[] = [claude, codex, copilot, kiro, pi, omp]
 
 export async function getAllProviders(): Promise<Provider[]> {
   const [cursor, opencode, cursorAgent] = await Promise.all([loadCursor(), loadOpenCode(), loadCursorAgent()])

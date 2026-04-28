@@ -3,7 +3,7 @@ import { providers, getAllProviders } from '../src/providers/index.js'
 
 describe('provider registry', () => {
   it('has core providers registered synchronously', () => {
-    expect(providers.map(p => p.name)).toEqual(['claude', 'codex', 'copilot', 'pi', 'omp'])
+    expect(providers.map(p => p.name)).toEqual(['claude', 'codex', 'copilot', 'kiro', 'pi', 'omp'])
   })
 
   it('includes sqlite providers after async load', async () => {
@@ -62,7 +62,7 @@ describe('provider registry', () => {
   it('cursor model display names handle auto mode', async () => {
     const all = await getAllProviders()
     const cursor = all.find(p => p.name === 'cursor')!
-    expect(cursor.modelDisplayName('default')).toBe('Auto (Sonnet est.)')
+    expect(cursor.modelDisplayName('cursor-auto')).toBe('Cursor (auto)')
     expect(cursor.modelDisplayName('claude-4.5-opus-high-thinking')).toBe('Opus 4.5 (Thinking)')
     expect(cursor.modelDisplayName('grok-code-fast-1')).toBe('Grok Code Fast')
     expect(cursor.modelDisplayName('unknown-model')).toBe('unknown-model')

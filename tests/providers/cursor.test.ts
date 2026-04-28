@@ -16,8 +16,8 @@ describe('cursor provider', () => {
   })
 
   describe('model display names', () => {
-    it('maps default to Auto with estimation label', () => {
-      expect(cursorProvider.modelDisplayName('default')).toBe('Auto (Sonnet est.)')
+    it('maps cursor-auto to Cursor (auto) label', () => {
+      expect(cursorProvider.modelDisplayName('cursor-auto')).toBe('Cursor (auto)')
     })
 
     it('maps known models to readable names', () => {

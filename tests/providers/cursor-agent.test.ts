@@ -10,7 +10,7 @@ import type { ParsedProviderCall, Provider, SessionSource } from '../../src/prov
 import { isSqliteAvailable } from '../../src/sqlite.js'
 
 const CHARS_PER_TOKEN = 4
-const CURSOR_AGENT_DEFAULT_MODEL = 'claude-sonnet-4-5'
+const CURSOR_AGENT_DEFAULT_MODEL = 'cursor-agent-auto'
 const FIXED_UUID = '123e4567-e89b-12d3-a456-426614174000'
 
 const skipUnlessSqlite = isSqliteAvailable() ? describe : describe.skip
@@ -61,9 +61,9 @@ describe('cursor-agent provider', () => {
     expect(provider?.displayName).toBe('Cursor Agent')
   })
 
-  it('maps default model to auto with estimation label', () => {
+  it('maps default model to Cursor (auto) label', () => {
     const provider = createCursorAgentProvider('/tmp/nonexistent-cursor-agent-fixture')
-    expect(provider.modelDisplayName('default')).toBe('Auto (Sonnet est.)')
+    expect(provider.modelDisplayName('cursor-agent-auto')).toBe('Cursor (auto)')
   })
 
   it('maps known models and appends estimation label', () => {
