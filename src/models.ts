@@ -143,6 +143,8 @@ const BUILTIN_ALIASES: Record<string, string> = {
   'cursor-agent-auto':             'claude-sonnet-4-5',
   'copilot-auto':                  'claude-sonnet-4-5',
   'kiro-auto':                     'claude-sonnet-4-5',
+  'cline-auto':                    'claude-sonnet-4-5',
+  'openclaw-auto':                 'claude-sonnet-4-5',
   // Cursor emits dot-version tier-last names
   'claude-4.6-sonnet':              'claude-sonnet-4-6',
   'claude-4.5-sonnet-thinking':     'claude-sonnet-4-5',
@@ -222,6 +224,8 @@ const autoModelNames: Record<string, string> = {
   'cursor-agent-auto': 'Cursor (auto)',
   'copilot-auto': 'Copilot (auto)',
   'kiro-auto': 'Kiro (auto)',
+  'cline-auto': 'Cline (auto)',
+  'openclaw-auto': 'OpenClaw (auto)',
 }
 
 export function getShortModelName(model: string): string {
