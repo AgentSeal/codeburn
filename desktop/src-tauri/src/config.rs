@@ -1,15 +1,10 @@
 use std::fs;
-use std::io::{self, Write};
-use std::os::fd::AsRawFd;
-use std::os::unix::fs::OpenOptionsExt;
+use std::io::Write;
 use std::path::PathBuf;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-/// Mirror of the CLI's `~/.config/codeburn/config.json` format. Only fields we touch are
-/// modelled; foreign keys round-trip untouched through `serde_json::Value` so we never
-/// clobber settings we don't understand.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct CurrencyConfig {
     #[serde(default, flatten)]
@@ -26,6 +21,7 @@ fn config_path() -> PathBuf {
     codeburn_config_dir().join("config.json")
 }
 
+#[cfg(unix)]
 fn lock_path() -> PathBuf {
     codeburn_config_dir().join(".config.lock")
 }
@@ -38,29 +34,13 @@ impl CurrencyConfig {
         }
     }
 
-    /// Atomic read-modify-write under an on-disk flock so a concurrent `codeburn currency`
-    /// from a terminal can't race us. Same pattern as the Swift `SafeFile.withExclusiveLock`
-    /// used by the macOS app so the two clients never lose each other's edits.
     pub fn set_currency(&mut self, code: &str, symbol: &str) -> Result<()> {
         fs::create_dir_all(codeburn_config_dir())
             .with_context(|| "failed to create ~/.config/codeburn")?;
 
-        let lock = fs::OpenOptions::new()
-            .create(true)
-            .read(true)
-            .write(true)
-            .mode(0o600)
-            .open(lock_path())
-            .with_context(|| "failed to open config lock")?;
+        #[cfg(unix)]
+        let _lock = unix_lock::acquire()?;
 
-        let fd = lock.as_raw_fd();
-        let ret = unsafe { libc_flock(fd, LOCK_EX) };
-        if ret != 0 {
-            return Err(anyhow!("flock failed: {}", io::Error::last_os_error()));
-        }
-
-        // Re-read under the lock so we don't clobber writes that landed between our initial
-        // load and now.
         let mut disk: serde_json::Value = match fs::read(config_path()) {
             Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_else(|_| serde_json::json!({})),
             Err(_) => serde_json::json!({}),
@@ -84,29 +64,44 @@ impl CurrencyConfig {
                 .create(true)
                 .write(true)
                 .truncate(true)
-                .mode(0o600)
                 .open(&tmp)?;
             file.write_all(&serialized)?;
             file.flush()?;
         }
         fs::rename(&tmp, config_path())?;
 
-        let _ = unsafe { libc_flock(fd, LOCK_UN) };
-        // Keep our cached view in sync.
         *self = serde_json::from_value(disk).unwrap_or_default();
         Ok(())
     }
-
 }
 
-// Tiny POSIX flock binding so we don't pull in the whole libc crate for one syscall.
-const LOCK_EX: i32 = 2;
-const LOCK_UN: i32 = 8;
+#[cfg(unix)]
+mod unix_lock {
+    use std::fs;
+    use std::os::fd::AsRawFd;
+    use anyhow::{anyhow, Context, Result};
 
-extern "C" {
-    fn flock(fd: i32, operation: i32) -> i32;
-}
+    pub struct Guard {
+        _file: fs::File,
+    }
 
-unsafe fn libc_flock(fd: i32, op: i32) -> i32 {
-    flock(fd, op)
+    pub fn acquire() -> Result<Guard> {
+        let file = fs::OpenOptions::new()
+            .create(true)
+            .read(true)
+            .write(true)
+            .open(super::lock_path())
+            .with_context(|| "failed to open config lock")?;
+
+        let fd = file.as_raw_fd();
+        let ret = unsafe { flock(fd, 2) };
+        if ret != 0 {
+            return Err(anyhow!("flock failed: {}", std::io::Error::last_os_error()));
+        }
+        Ok(Guard { _file: file })
+    }
+
+    extern "C" {
+        fn flock(fd: i32, operation: i32) -> i32;
+    }
 }
