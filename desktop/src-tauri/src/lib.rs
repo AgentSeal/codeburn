@@ -90,7 +90,11 @@ fn build_tray_tauri(app: &AppHandle) -> tauri::Result<()> {
     let quit = MenuItem::with_id(app, "quit", "Quit CodeBurn", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&refresh, &report, &quit])?;
 
+    let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/icon.png"))
+        .expect("failed to load tray icon");
+
     TrayIconBuilder::with_id("codeburn-tray")
+        .icon(icon)
         .tooltip("CodeBurn")
         .menu(&menu)
         .show_menu_on_left_click(false)
