@@ -59,9 +59,7 @@ pub fn run() {
             init_tray_linux(app.handle().clone(), linux_tray);
 
             if let Some(window) = app.get_webview_window("popover") {
-                let _ = window.center();
-                let _ = window.show();
-                let _ = window.set_focus();
+                let _ = window.hide();
             }
 
             Ok(())
@@ -109,14 +107,23 @@ fn build_tray_tauri(app: &AppHandle) -> tauri::Result<()> {
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
-            if let TrayIconEvent::Click {
-                button: MouseButton::Left,
-                button_state: MouseButtonState::Up,
-                position,
-                ..
-            } = event
-            {
-                toggle_popover(tray.app_handle(), Some((position.x as i32, position.y as i32)));
+            match event {
+                TrayIconEvent::Click {
+                    button: MouseButton::Left,
+                    button_state: MouseButtonState::Up,
+                    position,
+                    ..
+                } => {
+                    toggle_popover(tray.app_handle(), Some((position.x as i32, position.y as i32)));
+                }
+                TrayIconEvent::DoubleClick {
+                    button: MouseButton::Left,
+                    position,
+                    ..
+                } => {
+                    toggle_popover(tray.app_handle(), Some((position.x as i32, position.y as i32)));
+                }
+                _ => {}
             }
         })
         .build(app)?;
@@ -170,8 +177,9 @@ fn toggle_popover(app: &AppHandle, anchor: Option<(i32, i32)>) {
         let _ = window.hide();
         return;
     }
-    position_popover(&window, anchor);
     let _ = window.show();
+    let _ = window.unminimize();
+    position_popover(&window, anchor);
     let _ = window.set_focus();
 }
 
