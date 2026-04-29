@@ -791,3 +791,15 @@ html, body, #root {
   cursor: pointer;
   padding: 4px;
 }
+
+.export-btn {
+  background: rgba(0, 0, 0, 0.04);
+  border: 0;
+  border-radius: var(--radius-md);
+  padding: 5px 8px;
+  font-size: 10px;
+  font-weight: 500;
+  cursor: pointer;
+  color: var(--text-secondary);
+}
+.export-btn:hover { background: rgba(0, 0, 0, 0.08); color: var(--text-primary); }

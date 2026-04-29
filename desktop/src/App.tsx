@@ -5,7 +5,7 @@ import { listen } from '@tauri-apps/api/event'
 import type { MenubarPayload } from './lib/payload'
 import { placeholderPayload } from './lib/payload'
 import type { CurrencyState } from './lib/currency'
-import { USD, formatCompactCurrency, formatCurrency } from './lib/currency'
+import { USD, formatCompactCurrency } from './lib/currency'
 import { PayloadCache } from './lib/cache'
 import { AgentTabStrip } from './components/AgentTabStrip'
 import type { Provider } from './components/AgentTabStrip'
@@ -20,27 +20,17 @@ import { ActivitySection } from './components/ActivitySection'
 import { LoadingOverlay } from './components/LoadingOverlay'
 import { EmptyProviderState } from './components/EmptyProviderState'
 import { StarBanner } from './components/StarBanner'
+import { HeroSection } from './components/HeroSection'
+import { PeriodTabs, PERIOD_LABELS } from './components/PeriodTabs'
+import type { Period } from './components/PeriodTabs'
 
 const payloadCache = new PayloadCache<MenubarPayload>()
-
-type Period = 'today' | 'week' | '30days' | 'month' | 'all'
-
-const PERIODS: Array<{ id: Period; label: string }> = [
-  { id: 'today',   label: 'Today'   },
-  { id: 'week',    label: '7 Days'  },
-  { id: '30days',  label: '30 Days' },
-  { id: 'month',   label: 'Month'   },
-  { id: 'all',     label: 'All'     },
-]
-
-const PERIOD_LABELS: Record<Period, string> = {
-  today: 'Today', week: '7 Days', '30days': '30 Days', month: 'Month', all: 'All',
-}
 
 const REFRESH_INTERVAL_MS = 60_000
 
 export function App() {
   const [payload, setPayload] = useState<MenubarPayload>(placeholderPayload)
+  const [todayPayload, setTodayPayload] = useState<MenubarPayload>(placeholderPayload)
   const [period, setPeriod] = useState<Period>('today')
   const [provider, setProvider] = useState<Provider>('all')
   const [currency, setCurrency] = useState<CurrencyState>(USD)
@@ -73,6 +63,9 @@ export function App() {
       })
       payloadCache.set(period, provider, json)
       setPayload(json)
+      if (period === 'today' && provider === 'all') {
+        setTodayPayload(json)
+      }
       invoke('set_tray_title', {
         title: formatCompactCurrency(json.current.cost, currency),
       }).catch(() => {})
@@ -108,6 +101,10 @@ export function App() {
     invoke('open_terminal_command', { args: ['report'] }).catch(console.error)
   }
 
+  const exportData = (format: 'csv' | 'json') => {
+    invoke('open_terminal_command', { args: ['export', '-f', format] }).catch(console.error)
+  }
+
   const isFilteredEmpty = provider !== 'all' && payload.current.cost <= 0 && payload.current.calls === 0
 
   return (
@@ -123,35 +120,14 @@ export function App() {
       <AgentTabStrip
         selected={provider}
         onSelect={setProvider}
-        payload={payload}
+        payload={todayPayload}
         currency={currency}
       />
 
       <div className="main-content">
-        <section className="hero">
-          <div className="hero-label">
-            <span className="hero-dot" /> {payload.current.label}
-          </div>
-          <div className="hero-amount">
-            {formatCurrency(payload.current.cost, currency)}
-          </div>
-          <div className="hero-meta">
-            <span>{payload.current.calls.toLocaleString()} calls</span>
-            <span>{payload.current.sessions} sessions</span>
-          </div>
-        </section>
+        <HeroSection payload={payload} currency={currency} />
 
-        <nav className="period-tabs">
-          {PERIODS.map(p => (
-            <button
-              key={p.id}
-              className={`period ${period === p.id ? 'period-active' : ''}`}
-              onClick={() => setPeriod(p.id)}
-            >
-              {p.label}
-            </button>
-          ))}
-        </nav>
+        <PeriodTabs selected={period} onSelect={setPeriod} />
 
         {isFilteredEmpty ? (
           <EmptyProviderState provider={provider} period={period} />
@@ -218,12 +194,14 @@ export function App() {
           value={currency.code}
           onChange={e => applyCurrency(e.target.value)}
         >
-          {['USD', 'GBP', 'EUR', 'AUD', 'CAD', 'JPY', 'CHF', 'INR', 'BRL', 'SEK', 'SGD', 'HKD', 'KRW', 'MXN', 'ZAR', 'DKK']
+          {['USD', 'GBP', 'EUR', 'AUD', 'CAD', 'NZD', 'JPY', 'CHF', 'INR', 'BRL', 'SEK', 'SGD', 'HKD', 'KRW', 'MXN', 'ZAR', 'DKK']
             .map(c => <option key={c} value={c}>{c}</option>)}
         </select>
         <button className="refresh" onClick={() => refresh(true)} disabled={loading}>
           {loading ? '...' : 'Refresh'}
         </button>
+        <button className="export-btn" onClick={() => exportData('csv')} title="Export CSV">CSV</button>
+        <button className="export-btn" onClick={() => exportData('json')} title="Export JSON">JSON</button>
         <button className="report" onClick={openFullReport}>Open Full Report</button>
         <button className="quit" onClick={() => invoke('quit_app').catch(console.error)} title="Quit CodeBurn">×</button>
       </footer>
