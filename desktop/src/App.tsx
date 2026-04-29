@@ -10,6 +10,11 @@ import { PayloadCache } from './lib/cache'
 import { AgentTabStrip } from './components/AgentTabStrip'
 import type { Provider } from './components/AgentTabStrip'
 import { ModelsSection } from './components/ModelsSection'
+import { InsightPills, type InsightMode } from './components/InsightPills'
+import { TrendInsight } from './components/TrendInsight'
+import { ForecastInsight } from './components/ForecastInsight'
+import { PulseInsight } from './components/PulseInsight'
+import { StatsInsight } from './components/StatsInsight'
 
 const payloadCache = new PayloadCache<MenubarPayload>()
 
@@ -32,6 +37,7 @@ export function App() {
   const [currency, setCurrency] = useState<CurrencyState>(USD)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [insight, setInsight] = useState<InsightMode>('trend')
 
   const refresh = useCallback(async (includeOptimize: boolean) => {
     if (!includeOptimize) {
@@ -140,6 +146,26 @@ export function App() {
           </button>
         ))}
       </nav>
+
+      <div className="insight-area">
+        <InsightPills
+          selected={insight}
+          onSelect={setInsight}
+          modes={['trend', 'forecast', 'pulse', 'stats']}
+        />
+        {insight === 'trend' && (
+          <TrendInsight days={payload.history.daily} currency={currency} />
+        )}
+        {insight === 'forecast' && (
+          <ForecastInsight days={payload.history.daily} currency={currency} />
+        )}
+        {insight === 'pulse' && (
+          <PulseInsight payload={payload} currency={currency} />
+        )}
+        {insight === 'stats' && (
+          <StatsInsight payload={payload} currency={currency} />
+        )}
+      </div>
 
       {!loading && payload.current.calls === 0 && payload.current.sessions === 0 ? (
         <section className="empty-state">
