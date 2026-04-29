@@ -59,7 +59,9 @@ pub fn run() {
             init_tray_linux(app.handle().clone(), linux_tray);
 
             if let Some(window) = app.get_webview_window("popover") {
-                let _ = window.hide();
+                let _ = window.center();
+                let _ = window.show();
+                let _ = window.set_focus();
             }
 
             Ok(())
