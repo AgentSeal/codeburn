@@ -95,14 +95,6 @@ impl LinuxTrayHandle {
         }
     }
 
-    pub async fn set_title(&self, title: String) {
-        let handle = match self.inner.lock() {
-            Ok(guard) => guard.clone(),
-            Err(_) => return,
-        };
-        let Some(handle) = handle else { return };
-        let _ = handle.update(move |t| t.title = title).await;
-    }
 }
 
 /// Decode the bundled tray.png into ARGB32 pixels that the SNI spec expects.

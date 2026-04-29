@@ -77,7 +77,6 @@ pub fn run() {
             commands::fetch_payload,
             commands::set_currency,
             commands::open_terminal_command,
-            commands::set_tray_title,
             commands::quit_app,
         ])
         .run(tauri::generate_context!())
@@ -255,29 +254,6 @@ mod commands {
     pub fn open_terminal_command(app: AppHandle, args: Vec<String>) -> Result<(), String> {
         let args: Vec<&str> = args.iter().map(String::as_str).collect();
         crate::cli::spawn_in_terminal(&app, &args).map_err(|e| e.to_string())
-    }
-
-    /// Update the text shown next to the tray icon (e.g. "🔥 $24.73"). On Linux this uses
-    /// the SNI `title` field that AppIndicator hosts render beside the icon. On other
-    /// platforms it sets the TrayIcon title/tooltip. Called from the frontend after each
-    /// payload fetch so the ambient number stays fresh.
-    #[tauri::command]
-    pub async fn set_tray_title(
-        _app: AppHandle,
-        title: String,
-        _state: State<'_, AppState>,
-    ) -> Result<(), String> {
-        #[cfg(target_os = "linux")]
-        {
-            _state.linux_tray.set_title(title).await;
-        }
-        #[cfg(not(target_os = "linux"))]
-        {
-            if let Some(tray) = _app.tray_by_id("codeburn-tray") {
-                let _ = tray.set_title(Some(title));
-            }
-        }
-        Ok(())
     }
 
     #[tauri::command]

@@ -5,7 +5,7 @@ import { listen } from '@tauri-apps/api/event'
 import type { MenubarPayload } from './lib/payload'
 import { placeholderPayload } from './lib/payload'
 import type { CurrencyState } from './lib/currency'
-import { USD, formatCompactCurrency } from './lib/currency'
+import { USD } from './lib/currency'
 import { PayloadCache } from './lib/cache'
 import { AgentTabStrip } from './components/AgentTabStrip'
 import type { Provider } from './components/AgentTabStrip'
@@ -66,16 +66,13 @@ export function App() {
       if (period === 'today' && provider === 'all') {
         setTodayPayload(json)
       }
-      invoke('set_tray_title', {
-        title: formatCompactCurrency(json.current.cost, currency),
-      }).catch(() => {})
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
       payloadCache.clearInFlight(period, provider)
       setLoading(false)
     }
-  }, [period, provider, currency])
+  }, [period, provider])
 
   useEffect(() => {
     refresh(true)
@@ -198,10 +195,17 @@ export function App() {
             .map(c => <option key={c} value={c}>{c}</option>)}
         </select>
         <button className="refresh" onClick={() => refresh(true)} disabled={loading}>
-          {loading ? '...' : 'Refresh'}
+          {loading ? '...' : '↻'}
         </button>
-        <button className="export-btn" onClick={() => exportData('csv')} title="Export CSV">CSV</button>
-        <button className="export-btn" onClick={() => exportData('json')} title="Export JSON">JSON</button>
+        <select
+          className="export-picker"
+          value=""
+          onChange={e => { if (e.target.value) exportData(e.target.value as 'csv' | 'json'); e.target.value = '' }}
+        >
+          <option value="" disabled>Export</option>
+          <option value="csv">CSV (folder)</option>
+          <option value="json">JSON</option>
+        </select>
         <button className="report" onClick={openFullReport}>Open Full Report</button>
         <button className="quit" onClick={() => invoke('quit_app').catch(console.error)} title="Quit CodeBurn">×</button>
       </footer>
