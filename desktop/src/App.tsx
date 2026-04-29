@@ -6,6 +6,9 @@ import type { MenubarPayload } from './lib/payload'
 import { placeholderPayload } from './lib/payload'
 import type { CurrencyState } from './lib/currency'
 import { USD, formatCompactCurrency, formatCurrency } from './lib/currency'
+import { PayloadCache } from './lib/cache'
+
+const payloadCache = new PayloadCache<MenubarPayload>()
 
 type Period = 'today' | 'week' | '30days' | 'month' | 'all'
 
@@ -31,6 +34,20 @@ export function App() {
   const [error, setError] = useState<string | null>(null)
 
   const refresh = useCallback(async (includeOptimize: boolean) => {
+    if (!includeOptimize) {
+      const cached = payloadCache.get(period, provider)
+      if (cached) {
+        setPayload(cached)
+        return
+      }
+    }
+
+    if (payloadCache.isInFlight(period, provider)) return
+
+    const stale = payloadCache.getStale(period, provider)
+    if (stale) setPayload(stale)
+
+    payloadCache.markInFlight(period, provider)
     setLoading(true)
     setError(null)
     try {
@@ -39,15 +56,15 @@ export function App() {
         provider,
         includeOptimize,
       })
+      payloadCache.set(period, provider, json)
       setPayload(json)
-      // Push the hero cost to the tray label so the ambient number next to the icon
-      // (Linux SNI title / Win tray title) matches what the popover shows.
       invoke('set_tray_title', {
         title: formatCompactCurrency(json.current.cost, currency),
       }).catch(() => {})
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
+      payloadCache.clearInFlight(period, provider)
       setLoading(false)
     }
   }, [period, provider, currency])
