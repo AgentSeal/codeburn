@@ -30,7 +30,7 @@
     },
     "trayIcon": {
       "id": "codeburn-tray",
-      "iconPath": "icons/icon.png",
+      "iconPath": "icons/tray.png",
       "iconAsTemplate": false
     }
   },

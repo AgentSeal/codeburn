@@ -126,7 +126,7 @@ export function TrendInsight({ days, currency }: Props) {
               <div key={m.name} className="trend-tooltip-model">
                 <span className="trend-tooltip-dot" />
                 <span className="trend-tooltip-name">{m.name}</span>
-                <span className="trend-tooltip-tokens">{formatTokens(m.totalTokens ?? 0)} tok</span>
+                <span className="trend-tooltip-tokens">{formatTokens((m.totalTokens ?? 0) || ((m.inputTokens ?? 0) + (m.outputTokens ?? 0)))} tok</span>
               </div>
             ))}
           </div>

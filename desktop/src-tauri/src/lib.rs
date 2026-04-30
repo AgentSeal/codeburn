@@ -5,6 +5,9 @@ mod fx;
 mod tray_linux;
 
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicI64, Ordering};
+
+static LAST_HIDDEN_MS: AtomicI64 = AtomicI64::new(0);
 
 use tauri::{AppHandle, Manager, WindowEvent};
 #[cfg(not(target_os = "linux"))]
@@ -71,6 +74,8 @@ pub fn run() {
                     let _ = window.hide();
                 }
                 WindowEvent::Focused(false) => {
+                    let now = now_ms();
+                    LAST_HIDDEN_MS.store(now, Ordering::Relaxed);
                     let _ = window.hide();
                 }
                 _ => {}
@@ -175,12 +180,26 @@ fn parse_click(payload: &str) -> Option<(i32, i32)> {
 /// centered horizontally on the click and just below it (Linux path, anchored to the
 /// StatusNotifier Activate coordinates). When `None`, snap it to the top-right of the
 /// primary monitor (non-Linux fallback + menu-driven invocations).
+const TOGGLE_DEBOUNCE_MS: i64 = 300;
+
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64
+}
+
 fn toggle_popover(app: &AppHandle, anchor: Option<(i32, i32)>) {
     let Some(window) = app.get_webview_window("popover") else {
         return;
     };
     if window.is_visible().unwrap_or(false) {
+        LAST_HIDDEN_MS.store(now_ms(), Ordering::Relaxed);
         let _ = window.hide();
+        return;
+    }
+    let last = LAST_HIDDEN_MS.load(Ordering::Relaxed);
+    if now_ms() - last < TOGGLE_DEBOUNCE_MS {
         return;
     }
     let _ = window.show();
