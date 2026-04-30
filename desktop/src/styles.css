@@ -65,6 +65,7 @@ html, body, #root {
   height: 100vh;
   overflow: hidden;
   border-radius: var(--radius-lg);
+  background: var(--surface);
 }
 
 /* ---- header ---- */
