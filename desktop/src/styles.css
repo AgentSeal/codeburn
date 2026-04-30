@@ -45,6 +45,19 @@
   color-scheme: dark;
 }
 
+:root[data-theme="dark"] select,
+:root[data-theme="dark"] option {
+  background-color: #2A2320;
+  color: #FAF7F3;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) select,
+  :root:not([data-theme="light"]) option {
+    background-color: #2A2320;
+    color: #FAF7F3;
+  }
+}
+
 * { box-sizing: border-box; }
 
 ::-webkit-scrollbar { width: 6px; }
