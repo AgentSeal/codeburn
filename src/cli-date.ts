@@ -12,7 +12,11 @@ function parseLocalDate(s: string): Date {
     throw new Error(`Invalid date format "${s}": expected YYYY-MM-DD`)
   }
   const [y, m, d] = s.split('-').map(Number) as [number, number, number]
-  return new Date(y, m - 1, d)
+  const parsed = new Date(y, m - 1, d)
+  if (parsed.getFullYear() !== y || parsed.getMonth() !== m - 1 || parsed.getDate() !== d) {
+    throw new Error(`Invalid date "${s}": month or day out of range`)
+  }
+  return parsed
 }
 
 export function parseDateRangeFlags(from: string | undefined, to: string | undefined): DateRange | null {
