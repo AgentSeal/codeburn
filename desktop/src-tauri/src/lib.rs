@@ -98,9 +98,10 @@ fn build_tray_tauri(app: &AppHandle) -> tauri::Result<()> {
     };
 
     let refresh = MenuItem::with_id(app, "refresh", "Refresh", true, None::<&str>)?;
+    let theme = MenuItem::with_id(app, "toggle_theme", "Toggle Dark/Light", true, None::<&str>)?;
     let report = MenuItem::with_id(app, "report", "Open Full Report", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit CodeBurn", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&refresh, &report, &quit])?;
+    let menu = Menu::with_items(app, &[&refresh, &theme, &report, &quit])?;
 
     tray.set_menu(Some(menu))?;
     tray.set_show_menu_on_left_click(false)?;
@@ -110,6 +111,11 @@ fn build_tray_tauri(app: &AppHandle) -> tauri::Result<()> {
         "refresh" => {
             if let Some(window) = app.get_webview_window("popover") {
                 let _ = window.emit("codeburn://refresh", ());
+            }
+        }
+        "toggle_theme" => {
+            if let Some(window) = app.get_webview_window("popover") {
+                let _ = window.emit("codeburn://toggle-theme", ());
             }
         }
         "report" => {

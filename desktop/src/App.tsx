@@ -85,6 +85,20 @@ export function App() {
     return () => { unlisten.then(fn => fn()) }
   }, [refresh])
 
+  useEffect(() => {
+    const saved = localStorage.getItem('codeburn-theme')
+    if (saved) document.documentElement.setAttribute('data-theme', saved)
+
+    const unlisten = listen('codeburn://toggle-theme', () => {
+      const current = document.documentElement.getAttribute('data-theme')
+      const isDark = current === 'dark' || (!current && window.matchMedia('(prefers-color-scheme: dark)').matches)
+      const next = isDark ? 'light' : 'dark'
+      document.documentElement.setAttribute('data-theme', next)
+      localStorage.setItem('codeburn-theme', next)
+    })
+    return () => { unlisten.then(fn => fn()) }
+  }, [])
+
   const applyCurrency = async (code: string) => {
     try {
       const applied = await invoke<CurrencyState>('set_currency', { code })

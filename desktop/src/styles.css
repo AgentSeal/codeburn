@@ -27,13 +27,21 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --surface: #1C1816;
     --surface-elevated: #2A2320;
     --text-primary: #FAF7F3;
     --text-secondary: #B5A49A;
     --text-tertiary: #8A7A70;
   }
+}
+
+:root[data-theme="dark"] {
+  --surface: #1C1816;
+  --surface-elevated: #2A2320;
+  --text-primary: #FAF7F3;
+  --text-secondary: #B5A49A;
+  --text-tertiary: #8A7A70;
 }
 
 * { box-sizing: border-box; }
