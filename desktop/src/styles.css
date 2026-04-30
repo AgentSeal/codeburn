@@ -42,12 +42,13 @@ html, body, #root {
   margin: 0;
   padding: 0;
   height: 100%;
-  background: var(--surface);
+  background: transparent;
   color: var(--text-primary);
   font-family: var(--font-sans);
   font-size: 11.5px;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  overflow: hidden;
 }
 
 .popover {
@@ -55,6 +56,7 @@ html, body, #root {
   flex-direction: column;
   height: 100vh;
   overflow: hidden;
+  border-radius: var(--radius-lg);
 }
 
 /* ---- header ---- */
@@ -313,19 +315,39 @@ html, body, #root {
 /* ---- footer ---- */
 .footer {
   display: flex;
+  align-items: center;
   gap: var(--spacing-sm);
   padding: var(--spacing-sm) var(--spacing-md);
   border-top: 1px solid rgba(0, 0, 0, 0.06);
   background: var(--surface-elevated);
 }
-.currency-picker, .refresh {
+.currency-picker,
+.refresh,
+.export-picker {
+  appearance: none;
+  -webkit-appearance: none;
   background: rgba(0, 0, 0, 0.04);
-  border: 0;
-  border-radius: var(--radius-md);
-  padding: 5px 8px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: var(--radius-lg);
+  padding: 5px 10px;
   font-size: 10.5px;
+  font-family: var(--font-sans);
   cursor: pointer;
   color: var(--text-primary);
+  transition: background 0.15s;
+}
+.currency-picker:hover,
+.refresh:hover,
+.export-picker:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+.refresh {
+  padding: 5px 8px;
+  font-size: 13px;
+  line-height: 1;
+}
+.export-picker {
+  padding-right: 6px;
 }
 .report {
   flex: 1;
@@ -334,19 +356,25 @@ html, body, #root {
   color: #fff;
   font-size: 11px;
   font-weight: 600;
-  border-radius: var(--radius-md);
-  padding: 6px 10px;
+  border-radius: var(--radius-lg);
+  padding: 6px 12px;
   cursor: pointer;
+  font-family: var(--font-sans);
+  transition: background 0.15s;
+}
+.report:hover {
+  background: var(--ember-deep);
 }
 .quit {
   background: rgba(0, 0, 0, 0.04);
-  border: 0;
-  border-radius: var(--radius-md);
-  padding: 5px 9px;
-  font-size: 14px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: var(--radius-lg);
+  padding: 5px 8px;
+  font-size: 13px;
   line-height: 1;
   cursor: pointer;
   color: var(--text-secondary);
+  transition: background 0.15s, color 0.15s;
 }
 .quit:hover { background: rgba(0, 0, 0, 0.08); color: var(--text-primary); }
 

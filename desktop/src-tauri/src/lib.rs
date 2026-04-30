@@ -65,12 +65,15 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            if let WindowEvent::CloseRequested { api, .. } = event {
-                // Keep the popover alive between clicks. Hiding avoids spawn cost + preserves
-                // scroll position + in-flight data. User exits via the in-popover quit button
-                // or (on non-Linux) the tray menu.
-                api.prevent_close();
-                let _ = window.hide();
+            match event {
+                WindowEvent::CloseRequested { api, .. } => {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+                WindowEvent::Focused(false) => {
+                    let _ = window.hide();
+                }
+                _ => {}
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -187,11 +190,11 @@ fn toggle_popover(app: &AppHandle, anchor: Option<(i32, i32)>) {
 }
 
 fn position_popover(window: &tauri::WebviewWindow, anchor: Option<(i32, i32)>) {
-    // Matches desktop/src-tauri/tauri.conf.json popover dimensions (logical pixels).
     const POPOVER_WIDTH_LOGICAL: f64 = 360.0;
     const POPOVER_HEIGHT_LOGICAL: f64 = 660.0;
-    const MARGIN_LOGICAL: f64 = 8.0;
+    const MARGIN_LOGICAL: f64 = 12.0;
     const TOP_PANEL_LOGICAL: f64 = 36.0;
+    const TASKBAR_LOGICAL: f64 = 52.0;
 
     let Ok(Some(monitor)) = window.primary_monitor() else {
         return;
@@ -202,6 +205,7 @@ fn position_popover(window: &tauri::WebviewWindow, anchor: Option<(i32, i32)>) {
     let pop_h = (POPOVER_HEIGHT_LOGICAL * scale) as i32;
     let margin = (MARGIN_LOGICAL * scale) as i32;
     let panel = (TOP_PANEL_LOGICAL * scale) as i32;
+    let taskbar = (TASKBAR_LOGICAL * scale) as i32;
     let screen_w = screen.width as i32;
     let screen_h = screen.height as i32;
 
@@ -214,17 +218,18 @@ fn position_popover(window: &tauri::WebviewWindow, anchor: Option<(i32, i32)>) {
             let clamped_x = desired_x.clamp(margin, max_x);
             let below_midpoint = click_y > screen_h / 2;
             let desired_y = if below_midpoint {
-                click_y - pop_h - margin
+                click_y - pop_h - taskbar
             } else {
                 click_y + margin
             };
-            let max_y = (screen_h - pop_h - margin).max(margin);
+            let max_y = (screen_h - pop_h - taskbar).max(margin);
             let clamped_y = desired_y.clamp(margin, max_y);
             (clamped_x, clamped_y)
         }
         None => {
             let x = (screen_w - pop_w - margin).max(0);
-            (x, panel)
+            let y = (screen_h - pop_h - taskbar).max(panel);
+            (x, y)
         }
     };
 
