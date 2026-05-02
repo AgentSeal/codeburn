@@ -11,6 +11,7 @@ import type { Provider, SessionSource, SessionParser, ParsedProviderCall } from 
 
 const modelDisplayNames: Record<string, string> = {
   'codex-auto-review': 'Codex Auto Review',
+  'gpt-5.5': 'GPT-5.5',
   'gpt-5.4-mini': 'GPT-5.4 Mini',
   'gpt-5.4': 'GPT-5.4',
   'gpt-5.3-codex': 'GPT-5.3 Codex',

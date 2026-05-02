@@ -51,6 +51,7 @@ describe('provider registry', () => {
     expect(codex.modelDisplayName('gpt-5.4')).toBe('GPT-5.4')
     expect(codex.modelDisplayName('gpt-5.4-mini')).toBe('GPT-5.4 Mini')
     expect(codex.modelDisplayName('gpt-5.3-codex')).toBe('GPT-5.3 Codex')
+    expect(codex.modelDisplayName('gpt-5.5')).toBe('GPT-5.5')
   })
 
   it('claude model display names are human-readable', () => {
