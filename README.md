@@ -60,6 +60,7 @@ Or run directly without installing:
 ```bash
 npx codeburn
 bunx codeburn
+dx codeburn
 ```
 
 ## Usage
