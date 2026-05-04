@@ -134,6 +134,23 @@
   opacity: 0.6;
   padding-bottom: 2px;
 }
+/* ---- table headers ---- */
+.codeburn-table-header {
+  spacing: 6px;
+  padding: 2px 0 4px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+.codeburn-th {
+  font-size: 10px;
+  font-weight: 600;
+  opacity: 0.45;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.codeburn-th-right {
+  text-align: right;
+}
+
 .codeburn-activity-rows {
   spacing: 0;
 }
@@ -235,9 +252,36 @@
 .codeburn-footer-btn:hover {
   background: rgba(255, 255, 255, 0.1);
 }
+.codeburn-currency-box {
+  spacing: 2px;
+}
 .codeburn-currency-btn {
   font-family: monospace;
   min-width: 62px;
+}
+.codeburn-currency-picker {
+  background: rgba(30, 30, 30, 0.95);
+  border-radius: 8px;
+  padding: 4px;
+  spacing: 1px;
+  max-height: 200px;
+}
+.codeburn-currency-item {
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: monospace;
+  background: transparent;
+  border: none;
+  text-align: left;
+}
+.codeburn-currency-item:hover {
+  background: rgba(255, 140, 66, 0.12);
+}
+.codeburn-currency-item-active {
+  background: rgba(255, 140, 66, 0.2);
+  color: #ff8c42;
+  font-weight: 600;
 }
 .codeburn-footer-cta {
   background: #c9521d;
@@ -428,4 +472,10 @@
 .codeburn-light .codeburn-activity-row,
 .codeburn-light .codeburn-model-row {
   border-bottom-color: rgba(0, 0, 0, 0.06);
+}
+.codeburn-light .codeburn-currency-picker {
+  background: rgba(245, 245, 245, 0.98);
+}
+.codeburn-light .codeburn-table-header {
+  border-bottom-color: rgba(0, 0, 0, 0.1);
 }

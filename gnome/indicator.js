@@ -334,13 +334,28 @@ class CodeBurnIndicator extends PanelMenu.Button {
   _buildFooter() {
     const footer = new St.BoxLayout({ style_class: 'codeburn-footer' });
 
+    const currencyBox = new St.BoxLayout({ vertical: true, style_class: 'codeburn-currency-box' });
     this._currencyBtn = new St.Button({
       label: `${this._currency.code} ⌄`,
       style_class: 'codeburn-footer-btn codeburn-currency-btn',
       can_focus: true,
     });
-    this._currencyBtn.connect('clicked', () => this._cycleCurrency());
-    footer.add_child(this._currencyBtn);
+    this._currencyBtn.connect('clicked', () => this._toggleCurrencyPicker());
+    currencyBox.add_child(this._currencyBtn);
+    this._currencyPicker = new St.BoxLayout({ vertical: true, style_class: 'codeburn-currency-picker', visible: false });
+    for (const c of CURRENCIES) {
+      const item = new St.Button({ label: `${c.symbol}${c.code}`, style_class: 'codeburn-currency-item', can_focus: true });
+      if (c.code === this._currency.code) item.add_style_class_name('codeburn-currency-item-active');
+      item.connect('clicked', () => {
+        this._setCurrency(c.code);
+        this._currencyPicker.hide();
+        this._currencyPicker.get_children().forEach(ch => ch.remove_style_class_name('codeburn-currency-item-active'));
+        item.add_style_class_name('codeburn-currency-item-active');
+      });
+      this._currencyPicker.add_child(item);
+    }
+    currencyBox.add_child(this._currencyPicker);
+    footer.add_child(currencyBox);
 
     const refreshBtn = new St.Button({ label: 'Refresh', style_class: 'codeburn-footer-btn', can_focus: true, x_expand: true });
     refreshBtn.connect('clicked', () => this._refresh(true));
@@ -532,6 +547,12 @@ class CodeBurnIndicator extends PanelMenu.Button {
   _renderActivityView() {
     const current = this._payload?.current ?? {};
     this._contentArea.add_child(this._sectionTitle('Activity'));
+    const actHeader = new St.BoxLayout({ style_class: 'codeburn-table-header' });
+    actHeader.add_child(new St.Label({ text: 'Name', style_class: 'codeburn-th', x_expand: true }));
+    actHeader.add_child(new St.Label({ text: 'Cost', style_class: 'codeburn-th codeburn-th-right', min_width: 64 }));
+    actHeader.add_child(new St.Label({ text: 'Turns', style_class: 'codeburn-th codeburn-th-right', min_width: 40 }));
+    actHeader.add_child(new St.Label({ text: '1-shot', style_class: 'codeburn-th codeburn-th-right', min_width: 40 }));
+    this._contentArea.add_child(actHeader);
     const rows = new St.BoxLayout({ vertical: true, style_class: 'codeburn-activity-rows' });
     const activities = Array.isArray(current.topActivities) ? current.topActivities : [];
     if (!activities.length) {
@@ -547,6 +568,11 @@ class CodeBurnIndicator extends PanelMenu.Button {
     const models = Array.isArray(current.topModels) ? current.topModels : [];
     if (models.length) {
       this._contentArea.add_child(this._sectionTitle('Models'));
+      const modHeader = new St.BoxLayout({ style_class: 'codeburn-table-header' });
+      modHeader.add_child(new St.Label({ text: 'Model', style_class: 'codeburn-th', x_expand: true }));
+      modHeader.add_child(new St.Label({ text: 'Cost', style_class: 'codeburn-th codeburn-th-right', min_width: 64 }));
+      modHeader.add_child(new St.Label({ text: 'Calls', style_class: 'codeburn-th codeburn-th-right', min_width: 50 }));
+      this._contentArea.add_child(modHeader);
       const mrows = new St.BoxLayout({ vertical: true, style_class: 'codeburn-models-rows' });
       for (const m of models.slice(0, 3)) mrows.add_child(this._buildModelRow(m));
       this._contentArea.add_child(mrows);
@@ -709,10 +735,8 @@ class CodeBurnIndicator extends PanelMenu.Button {
     return CURRENCIES[0];
   }
 
-  _cycleCurrency() {
-    const idx = CURRENCIES.findIndex(c => c.code === this._currency.code);
-    const next = CURRENCIES[(idx + 1) % CURRENCIES.length];
-    this._setCurrency(next.code);
+  _toggleCurrencyPicker() {
+    this._currencyPicker.visible = !this._currencyPicker.visible;
   }
 
   _setCurrency(code) {
@@ -775,9 +799,8 @@ class CodeBurnIndicator extends PanelMenu.Button {
     topLine.add_child(new St.Label({ text: activity.name, style_class: 'codeburn-activity-name', x_expand: true }));
     topLine.add_child(new St.Label({ text: formatCost(activity.cost, this._currency, this._fxRate), style_class: 'codeburn-activity-cost' }));
     topLine.add_child(new St.Label({ text: `${Number(activity.turns) || 0}t`, style_class: 'codeburn-activity-turns' }));
-    if (activity.oneShotRate != null) {
-      topLine.add_child(new St.Label({ text: `${Math.round(Number(activity.oneShotRate) * 100)}%`, style_class: 'codeburn-activity-oneshot' }));
-    }
+    const osText = activity.oneShotRate != null ? `${Math.round(Number(activity.oneShotRate) * 100)}%` : '--';
+    topLine.add_child(new St.Label({ text: osText, style_class: 'codeburn-activity-oneshot' }));
     row.add_child(topLine);
 
     const track = new St.BoxLayout({ style_class: 'codeburn-bar-track' });
