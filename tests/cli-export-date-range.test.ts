@@ -12,6 +12,7 @@ function runCli(args: string[], home: string) {
       ...process.env,
       CLAUDE_CONFIG_DIR: join(home, '.claude'),
       HOME: home,
+      TZ: 'UTC',
     },
     encoding: 'utf-8',
   })
