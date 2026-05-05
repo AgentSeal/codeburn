@@ -78,6 +78,8 @@ codeburn status                 # compact one-liner (today + month)
 codeburn status --format json
 codeburn export                 # CSV with today, 7 days, 30 days
 codeburn export -f json         # JSON export
+codeburn guard                  # warn when today's spend crosses guardrails
+codeburn guard --max-session-usd 3 --max-hourly-usd 10
 codeburn optimize               # find waste, get copy-paste fixes
 codeburn optimize -p week       # scope the scan to last 7 days
 codeburn compare                # side-by-side model comparison
@@ -154,6 +156,18 @@ Adding a new provider is a single file. See `src/providers/codex.ts` for an exam
 ### Cost Tracking
 
 Prices every API call using input, output, cache read, cache write, and web search token counts. Fast mode multiplier for Claude. Pricing fetched from [LiteLLM](https://github.com/BerriAI/litellm) and cached locally for 24 hours. Hardcoded fallbacks for all Claude and GPT models to prevent mispricing.
+
+### Burn Guard
+
+Run a quick local guardrail check before spend becomes a surprise:
+
+```bash
+codeburn guard
+codeburn guard -p week --max-session-usd 5 --max-hourly-usd 20
+codeburn guard --json --fail-on-alert
+```
+
+The guard command flags sessions or local-hour windows that reach configurable USD thresholds. It supports the same provider, project, exclude, period, `--from`, and `--to` filters as the reporting commands, so it can be used manually, from cron, or in shell scripts.
 
 ### Task Categories
 
