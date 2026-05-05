@@ -15,6 +15,10 @@
 - **Session cost outlier detector.** New `optimize` finding flags sessions costing more than 2x their peer-session average within the same project. Ignores sub-$1 outliers to avoid noise. Requires at least 3 sessions per project for a baseline.
 
 ### Fixed (CLI)
+- **Windows Claude project paths.** Claude Code project rollups now prefer
+  the canonical `cwd` stored in session JSONL files instead of reconstructing
+  paths from lossy directory slugs, and group case/slash variants together.
+  Closes #217.
 - **`all` period semantics unified between CLI and dashboard.** The dashboard treated `--period all` as all-time (epoch start) while the CLI bounded it to the last 6 months. Both now consistently mean "Last 6 months". Period helpers (`Period`, `PERIODS`, `PERIOD_LABELS`, `toPeriod`, `getDateRange`) consolidated into `cli-date.ts`. Use `--from` / `--to` for unbounded historical ranges.
 
 ### Fixed (macOS menubar)
