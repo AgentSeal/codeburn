@@ -3,6 +3,10 @@
 ## Unreleased
 
 ### Added (CLI)
+- **Multiple Claude Code config directories.** Set `CLAUDE_CONFIG_DIRS`
+  to an OS path-delimited list of Claude data directories to track usage
+  across multiple accounts or profiles. When set, it takes precedence over
+  `CLAUDE_CONFIG_DIR`. Closes #208.
 - **MCP tool coverage detector.** New `optimize` finding flags MCP servers
   whose tool inventory is largely unused. Inventory is observed from the
   Claude `deferred_tools_delta` JSONL attachments (exact tool names per

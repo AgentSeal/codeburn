@@ -91,7 +91,7 @@ Arrow keys switch between Today, 7 Days, 30 Days, Month, and 6 Months (use `--fr
 
 | Provider | Data Location | Supported |
 |----------|--------------|-----------|
-| Claude Code | `~/.claude/projects/` | Yes |
+| Claude Code | `~/.claude/projects/` (or multiple dirs via `CLAUDE_CONFIG_DIRS`) | Yes |
 | Claude Desktop | `~/Library/Application Support/Claude/local-agent-mode-sessions/` | Yes |
 | Codex (OpenAI) | `~/.codex/sessions/` | Yes |
 | Cursor | `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb` | Yes |
@@ -373,6 +373,7 @@ CodeBurn deduplicates messages (by API message ID for Claude, by cumulative toke
 | Variable | Description |
 |----------|-------------|
 | `CLAUDE_CONFIG_DIR` | Override Claude Code data directory (default: `~/.claude`) |
+| `CLAUDE_CONFIG_DIRS` | Track multiple Claude Code data directories, separated by your OS path delimiter (`:` on macOS/Linux, `;` on Windows). Overrides `CLAUDE_CONFIG_DIR` when set |
 | `CODEX_HOME` | Override Codex data directory (default: `~/.codex`) |
 | `FACTORY_DIR` | Override Droid data directory (default: `~/.factory`) |
 | `QWEN_DATA_DIR` | Override Qwen data directory (default: `~/.qwen/projects`) |

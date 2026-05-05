@@ -1,5 +1,5 @@
 import { readdir, stat } from 'fs/promises'
-import { basename, join } from 'path'
+import { basename, delimiter, join, resolve } from 'path'
 import { homedir } from 'os'
 
 import type { Provider, SessionSource, SessionParser } from './types.js'
@@ -19,12 +19,32 @@ const shortNames: Record<string, string> = {
   'claude-3-5-haiku': 'Haiku 3.5',
 }
 
-function getClaudeDir(): string {
-  return process.env['CLAUDE_CONFIG_DIR'] || join(homedir(), '.claude')
+function normalizeDirs(dirs: string[]): string[] {
+  const seen = new Set<string>()
+  const normalized: string[] = []
+  for (const dir of dirs) {
+    const trimmed = dir.trim()
+    if (!trimmed) continue
+    const resolved = resolve(trimmed)
+    if (seen.has(resolved)) continue
+    seen.add(resolved)
+    normalized.push(resolved)
+  }
+  return normalized
 }
 
-function getProjectsDir(): string {
-  return join(getClaudeDir(), 'projects')
+function getClaudeDirs(overrideDirs?: string | string[]): string[] {
+  if (overrideDirs !== undefined) {
+    return normalizeDirs(Array.isArray(overrideDirs) ? overrideDirs : [overrideDirs])
+  }
+
+  const configDirs = process.env['CLAUDE_CONFIG_DIRS']
+  if (configDirs) {
+    const dirs = normalizeDirs(configDirs.split(delimiter))
+    if (dirs.length > 0) return dirs
+  }
+
+  return normalizeDirs([process.env['CLAUDE_CONFIG_DIR'] || join(homedir(), '.claude')])
 }
 
 function getDesktopSessionsDir(): string {
@@ -59,48 +79,60 @@ async function findDesktopProjectDirs(base: string): Promise<string[]> {
   return results
 }
 
-export const claude: Provider = {
-  name: 'claude',
-  displayName: 'Claude',
+export function createClaudeProvider(claudeDirs?: string | string[], desktopSessionsDir?: string): Provider {
+  return {
+    name: 'claude',
+    displayName: 'Claude',
 
-  modelDisplayName(model: string): string {
-    const canonical = model.replace(/@.*$/, '').replace(/-\d{8}$/, '')
-    for (const [key, name] of Object.entries(shortNames)) {
-      if (canonical.startsWith(key)) return name
-    }
-    return canonical
-  },
+    modelDisplayName(model: string): string {
+      const canonical = model.replace(/@.*$/, '').replace(/-\d{8}$/, '')
+      for (const [key, name] of Object.entries(shortNames)) {
+        if (canonical.startsWith(key)) return name
+      }
+      return canonical
+    },
 
-  toolDisplayName(rawTool: string): string {
-    return rawTool
-  },
+    toolDisplayName(rawTool: string): string {
+      return rawTool
+    },
 
-  async discoverSessions(): Promise<SessionSource[]> {
-    const sources: SessionSource[] = []
+    async discoverSessions(): Promise<SessionSource[]> {
+      const sources: SessionSource[] = []
+      const seenPaths = new Set<string>()
 
-    const projectsDir = getProjectsDir()
-    try {
-      const entries = await readdir(projectsDir)
-      for (const dirName of entries) {
-        const dirPath = join(projectsDir, dirName)
-        const dirStat = await stat(dirPath).catch(() => null)
-        if (dirStat?.isDirectory()) {
-          sources.push({ path: dirPath, project: dirName, provider: 'claude' })
+      for (const claudeDir of getClaudeDirs(claudeDirs)) {
+        const projectsDir = join(claudeDir, 'projects')
+        try {
+          const entries = await readdir(projectsDir)
+          for (const dirName of entries) {
+            const dirPath = join(projectsDir, dirName)
+            if (seenPaths.has(dirPath)) continue
+            const dirStat = await stat(dirPath).catch(() => null)
+            if (dirStat?.isDirectory()) {
+              sources.push({ path: dirPath, project: dirName, provider: 'claude' })
+              seenPaths.add(dirPath)
+            }
+          }
+        } catch {}
+      }
+
+      const desktopDirs = await findDesktopProjectDirs(desktopSessionsDir ?? getDesktopSessionsDir())
+      for (const dirPath of desktopDirs) {
+        if (!seenPaths.has(dirPath)) {
+          sources.push({ path: dirPath, project: basename(dirPath), provider: 'claude' })
+          seenPaths.add(dirPath)
         }
       }
-    } catch {}
 
-    const desktopDirs = await findDesktopProjectDirs(getDesktopSessionsDir())
-    for (const dirPath of desktopDirs) {
-      sources.push({ path: dirPath, project: basename(dirPath), provider: 'claude' })
-    }
+      return sources
+    },
 
-    return sources
-  },
-
-  createSessionParser(): SessionParser {
-    return {
-      async *parse() {},
-    }
-  },
+    createSessionParser(): SessionParser {
+      return {
+        async *parse() {},
+      }
+    },
+  }
 }
+
+export const claude = createClaudeProvider()
