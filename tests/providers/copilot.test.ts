@@ -183,6 +183,33 @@ describe('copilot provider - JSONL parsing', () => {
     expect(calls[0]!.model).toBe('gpt-4.1')
   })
 
+  it('handles generic legacy event shapes without losing valid assistant messages', async () => {
+    const eventsPath = await createSessionDir('sess-generic-shapes', [
+      JSON.stringify({ type: 'user.message', timestamp: '2026-04-15T10:00:10Z', data: { content: 42 } }),
+      JSON.stringify({ type: 'assistant.message', timestamp: '2026-04-15T10:00:11Z', data: { messageId: 'bad', outputTokens: '50', toolRequests: [{ name: 12 }] } }),
+      JSON.stringify({
+        type: 'assistant.message',
+        timestamp: '2026-04-15T10:00:15Z',
+        data: {
+          model: 'gpt-4.1',
+          messageId: 'msg-valid',
+          outputTokens: 55,
+          toolRequests: [{ name: 'read_file' }, { name: 12 }, null],
+        },
+      }),
+    ])
+
+    const source = { path: eventsPath, project: 'test', provider: 'copilot' }
+    const calls: ParsedProviderCall[] = []
+    for await (const call of copilot.createSessionParser(source, new Set()).parse()) calls.push(call)
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.model).toBe('gpt-4.1')
+    expect(calls[0]!.outputTokens).toBe(55)
+    expect(calls[0]!.userMessage).toBe('')
+    expect(calls[0]!.tools).toEqual(['Read'])
+  })
+
   it('infers OpenAI auto bucket for transcript toolCallId prefix call_', async () => {
     const eventsPath = await createSessionDir('sess-tr-call', [
       transcriptSessionStart('sess-tr-call'),

@@ -72,6 +72,22 @@ type LegacyCopilotEvent =
   | { type: 'assistant.message'; timestamp?: string; data: { messageId: string; outputTokens: number; interactionId?: string; toolRequests?: LegacyToolRequest[] } }
   | { type: string; timestamp?: string; data: Record<string, unknown> }
 
+function legacyStringField(data: Record<string, unknown>, key: string): string {
+  const value = data[key]
+  return typeof value === 'string' ? value : ''
+}
+
+function legacyNumberField(data: Record<string, unknown>, key: string): number {
+  const value = data[key]
+  return typeof value === 'number' ? value : 0
+}
+
+function legacyToolRequests(data: Record<string, unknown>): LegacyToolRequest[] {
+  const value = data['toolRequests']
+  if (!Array.isArray(value)) return []
+  return value.filter((item): item is LegacyToolRequest => item !== null && typeof item === 'object')
+}
+
 function parseLegacyEvents(content: string, sessionId: string, seenKeys: Set<string>): ParsedProviderCall[] {
   const results: ParsedProviderCall[] = []
   const lines = content.split('\n').filter(l => l.trim())
@@ -87,23 +103,26 @@ function parseLegacyEvents(content: string, sessionId: string, seenKeys: Set<str
     }
 
     // Some newer events include the model ID explicitly.
-    const data = event.data as { newModel?: string; model?: string }
-    if (typeof data.model === 'string' && data.model) {
-      currentModel = data.model
+    const data = event.data
+    const model = legacyStringField(data, 'model')
+    if (model) {
+      currentModel = model
     }
 
     if (event.type === 'session.model_change') {
-      currentModel = data.newModel ?? currentModel
+      currentModel = legacyStringField(data, 'newModel') || currentModel
       continue
     }
 
     if (event.type === 'user.message') {
-      pendingUserMessage = event.data.content ?? ''
+      pendingUserMessage = legacyStringField(data, 'content')
       continue
     }
 
     if (event.type === 'assistant.message') {
-      const { messageId, outputTokens, toolRequests = [] } = event.data
+      const messageId = legacyStringField(data, 'messageId')
+      const outputTokens = legacyNumberField(data, 'outputTokens')
+      const toolRequests = legacyToolRequests(data)
       if (outputTokens === 0) continue
       if (!currentModel) continue
 
@@ -112,7 +131,7 @@ function parseLegacyEvents(content: string, sessionId: string, seenKeys: Set<str
       seenKeys.add(dedupKey)
 
       const tools = toolRequests
-        .map(t => t.name ?? '')
+        .map(t => typeof t.name === 'string' ? t.name : '')
         .filter(Boolean)
         .map(n => toolNameMap[n] ?? n)
 
