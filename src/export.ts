@@ -4,6 +4,7 @@ import { dirname, join, resolve } from 'path'
 import { CATEGORY_LABELS, type ProjectSummary, type TaskCategory } from './types.js'
 import { getCurrency, convertCost } from './currency.js'
 import { dateKey } from './day-aggregator.js'
+import { aggregateModelEfficiency } from './model-efficiency.js'
 
 function escCsv(s: string): string {
   const sanitized = /^[\t\r=+\-@]/.test(s) ? `'${s}` : s
@@ -105,6 +106,7 @@ function buildActivityRows(projects: ProjectSummary[], period: string): Row[] {
 
 function buildModelRows(projects: ProjectSummary[], period: string): Row[] {
   const modelTotals: Record<string, { calls: number; cost: number; input: number; output: number; cacheRead: number; cacheWrite: number }> = {}
+  const modelEfficiency = aggregateModelEfficiency(projects)
   for (const project of projects) {
     for (const session of project.sessions) {
       for (const [model, d] of Object.entries(session.modelBreakdown)) {
@@ -123,17 +125,26 @@ function buildModelRows(projects: ProjectSummary[], period: string): Row[] {
   return Object.entries(modelTotals)
     .filter(([name]) => name !== '<synthetic>')
     .sort(([, a], [, b]) => b.cost - a.cost)
-    .map(([model, d]) => ({
-      Period: period,
-      Model: model,
-      [`Cost (${code})`]: round2(convertCost(d.cost)),
-      'Share (%)': pct(d.cost, totalCost),
-      'API Calls': d.calls,
-      'Input Tokens': d.input,
-      'Output Tokens': d.output,
-      'Cache Read Tokens': d.cacheRead,
-      'Cache Write Tokens': d.cacheWrite,
-    }))
+    .map(([model, d]) => {
+      const efficiency = modelEfficiency.get(model)
+      return {
+        Period: period,
+        Model: model,
+        [`Cost (${code})`]: round2(convertCost(d.cost)),
+        'Share (%)': pct(d.cost, totalCost),
+        'API Calls': d.calls,
+        'Edit Turns': efficiency?.editTurns ?? 0,
+        'One-shot Rate (%)': efficiency?.oneShotRate ?? '',
+        'Retry Rate': efficiency?.retryRate ?? '',
+        [`Cost/Edit (${code})`]: efficiency?.costPerEditUSD !== null && efficiency?.costPerEditUSD !== undefined
+          ? round2(convertCost(efficiency.costPerEditUSD))
+          : '',
+        'Input Tokens': d.input,
+        'Output Tokens': d.output,
+        'Cache Read Tokens': d.cacheRead,
+        'Cache Write Tokens': d.cacheWrite,
+      }
+    })
 }
 
 function buildToolRows(projects: ProjectSummary[]): Row[] {

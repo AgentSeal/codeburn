@@ -10,6 +10,7 @@ import { buildMenubarPayload } from './menubar-json.js'
 import { getDaysInRange, ensureCacheHydrated, emptyCache, BACKFILL_DAYS, toDateString } from './daily-cache.js'
 import { aggregateProjectsIntoDays, buildPeriodDataFromDays, dateKey } from './day-aggregator.js'
 import { CATEGORY_LABELS, type DateRange, type ProjectSummary, type TaskCategory } from './types.js'
+import { aggregateModelEfficiency } from './model-efficiency.js'
 import { renderDashboard } from './dashboard.js'
 import { parseDateRangeFlags } from './cli-date.js'
 import { runOptimize, scanAndDetect } from './optimize.js'
@@ -208,6 +209,7 @@ function buildJsonReport(projects: ProjectSummary[], period: string, periodKey: 
   }))
 
   const modelMap: Record<string, { calls: number; cost: number; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number }> = {}
+  const modelEfficiency = aggregateModelEfficiency(projects)
   for (const sess of sessions) {
     for (const [model, d] of Object.entries(sess.modelBreakdown)) {
       if (!modelMap[model]) { modelMap[model] = { calls: 0, cost: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 } }
@@ -221,7 +223,21 @@ function buildJsonReport(projects: ProjectSummary[], period: string, periodKey: 
   }
   const models = Object.entries(modelMap)
     .sort(([, a], [, b]) => b.cost - a.cost)
-    .map(([name, { cost, ...rest }]) => ({ name, ...rest, cost: convertCost(cost) }))
+    .map(([name, { cost, ...rest }]) => {
+      const efficiency = modelEfficiency.get(name)
+      return {
+        name,
+        ...rest,
+        cost: convertCost(cost),
+        editTurns: efficiency?.editTurns ?? 0,
+        oneShotTurns: efficiency?.oneShotTurns ?? 0,
+        oneShotRate: efficiency?.oneShotRate ?? null,
+        retryRate: efficiency?.retryRate ?? null,
+        costPerEdit: efficiency?.costPerEditUSD !== null && efficiency?.costPerEditUSD !== undefined
+          ? convertCost(efficiency.costPerEditUSD)
+          : null,
+      }
+    })
 
   const catMap: Record<string, { turns: number; cost: number; editTurns: number; oneShotTurns: number }> = {}
   for (const sess of sessions) {
