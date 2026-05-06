@@ -41,6 +41,18 @@ function turn(model: string, opts: { hasEdits?: boolean; retries?: number; costU
   }
 }
 
+function multiModelTurn(calls: ParsedApiCall[], opts: { retries?: number; hasEdits?: boolean } = {}): ClassifiedTurn {
+  return {
+    userMessage: '',
+    assistantCalls: calls,
+    timestamp: '2026-05-05T00:00:00Z',
+    sessionId: 's1',
+    category: 'coding',
+    retries: opts.retries ?? 0,
+    hasEdits: opts.hasEdits ?? true,
+  }
+}
+
 function project(turns: ClassifiedTurn[]): ProjectSummary {
   const session: SessionSummary = {
     sessionId: 's1',
@@ -83,7 +95,7 @@ describe('aggregateModelEfficiency', () => {
     expect(sonnet?.editTurns).toBe(2)
     expect(sonnet?.oneShotTurns).toBe(1)
     expect(sonnet?.oneShotRate).toBe(50)
-    expect(sonnet?.retryRate).toBe(1)
+    expect(sonnet?.retriesPerEdit).toBe(1)
     expect(sonnet?.costPerEditUSD).toBe(3)
 
     const opus = stats.get('Opus 4.6')
@@ -93,6 +105,35 @@ describe('aggregateModelEfficiency', () => {
   it('returns no stats for non-edit turns', () => {
     const stats = aggregateModelEfficiency([project([
       turn('claude-sonnet-4-5', { hasEdits: false }),
+    ])])
+
+    expect(stats.size).toBe(0)
+  })
+
+  it('attributes a multi-model turn to the first non-synthetic model', () => {
+    const stats = aggregateModelEfficiency([project([
+      multiModelTurn([
+        call('<synthetic>', 0),
+        call('claude-opus-4-6', 2),
+        call('claude-sonnet-4-5', 1),
+      ], { retries: 0, hasEdits: true }),
+    ])])
+
+    expect(stats.has('Opus 4.6')).toBe(true)
+    expect(stats.has('Sonnet 4.5')).toBe(false)
+    expect(stats.has('<synthetic>')).toBe(false)
+    const opus = stats.get('Opus 4.6')!
+    expect(opus.editTurns).toBe(1)
+    expect(opus.oneShotTurns).toBe(1)
+    expect(opus.costPerEditUSD).toBe(3)
+  })
+
+  it('skips a turn whose calls are all synthetic', () => {
+    const stats = aggregateModelEfficiency([project([
+      multiModelTurn([
+        call('<synthetic>', 0),
+        call('<synthetic>', 0),
+      ], { retries: 0, hasEdits: true }),
     ])])
 
     expect(stats.size).toBe(0)

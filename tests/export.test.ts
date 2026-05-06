@@ -166,6 +166,7 @@ describe('exportCsv', () => {
 
     expect(models).toContain('Edit Turns')
     expect(models).toContain('One-shot Rate (%)')
+    expect(models).toContain('Retries/Edit')
     expect(models).toContain('Cost/Edit')
     expect(models).toContain(',1,100,0,')
   })

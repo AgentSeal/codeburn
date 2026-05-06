@@ -232,7 +232,7 @@ function buildJsonReport(projects: ProjectSummary[], period: string, periodKey: 
         editTurns: efficiency?.editTurns ?? 0,
         oneShotTurns: efficiency?.oneShotTurns ?? 0,
         oneShotRate: efficiency?.oneShotRate ?? null,
-        retryRate: efficiency?.retryRate ?? null,
+        retriesPerEdit: efficiency?.retriesPerEdit ?? null,
         costPerEdit: efficiency?.costPerEditUSD !== null && efficiency?.costPerEditUSD !== undefined
           ? convertCost(efficiency.costPerEditUSD)
           : null,

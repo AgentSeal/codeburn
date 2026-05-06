@@ -8,11 +8,11 @@ export type ModelEfficiency = {
   retries: number
   editCostUSD: number
   oneShotRate: number | null
-  retryRate: number | null
+  retriesPerEdit: number | null
   costPerEditUSD: number | null
 }
 
-type MutableModelEfficiency = Omit<ModelEfficiency, 'oneShotRate' | 'retryRate' | 'costPerEditUSD'>
+type MutableModelEfficiency = Omit<ModelEfficiency, 'oneShotRate' | 'retriesPerEdit' | 'costPerEditUSD'>
 
 function rate(num: number, den: number): number | null {
   if (den === 0) return null
@@ -36,15 +36,16 @@ export function aggregateModelEfficiency(projects: ProjectSummary[]): Map<string
       for (const turn of session.turns) {
         if (!turn.hasEdits || turn.assistantCalls.length === 0) continue
 
-        const primaryModel = getShortModelName(turn.assistantCalls[0]!.model)
-        if (primaryModel === '<synthetic>') continue
+        const primaryCall = turn.assistantCalls.find(c => getShortModelName(c.model) !== '<synthetic>')
+        if (!primaryCall) continue
+        const primaryModel = getShortModelName(primaryCall.model)
 
         const stats = ensure(primaryModel)
         stats.editTurns++
         if (turn.retries === 0) stats.oneShotTurns++
         stats.retries += turn.retries
         stats.editCostUSD += turn.assistantCalls.reduce((sum, call) => {
-          return call.model === '<synthetic>' ? sum : sum + call.costUSD
+          return getShortModelName(call.model) === '<synthetic>' ? sum : sum + call.costUSD
         }, 0)
       }
     }
@@ -53,7 +54,7 @@ export function aggregateModelEfficiency(projects: ProjectSummary[]): Map<string
   return new Map([...byModel.entries()].map(([model, stats]) => [model, {
     ...stats,
     oneShotRate: rate(stats.oneShotTurns, stats.editTurns),
-    retryRate: stats.editTurns > 0 ? Math.round((stats.retries / stats.editTurns) * 10) / 10 : null,
+    retriesPerEdit: stats.editTurns > 0 ? Math.round((stats.retries / stats.editTurns) * 10) / 10 : null,
     costPerEditUSD: stats.editTurns > 0 ? stats.editCostUSD / stats.editTurns : null,
   }]))
 }

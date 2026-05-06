@@ -135,7 +135,7 @@ function buildModelRows(projects: ProjectSummary[], period: string): Row[] {
         'API Calls': d.calls,
         'Edit Turns': efficiency?.editTurns ?? 0,
         'One-shot Rate (%)': efficiency?.oneShotRate ?? '',
-        'Retry Rate': efficiency?.retryRate ?? '',
+        'Retries/Edit': efficiency?.retriesPerEdit ?? '',
         [`Cost/Edit (${code})`]: efficiency?.costPerEditUSD !== null && efficiency?.costPerEditUSD !== undefined
           ? round2(convertCost(efficiency.costPerEditUSD))
           : '',
