@@ -111,6 +111,8 @@ export type ClassifiedTurn = ParsedTurn & {
 export type SessionSummary = {
   sessionId: string
   project: string
+  account?: string
+  accountPath?: string
   firstTimestamp: string
   lastTimestamp: string
   totalCostUSD: number
@@ -137,6 +139,9 @@ export type SessionSummary = {
 export type ProjectSummary = {
   project: string
   projectPath: string
+  account?: string
+  accountPath?: string
+  sourcePath?: string
   sessions: SessionSummary[]
   totalCostUSD: number
   totalApiCalls: number
