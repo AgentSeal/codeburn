@@ -170,7 +170,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         guard now.timeIntervalSince(lastRefreshTime) > 5 else { return }
         lastRefreshTime = now
 
-        store.invalidateCache()
+        // Note: do NOT call store.invalidateCache() here. The day-rollover guard
+        // inside refresh() already wipes the cache when the calendar date has
+        // changed; wiping unconditionally on every wake/manual-refresh empties
+        // todayPayload, makes showAgentTabs go false, and triggers the
+        // full-popover loading overlay (because cache[key] == nil after wipe).
+        // That's the regression chain documented in the multi-agent review.
+        //
+        // showLoading: true is fine now that the overlay condition is
+        // `!hasCachedData`: it lights up the refresh-button spinner glyph
+        // without covering the popover body.
         Task {
             async let main: Void = store.refresh(includeOptimize: false, force: true, showLoading: true)
             async let today: Void = store.refreshQuietly(period: .today)
@@ -219,6 +228,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         withObservationTracking {
             _ = store.payload
             _ = store.todayPayload
+            // Track currency too so the menubar title catches up immediately on
+            // currency switch instead of waiting for the next 30s payload tick.
+            _ = store.currency
         } onChange: { [weak self] in
             DispatchQueue.main.async {
                 guard let self else { return }
@@ -270,6 +282,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     /// flow as one typographic unit with a single, controllable gap.
     private func refreshStatusButton() {
         guard let button = statusItem.button else { return }
+        // Skip while the popover is anchored to this button. Rewriting the
+        // attributedTitle changes the button's intrinsic width, which makes
+        // macOS reflow the status item in the menubar and detaches the
+        // anchored popover (it pops to a stale default position). The
+        // popoverDidClose delegate calls back through here once the popover
+        // is dismissed so the menubar cost catches up immediately on close.
+        if popover != nil && popover.isShown { return }
 
         // Clear any previously-set image so the attachment is the only glyph rendered.
         button.image = nil
@@ -397,5 +416,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     func popoverShouldDetach(_ popover: NSPopover) -> Bool {
         false
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        // Catch up on any menubar title updates that were skipped while the
+        // popover was anchored.
+        refreshStatusButton()
     }
 }

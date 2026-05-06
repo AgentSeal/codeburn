@@ -61,6 +61,14 @@ final class AppStore {
         cache[currentKey] != nil
     }
 
+    /// True if any cached payload reports at least one provider. Used to keep the
+    /// AgentTabStrip visible across period/provider switches even when the current
+    /// key's payload is briefly empty (e.g. immediately after a `switchTo` and
+    /// before the new fetch lands).
+    var hasAnyProvidersInCache: Bool {
+        cache.values.contains { !$0.payload.current.providers.isEmpty }
+    }
+
     var findingsCount: Int {
         payload.optimize.findingCount
     }
@@ -117,6 +125,7 @@ final class AppStore {
     func refresh(includeOptimize: Bool, force: Bool = false, showLoading: Bool = false) async {
         invalidateStaleDayCache()
         let key = currentKey
+        let cacheDateAtStart = cacheDate
         if !force, cache[key]?.isFresh == true { return }
         if !force, inFlightKeys.contains(key) { return }
         inFlightKeys.insert(key)
@@ -131,6 +140,11 @@ final class AppStore {
         do {
             let fresh = try await DataClient.fetch(period: key.period, provider: key.provider, includeOptimize: includeOptimize)
             guard !Task.isCancelled else { return }
+            // Day-rollover race guard: if the calendar date changed during the
+            // fetch, this payload was computed against yesterday's date and
+            // would pollute today's freshly-cleared cache. Drop it; the next
+            // tick will refetch with today's data.
+            if cacheDate != cacheDateAtStart { return }
             cache[key] = CachedPayload(payload: fresh, fetchedAt: Date())
             lastError = nil
         } catch {
@@ -140,6 +154,7 @@ final class AppStore {
                 do {
                     let fallback = try await DataClient.fetch(period: key.period, provider: key.provider, includeOptimize: false)
                     guard !Task.isCancelled else { return }
+                    if cacheDate != cacheDateAtStart { return }
                     cache[key] = CachedPayload(payload: fallback, fetchedAt: Date())
                     lastError = nil
                     return
@@ -162,8 +177,12 @@ final class AppStore {
     /// Always uses the .all provider since the menubar badge shows total spend.
     func refreshQuietly(period: Period) async {
         invalidateStaleDayCache()
+        let cacheDateAtStart = cacheDate
         do {
             let fresh = try await DataClient.fetch(period: period, provider: .all, includeOptimize: false)
+            // Same day-rollover guard as refresh(): drop yesterday's payload if
+            // the calendar rolled over during the fetch.
+            if cacheDate != cacheDateAtStart { return }
             cache[PayloadCacheKey(period: period, provider: .all)] = CachedPayload(payload: fresh, fetchedAt: Date())
         } catch {
             NSLog("CodeBurn: quiet refresh failed for \(period.rawValue): \(error)")

@@ -41,7 +41,15 @@ struct MenuBarContent: View {
                     }
                 }
 
-                if store.isLoading || (providerHasCostInAllPayload && !store.hasCachedData) {
+                // Overlay fires only on cold cache for the current key. This
+                // avoids the 1-frame `$0.00` flash on first-time period/provider
+                // switches (the body would otherwise render the empty payload
+                // for the runloop tick before the overlay slides in). With the
+                // cache no longer being wiped on every wake/manual-refresh,
+                // hasCachedData==false now means "we have never fetched this
+                // key before in this session", which is the right time to
+                // cover the popover.
+                if !store.hasCachedData {
                     BurnLoadingOverlay(periodLabel: store.selectedPeriod.rawValue)
                         .transition(.opacity)
                 }
@@ -79,6 +87,10 @@ struct MenuBarContent: View {
     /// on this machine. Hidden only when nothing is detected, which means there's
     /// nothing to filter by anyway.
     private var showAgentTabs: Bool {
+        // Sticky: once any cached payload has reported providers, keep the tab strip
+        // visible. Without this, the strip disappears for one frame on a period
+        // switch when the new key's payload is still empty.
+        if store.hasAnyProvidersInCache { return true }
         let payload = store.todayPayload ?? store.payload
         return !payload.current.providers.isEmpty
     }
@@ -407,6 +419,11 @@ struct FooterBar: View {
             .fixedSize()
 
             Button {
+                // showLoading: true is safe now that the overlay condition uses
+                // `!hasCachedData` instead of `isLoading`. The button icon swaps
+                // to the spinner glyph (driven by store.isLoading), giving the
+                // user visible feedback the click was registered, but the
+                // popover body keeps the existing data instead of blanking out.
                 Task { await store.refresh(includeOptimize: false, force: true, showLoading: true) }
             } label: {
                 Image(systemName: store.isLoading ? "arrow.triangle.2.circlepath" : "arrow.clockwise")
