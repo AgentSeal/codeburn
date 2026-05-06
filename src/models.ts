@@ -238,12 +238,18 @@ export function calculateCost(
 
   const multiplier = speed === 'fast' ? costs.fastMultiplier : 1
 
+  // Clamp negative inputs to 0. A corrupt JSONL that emits a negative token
+  // count would otherwise produce a negative cost that silently subtracts
+  // from real spend in aggregate totals. NaN is also handled here; the
+  // arithmetic below short-circuits to 0 when any operand is non-finite.
+  const safe = (n: number) => (Number.isFinite(n) && n > 0 ? n : 0)
+
   return multiplier * (
-    inputTokens * costs.inputCostPerToken +
-    outputTokens * costs.outputCostPerToken +
-    cacheCreationTokens * costs.cacheWriteCostPerToken +
-    cacheReadTokens * costs.cacheReadCostPerToken +
-    webSearchRequests * costs.webSearchCostPerRequest
+    safe(inputTokens) * costs.inputCostPerToken +
+    safe(outputTokens) * costs.outputCostPerToken +
+    safe(cacheCreationTokens) * costs.cacheWriteCostPerToken +
+    safe(cacheReadTokens) * costs.cacheReadCostPerToken +
+    safe(webSearchRequests) * costs.webSearchCostPerRequest
   )
 }
 

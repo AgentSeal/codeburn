@@ -143,9 +143,13 @@ export function getCostColumnHeader(): string {
 }
 
 export function convertCost(costUSD: number): number {
-  const digits = getFractionDigits(active.code)
-  const factor = 10 ** digits
-  return Math.round(costUSD * active.rate * factor) / factor
+  // Return the unrounded converted cost. Rounding here meant zero-fraction
+  // currencies (JPY, KRW, CLP) clamped every per-session cost to the nearest
+  // whole unit before aggregation; a project with 1000 sessions averaging
+  // ¥0.4 each would aggregate to ¥0 instead of ¥400 because each row was
+  // rounded independently. formatCost (and the export rowsToCsv path) round
+  // at the display boundary instead.
+  return costUSD * active.rate
 }
 
 export function formatCost(costUSD: number): string {
