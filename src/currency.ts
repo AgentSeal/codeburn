@@ -98,13 +98,19 @@ async function getExchangeRate(code: string): Promise<number> {
   const cached = await loadCachedRate(code)
   if (cached) return cached
 
+  let rate: number
   try {
-    const rate = await fetchRate(code)
-    await cacheRate(code, rate)
-    return rate
+    rate = await fetchRate(code)
   } catch {
     return 1
   }
+  // Persist the rate, but never let a cache-write failure (disk full, no
+  // permissions, etc.) cause us to return the USD-equivalent fallback.
+  // The original code wrapped fetch + cacheRate in one try/catch, so a
+  // disk-full at write time would discard a perfectly good rate and silently
+  // make every cost render as if the user had selected USD.
+  cacheRate(code, rate).catch(() => {})
+  return rate
 }
 
 export async function loadCurrency(): Promise<void> {
