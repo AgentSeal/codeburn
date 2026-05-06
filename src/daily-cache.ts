@@ -137,11 +137,16 @@ export function addNewDays(cache: DailyCache, incoming: DailyEntry[], newestDate
   // grow unbounded over years of daily use. The "all time" / 6-month period
   // and the BACKFILL_DAYS bootstrap both fit comfortably inside this cap.
   // Anchor the cap on the newestDate boundary so a stale or stuck clock
-  // can't accidentally evict everything.
+  // can't accidentally evict everything. Skip the prune entirely if
+  // newestDate is malformed — an invalid Date would produce a NaN cutoff
+  // and `d.date >= "Invalid Date"` would silently drop every entry.
   const cutoffDate = new Date(`${newestDate}T00:00:00Z`)
-  cutoffDate.setUTCDate(cutoffDate.getUTCDate() - DAILY_CACHE_RETENTION_DAYS)
-  const cutoff = toDateString(cutoffDate)
-  const pruned = merged.filter(d => d.date >= cutoff)
+  let pruned = merged
+  if (!isNaN(cutoffDate.getTime())) {
+    cutoffDate.setUTCDate(cutoffDate.getUTCDate() - DAILY_CACHE_RETENTION_DAYS)
+    const cutoff = toDateString(cutoffDate)
+    pruned = merged.filter(d => d.date >= cutoff)
+  }
   const nextLast = cache.lastComputedDate && cache.lastComputedDate > newestDate
     ? cache.lastComputedDate
     : newestDate
