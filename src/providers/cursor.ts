@@ -140,6 +140,7 @@ const USER_MESSAGES_QUERY = `
   ORDER BY ROWID ASC
 `
 
+<<<<<<< HEAD
 // Split into HEAD (predicates we always emit) and TAIL (ORDER BY) so the
 // caller can splice in an optional `ROWID >= ?` cutoff without rewriting
 // the whole template. The original combined string is preserved as
@@ -147,6 +148,11 @@ const USER_MESSAGES_QUERY = `
 const BUBBLE_QUERY_SINCE_HEAD = BUBBLE_QUERY_BASE + `
     AND (json_extract(value, '$.createdAt') > ? OR json_extract(value, '$.createdAt') IS NULL)`
 const BUBBLE_QUERY_SINCE_TAIL = `
+=======
+const BUBBLE_QUERY_SINCE = BUBBLE_QUERY_BASE + `
+    AND json_extract(value, '$.createdAt') IS NOT NULL
+    AND json_extract(value, '$.createdAt') > ?
+>>>>>>> d12876d (fix(cursor): avoid assigning missing bubble timestamps to today)
   ORDER BY ROWID ASC
 `
 const BUBBLE_QUERY_SINCE = BUBBLE_QUERY_SINCE_HEAD + BUBBLE_QUERY_SINCE_TAIL
@@ -273,6 +279,7 @@ function parseBubbles(db: SqliteDatabase, seenKeys: Set<string>): { calls: Parse
       }
 
       const createdAt = row.created_at ?? ''
+      if (!createdAt) continue
       const conversationId = row.conversation_id ?? 'unknown'
       // Use the SQLite row key (bubbleId:<unique>) as the dedup key.
       // Cursor mutates token counts on the row in place when streaming
@@ -289,8 +296,14 @@ function parseBubbles(db: SqliteDatabase, seenKeys: Set<string>): { calls: Parse
 
       const costUSD = calculateCost(pricingModel, inputTokens, outputTokens, 0, 0, 0)
 
+<<<<<<< HEAD
       const timestamp = createdAt || new Date().toISOString()
       const userQuestion = takeUserMessage(userMessages, conversationId)
+=======
+      const timestamp = createdAt
+      const convMessages = userMessages.get(conversationId) ?? []
+      const userQuestion = convMessages.length > 0 ? convMessages.shift()! : ''
+>>>>>>> d12876d (fix(cursor): avoid assigning missing bubble timestamps to today)
       const assistantText = row.user_text ?? ''
       const userText = (userQuestion + ' ' + assistantText).trim()
 
