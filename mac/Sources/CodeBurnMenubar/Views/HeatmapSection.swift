@@ -25,10 +25,14 @@ struct HeatmapSection: View {
     }
 
     private var visibleModes: [InsightMode] {
-        // Plan sources from Claude's OAuth usage endpoint, so it only makes sense when the
-        // Claude provider tab is selected. Hidden on All/Cursor/Codex/etc.
+        // Plan sources from a provider's OAuth usage endpoint. Currently
+        // implemented for Claude (Anthropic) and Codex (ChatGPT). Hidden on
+        // All / Cursor / Droid / Gemini / Copilot until those providers ship
+        // their own quota data sources.
         InsightMode.allCases.filter { mode in
-            if mode == .plan { return store.selectedProvider == .claude }
+            if mode == .plan {
+                return store.selectedProvider == .claude || store.selectedProvider == .codex
+            }
             return true
         }
     }
@@ -42,7 +46,12 @@ struct HeatmapSection: View {
     @ViewBuilder
     private var content: some View {
         switch store.selectedInsight {
-        case .plan: PlanInsight(usage: store.subscription)
+        case .plan:
+            if store.selectedProvider == .codex {
+                CodexPlanInsight()
+            } else {
+                PlanInsight(usage: store.subscription)
+            }
         case .trend: TrendInsight(days: store.payload.history.daily)
         case .forecast: ForecastInsight(days: store.payload.history.daily)
         case .pulse: PulseInsight(payload: store.payload)
@@ -1153,6 +1162,114 @@ private struct PlanReconnectView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 16)
+    }
+}
+
+/// Plan tab for Codex. Mirrors PlanInsight's layout but reads from
+/// store.codexUsage / store.codexLoadState. We deliberately skip the
+/// "On pace at reset" projection here — that math is fed by local
+/// per-message Claude spend extrapolated against the API quota windows;
+/// our local Codex spend isn't an apples-to-apples signal for the
+/// ChatGPT-subscription rate windows reported by wham/usage. Add when
+/// we wire a comparable extrapolator.
+private struct CodexPlanInsight: View {
+    @Environment(AppStore.self) private var store
+
+    var body: some View {
+        Group {
+            switch store.codexLoadState {
+            case .notBootstrapped:
+                PlanConnectView { Task { await store.bootstrapCodex() } }
+            case .bootstrapping:
+                PlanLoadingView()
+            case .loading:
+                if let usage = store.codexUsage {
+                    loadedBody(usage: usage)
+                } else {
+                    PlanLoadingView()
+                }
+            case .noCredentials:
+                PlanNoCredentialsView()
+            case .failed:
+                PlanFailedView(error: store.codexError)
+            case .transientFailure:
+                if let usage = store.codexUsage {
+                    loadedBody(usage: usage)
+                } else {
+                    PlanFailedView(error: store.codexError ?? "ChatGPT temporarily unreachable — retrying.")
+                }
+            case let .terminalFailure(reason):
+                PlanReconnectView(reason: reason) { Task { await store.bootstrapCodex() } }
+            case .loaded:
+                if let usage = store.codexUsage {
+                    loadedBody(usage: usage)
+                } else {
+                    PlanLoadingView()
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func loadedBody(usage: CodexUsage) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(usage.plan.displayName)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.primary)
+                Spacer()
+                if let resetsAt = (usage.primary ?? usage.secondary)?.resetsAt {
+                    Text("Resets \(relativeReset(resetsAt))")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            if let primary = usage.primary {
+                UtilizationRow(
+                    label: "\(primary.windowLabel) window",
+                    percent: primary.usedPercent,
+                    resetsAt: primary.resetsAt,
+                    projection: nil
+                )
+            }
+            if let secondary = usage.secondary {
+                UtilizationRow(
+                    label: "\(secondary.windowLabel) window",
+                    percent: secondary.usedPercent,
+                    resetsAt: secondary.resetsAt,
+                    projection: nil
+                )
+            }
+            // Surface non-zero per-model rate limits (Codex Spark, etc.) so
+            // power users see them; idle ones stay collapsed.
+            ForEach(Array(usage.additionalLimits.enumerated()), id: \.offset) { _, limit in
+                if let p = limit.primary, p.usedPercent > 0 {
+                    UtilizationRow(
+                        label: "\(limit.name) · \(p.windowLabel)",
+                        percent: p.usedPercent,
+                        resetsAt: p.resetsAt,
+                        projection: nil
+                    )
+                }
+                if let s = limit.secondary, s.usedPercent > 0 {
+                    UtilizationRow(
+                        label: "\(limit.name) · \(s.windowLabel)",
+                        percent: s.usedPercent,
+                        resetsAt: s.resetsAt,
+                        projection: nil
+                    )
+                }
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.top, 4)
+        .padding(.bottom, 8)
+    }
+
+    private func relativeReset(_ date: Date) -> String {
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .short
+        return f.localizedString(for: date, relativeTo: Date())
     }
 }
 

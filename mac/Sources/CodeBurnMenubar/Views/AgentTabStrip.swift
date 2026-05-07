@@ -236,13 +236,16 @@ private struct QuotaDetailPopover: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
-                        .frame(maxWidth: 90, alignment: .trailing)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
                         .background(
                             RoundedRectangle(cornerRadius: 4)
                                 .fill(Color.secondary.opacity(0.12))
                         )
+                        // Size to content. Plan names are bounded short strings
+                        // ("Max 20x", "Pro Lite", "Free Workspace"); a forced
+                        // maxWidth was making short labels look stretched.
+                        .fixedSize(horizontal: true, vertical: false)
                 }
             }
             ForEach(Array(quota.details.enumerated()), id: \.offset) { _, w in
