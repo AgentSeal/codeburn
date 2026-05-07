@@ -23,6 +23,31 @@ let DatabaseSync: DatabaseSyncCtor | null = null
 let loadAttempted = false
 let loadError: string | null = null
 
+/// Minimum Node 22.x patch version that contains the node:sqlite UTF-8 fix.
+/// Older 22.x lines crash with `Check failed: (location_) != nullptr` when a
+/// SQLite TEXT column returns bytes that V8's String::NewFromUtf8 rejects —
+/// commonly the case for Cursor's text blobs (truncated multi-byte chars at
+/// streaming boundaries) and OpenCode message text (rich tooling output).
+/// Track of issue: https://github.com/getagentseal/codeburn/issues/264
+/// Track of upstream: https://github.com/nodejs/node — fix landed in 22.x via
+/// later patches; stable on Node 24+.
+const MIN_NODE_22_PATCH = 20
+
+function checkBuggyNodeVersion(): string | null {
+  const match = /^v(\d+)\.(\d+)\.(\d+)/.exec(process.version)
+  if (!match) return null
+  const major = parseInt(match[1]!, 10)
+  const minor = parseInt(match[2]!, 10)
+  if (major === 22 && minor < MIN_NODE_22_PATCH) {
+    return (
+      `codeburn: Node ${process.version} ships an older node:sqlite that crashes on ` +
+      `non-UTF-8 bytes in Cursor/OpenCode session text. Upgrade to Node 22.${MIN_NODE_22_PATCH}+ ` +
+      `or 24+ to avoid the V8 fatal error. (https://nodejs.org)`
+    )
+  }
+  return null
+}
+
 /// Lazily imports `node:sqlite`. On Node 22/23 it emits an ExperimentalWarning the first
 /// time the module is loaded; we silence that specific warning once so dashboards aren't
 /// preceded by a scary stderr line every run. Any other warnings (including future
@@ -30,6 +55,15 @@ let loadError: string | null = null
 function loadDriver(): boolean {
   if (loadAttempted) return DatabaseSync !== null
   loadAttempted = true
+
+  // Refuse to load on a Node version known to crash mid-query. Treating the
+  // SQLite providers as unavailable is much friendlier than letting the user
+  // hit a V8 CHECK abort that takes down the whole CLI.
+  const versionWarning = checkBuggyNodeVersion()
+  if (versionWarning !== null) {
+    loadError = versionWarning
+    return false
+  }
 
   const origEmit = process.emit.bind(process)
   let restored = false
