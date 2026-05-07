@@ -100,17 +100,18 @@ private struct AgentTab: View {
                         .tracking(-0.2)
                 }
             }
-            // Reserve the bar slot only for providers whose quota source we
-            // implement (Claude, Codex). Providers that will never have a bar
-            // (All / Cursor / Droid / Gemini / Copilot) skip the slot entirely
-            // so the text centers naturally and the chip stays compact.
-            // Reserving the slot for Claude/Codex prevents the strip from
-            // jumping by 6pt the moment the user clicks Connect.
-            if Self.providerSupportsQuota(filter) {
-                AgentTabQuotaBar(quota: quota, isActive: isActive)
-                    .frame(height: 3)
-                    .opacity(quota == nil ? 0 : 1)
-            }
+            // Reserve the 6pt quota-bar slot (3pt spacing + 3pt bar) on every
+            // chip, not just Claude/Codex. Otherwise the strip mixes 28pt and
+            // 22pt chips, which looks fine when everything is inactive (the
+            // muted background blends in) but becomes obviously uneven the
+            // moment one chip turns orange-active. For providers without a
+            // live quota source we hide the bar with opacity 0; the slot
+            // height stays reserved so all chips share the same height.
+            // This also keeps the original "no 6pt jump on Connect" behavior
+            // for Claude/Codex.
+            AgentTabQuotaBar(quota: quota, isActive: isActive)
+                .frame(height: 3)
+                .opacity(Self.providerSupportsQuota(filter) && quota != nil ? 1 : 0)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 4)
