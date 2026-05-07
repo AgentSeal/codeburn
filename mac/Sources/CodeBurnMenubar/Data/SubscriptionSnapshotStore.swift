@@ -76,6 +76,13 @@ enum SubscriptionSnapshotStore {
 
     /// Test seam: clear all snapshots.
     static func resetForTesting() async {
+        await clearAll()
+    }
+
+    /// Wipe all snapshots from disk. Called when the user disconnects so the
+    /// "Based on last cycle" projections do not contaminate a reconnect under
+    /// a different account or tier.
+    static func clearAll() async {
         await SnapshotLock.shared.run {
             try? FileManager.default.removeItem(atPath: snapshotsPath())
         }

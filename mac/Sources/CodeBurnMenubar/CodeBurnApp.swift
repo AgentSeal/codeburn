@@ -15,9 +15,12 @@ struct CodeBurnApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var delegate
 
     var body: some Scene {
-        // SwiftUI App needs at least one scene. Settings is invisible by default.
+        // The Settings scene gives us a real macOS Settings window with the
+        // standard ⌘, shortcut and the menubar "Settings…" item. Provider tabs
+        // (Claude today, Codex/Cursor/etc. in follow-ups) live inside SettingsView.
         Settings {
-            EmptyView()
+            SettingsView()
+                .environment(delegate.store)
         }
     }
 }
@@ -26,7 +29,7 @@ struct CodeBurnApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var statusItem: NSStatusItem!
     private var popover: NSPopover!
-    private let store = AppStore()
+    fileprivate let store = AppStore()
     let updateChecker = UpdateChecker()
     /// Held for the lifetime of the app to opt out of App Nap and Automatic Termination.
     private var backgroundActivity: NSObjectProtocol?
@@ -37,6 +40,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         // (26.x), setting it after didFinishLaunching causes ghost status items
         // because the policy gets baked into the initial focus chain.
         NSApp.setActivationPolicy(.accessory)
+    }
+
+    private func observeSubscriptionDisconnect() {
+        NotificationCenter.default.addObserver(
+            forName: .codeBurnSubscriptionDisconnected,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.resetSubscriptionCadenceAnchor()
+            }
+        }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -56,6 +71,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         setupDistributedNotificationListener()
         installLaunchAgentIfNeeded()
         registerLoginItemIfNeeded()
+        observeSubscriptionDisconnect()
         Task { await updateChecker.checkIfNeeded() }
     }
 
@@ -210,24 +226,59 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         }
     }
 
+    fileprivate var lastSubscriptionRefreshAt: Date?
+
     private func startRefreshLoop() {
         Task { [weak self] in
-            // Kick off subscription refresh eagerly so the AgentTab quota bar lights up
-            // on first paint instead of waiting for the user to open a deep view.
-            await self?.store.refreshSubscription()
+            // Subscription refresh only runs when the user has explicitly connected.
+            // refreshSubscription is a no-op until ClaudeCredentialStore.isBootstrapCompleted
+            // is true; that flag flips only when the user clicks Connect in the Plan tab.
+            if let self {
+                let succeeded = await self.store.refreshSubscriptionReportingSuccess()
+                if succeeded { self.lastSubscriptionRefreshAt = Date() }
+            }
             while !Task.isCancelled {
                 guard let self else { return }
                 if self.store.selectedPeriod != .today || self.store.selectedProvider != .all {
                     await self.store.refreshQuietly(period: .today)
                 }
                 await self.store.refresh(includeOptimize: false, force: true)
-                // Subscription refresh is one cheap API call gated by SubscriptionRefreshGate,
-                // so a dead token will not hammer Anthropic on every tick.
-                await self.store.refreshSubscription()
+                // Cadence anchor is the LAST SUCCESSFUL fetch, not the last attempt.
+                // Otherwise an intermittent network failure resets the timer and the
+                // user sits idle for a full cadence interval before we retry.
+                let cadence = SubscriptionRefreshCadence.current
+                if cadence != .manual {
+                    let elapsed = Date().timeIntervalSince(self.lastSubscriptionRefreshAt ?? .distantPast)
+                    if elapsed >= TimeInterval(cadence.rawValue) {
+                        let succeeded = await self.store.refreshSubscriptionReportingSuccess()
+                        if succeeded { self.lastSubscriptionRefreshAt = Date() }
+                    }
+                }
                 self.refreshStatusButton()
                 try? await Task.sleep(nanoseconds: refreshIntervalNanos)
             }
         }
+    }
+
+    @MainActor
+    func refreshSubscriptionNow() {
+        Task { [weak self] in
+            guard let self else { return }
+            // "Refresh Now" should refresh BOTH the menubar payload and the
+            // subscription quota — the user's intent is "make this match
+            // reality right now," not "ping just one of two paths".
+            async let payload: Void = self.store.refresh(includeOptimize: false, force: true, showLoading: true)
+            async let quota: Bool = self.store.refreshSubscriptionReportingSuccess()
+            _ = await payload
+            if await quota { self.lastSubscriptionRefreshAt = Date() }
+        }
+    }
+
+    /// Reset the cadence anchor so the next loop tick re-evaluates from "now"
+    /// rather than measuring against a timestamp from the previous connection.
+    @MainActor
+    func resetSubscriptionCadenceAnchor() {
+        lastSubscriptionRefreshAt = nil
     }
 
     private func observeStore() {
@@ -368,6 +419,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     private func showContextMenu(from button: NSStatusBarButton) {
         let menu = NSMenu()
+
+        let settingsItem = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
+        settingsItem.target = self
+        menu.addItem(settingsItem)
+
+        let refreshNow = NSMenuItem(title: "Refresh Now", action: #selector(refreshNowAction), keyEquivalent: "r")
+        refreshNow.target = self
+        menu.addItem(refreshNow)
+
+        menu.addItem(.separator())
         let updateItem = NSMenuItem(title: "Check for Updates", action: #selector(checkForUpdates), keyEquivalent: "")
         updateItem.target = self
         menu.addItem(updateItem)
@@ -375,9 +436,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         let quitItem = NSMenuItem(title: "Quit CodeBurn", action: #selector(quitApp), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
+
         statusItem.menu = menu
         button.performClick(nil)
         statusItem.menu = nil
+    }
+
+    private var settingsWindowController: NSWindowController?
+
+    @objc private func openSettings() {
+        // Accessory-policy apps (no Dock icon, no main menu) don't get the
+        // SwiftUI Settings scene wired into the responder chain reliably, so
+        // the standard `showSettingsWindow:` selector silently no-ops. We host
+        // the SwiftUI view in our own NSWindowController instead.
+        if let controller = settingsWindowController {
+            NSApp.activate(ignoringOtherApps: true)
+            controller.window?.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        let hosting = NSHostingController(
+            rootView: SettingsView().environment(store)
+        )
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 520, height: 380),
+            styleMask: [.titled, .closable, .miniaturizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "CodeBurn Settings"
+        window.contentViewController = hosting
+        window.center()
+        window.isReleasedWhenClosed = false
+        let controller = NSWindowController(window: window)
+        settingsWindowController = controller
+        NSApp.activate(ignoringOtherApps: true)
+        controller.showWindow(nil)
+    }
+
+    @objc private func refreshNowAction() {
+        refreshSubscriptionNow()
     }
 
     private func codeburnAlertIcon() -> NSImage? {

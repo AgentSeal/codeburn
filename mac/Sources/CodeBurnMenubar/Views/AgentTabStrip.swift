@@ -66,7 +66,9 @@ private struct AgentTab: View {
     let isActive: Bool
     let quota: QuotaSummary?
 
-    @State private var isHovering = false
+    @State private var hoverPopoverShown = false
+    @State private var hoverEnterTask: DispatchWorkItem?
+    @State private var hoverExitTask: DispatchWorkItem?
 
     var body: some View {
         VStack(spacing: 3) {
@@ -81,10 +83,13 @@ private struct AgentTab: View {
                         .tracking(-0.2)
                 }
             }
-            if quota != nil {
-                AgentTabQuotaBar(quota: quota, isActive: isActive)
-                    .frame(height: 3)
-            }
+            // Reserve the bar slot even when there is no quota source for this
+            // provider, so the chip height stays constant. Avoids the AgentTab
+            // strip jumping by 6pt when the user clicks Connect for the first
+            // time, and gives unsupported providers a consistent footprint.
+            AgentTabQuotaBar(quota: quota, isActive: isActive)
+                .frame(height: 3)
+                .opacity(quota == nil ? 0 : 1)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 4)
@@ -94,8 +99,23 @@ private struct AgentTab: View {
         )
         .foregroundStyle(isActive ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
         .contentShape(Rectangle())
-        .onHover { hovering in isHovering = hovering }
-        .popover(isPresented: Binding(get: { isHovering && quota != nil }, set: { _ in })) {
+        .onHover { hovering in
+            // Debounce: 250ms enter so swiping across chips doesn't pop a
+            // popover for every chip touched, and 150ms exit so cursor travel
+            // between chip and popover doesn't dismiss prematurely.
+            hoverEnterTask?.cancel()
+            hoverExitTask?.cancel()
+            if hovering, quota != nil {
+                let task = DispatchWorkItem { hoverPopoverShown = true }
+                hoverEnterTask = task
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: task)
+            } else {
+                let task = DispatchWorkItem { hoverPopoverShown = false }
+                hoverExitTask = task
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: task)
+            }
+        }
+        .popover(isPresented: $hoverPopoverShown) {
             if let quota {
                 QuotaDetailPopover(quota: quota)
             }
@@ -203,7 +223,7 @@ private struct QuotaDetailPopover: View {
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
                 .lineLimit(2)
-            Text("Run `claude login` in your terminal — the menu bar will pick it up automatically.")
+            Text("Open Claude Code in your terminal and type `/login`, then click Reconnect.")
                 .font(.system(size: 10.5))
                 .foregroundStyle(.secondary)
         }

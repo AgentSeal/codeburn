@@ -895,28 +895,34 @@ private struct PlanInsight: View {
     var body: some View {
         Group {
             switch store.subscriptionLoadState {
-            case .idle:
-                PlanIdleView()
-            case .loading:
+            case .notBootstrapped:
+                PlanConnectView { Task { await store.bootstrapSubscription() } }
+            case .bootstrapping:
                 PlanLoadingView()
+            case .loading:
+                if let usage {
+                    loadedBody(usage: usage)
+                } else {
+                    PlanLoadingView()
+                }
             case .noCredentials:
                 PlanNoCredentialsView()
-            case .failed, .transientFailure:
+            case .failed:
                 PlanFailedView(error: store.subscriptionError)
+            case .transientFailure:
+                if let usage {
+                    loadedBody(usage: usage)
+                } else {
+                    PlanFailedView(error: store.subscriptionError ?? "Anthropic temporarily unreachable — retrying.")
+                }
             case let .terminalFailure(reason):
-                PlanFailedView(error: reason ?? "Claude session expired — run `claude login` to reconnect")
+                PlanReconnectView(reason: reason) { Task { await store.bootstrapSubscription() } }
             case .loaded:
                 if let usage {
                     loadedBody(usage: usage)
                 } else {
-                    PlanNoCredentialsView()
+                    PlanLoadingView()
                 }
-            }
-        }
-        .task {
-            // Lazy-trigger fetch the first time Plan is opened.
-            if store.subscriptionLoadState == .idle {
-                await store.refreshSubscription()
             }
         }
     }
@@ -1016,26 +1022,6 @@ private struct PlanInsight: View {
 
 // MARK: - Plan empty/loading/failure states
 
-private struct PlanIdleView: View {
-    var body: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "person.crop.circle.dashed")
-                .font(.system(size: 22))
-                .foregroundStyle(.tertiary)
-            Text("Loading your plan...")
-                .font(.system(size: 11.5, weight: .medium))
-                .foregroundStyle(.secondary)
-            Text("macOS may ask permission to read your Claude Code credentials.")
-                .font(.system(size: 10))
-                .foregroundStyle(.tertiary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 260)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 16)
-    }
-}
-
 private struct PlanLoadingView: View {
     var body: some View {
         VStack(spacing: 8) {
@@ -1053,27 +1039,27 @@ private struct PlanNoCredentialsView: View {
     @Environment(AppStore.self) private var store
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 10) {
             Image(systemName: "key.slash")
-                .font(.system(size: 20))
+                .font(.system(size: 24))
                 .foregroundStyle(.tertiary)
-            Text("No Claude subscription connected")
+            Text("No Claude credentials found")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.primary)
-            Text("Sign in with Claude Code, then click Retry.")
+            Text("Sign in with Claude Code first: open `claude` in your terminal and type `/login`. Then click Try Again.")
                 .font(.system(size: 10.5))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-                .frame(maxWidth: 260)
-            Button("Retry") {
-                Task { await store.refreshSubscription() }
+                .frame(maxWidth: 280)
+            Button("Try Again") {
+                Task { await store.bootstrapSubscription() }
             }
             .controlSize(.small)
             .buttonStyle(.borderedProminent)
             .tint(Theme.brandAccent)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 14)
+        .padding(.vertical, 16)
     }
 }
 
@@ -1106,6 +1092,67 @@ private struct PlanFailedView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 14)
+    }
+}
+
+/// Shown the very first time a user opens the Plan tab. Clicking Connect is the
+/// only path to triggering the macOS keychain prompt for Claude Code credentials —
+/// the menubar app does not touch the keychain at startup.
+private struct PlanConnectView: View {
+    let onConnect: () -> Void
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "link.circle")
+                .font(.system(size: 26))
+                .foregroundStyle(Theme.brandAccent)
+            Text("Connect Claude subscription")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.primary)
+            Text("CodeBurn will read your Claude Code credentials once. macOS will ask permission. After that, the live quota bar shows next to the Claude tab and updates automatically.")
+                .font(.system(size: 10.5))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 280)
+            Button("Connect", action: onConnect)
+                .controlSize(.small)
+                .buttonStyle(.borderedProminent)
+                .tint(Theme.brandAccent)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 18)
+    }
+}
+
+/// Shown when the refresh token has been invalidated (typically because the user
+/// re-authenticated on another device). Clicking the button re-runs bootstrap,
+/// which reads Claude's credentials source again and writes a fresh copy to our
+/// own keychain item.
+private struct PlanReconnectView: View {
+    let reason: String?
+    let onReconnect: () -> Void
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "arrow.triangle.2.circlepath.circle")
+                .font(.system(size: 24))
+                .foregroundStyle(.red)
+            Text("Reconnect Claude")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.primary)
+            Text(reason ?? "Your Claude session has expired. Open Claude Code in your terminal and type `/login`, then click Reconnect.")
+                .font(.system(size: 10.5))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 280)
+                .lineLimit(3)
+            Button("Reconnect", action: onReconnect)
+                .controlSize(.small)
+                .buttonStyle(.borderedProminent)
+                .tint(.red)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 16)
     }
 }
 

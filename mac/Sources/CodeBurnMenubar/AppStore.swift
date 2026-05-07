@@ -30,7 +30,7 @@ final class AppStore {
     var lastError: String?
     var subscription: SubscriptionUsage?
     var subscriptionError: String?
-    var subscriptionLoadState: SubscriptionLoadState = .idle
+    var subscriptionLoadState: SubscriptionLoadState = ClaudeCredentialStore.isBootstrapCompleted ? .loading : .notBootstrapped
     var capacityEstimates: [String: CapacityEstimate] = [:]
 
     private var cache: [PayloadCacheKey: CachedPayload] = [:]
@@ -189,45 +189,129 @@ final class AppStore {
         }
     }
 
-    /// Fetch Claude subscription usage. Sets subscription = nil on missing creds (API users / unauthenticated).
-    /// Triggered eagerly so the AgentTab quota bar lights up without requiring the user to open
-    /// any deep view; the gate prevents a dead refresh token from spamming Anthropic forever.
-    func refreshSubscription() async {
-        // Don't drop to "loading" if we already have data — keeps the bar steady across ticks.
-        if subscription == nil { subscriptionLoadState = .loading }
+    /// User-initiated. Reads Claude's source (this is what triggers the macOS keychain
+    /// prompt for `Claude Code-credentials`). Once successful, subsequent background
+    /// refreshes go through our own keychain item without prompting.
+    func bootstrapSubscription() async {
+        subscriptionLoadState = .bootstrapping
         do {
-            let usage = try await SubscriptionClient.fetch()
+            let usage = try await ClaudeSubscriptionService.bootstrap()
             subscription = usage
             subscriptionError = nil
             subscriptionLoadState = .loaded
             await captureSnapshots(for: usage)
-        } catch SubscriptionError.noCredentials {
-            subscription = nil
-            subscriptionError = nil
-            subscriptionLoadState = .noCredentials
-        } catch let SubscriptionError.refreshBlockedTerminal(reason) {
-            subscriptionError = reason
-            subscriptionLoadState = .terminalFailure(reason: reason)
-        } catch SubscriptionError.refreshBlockedTransient {
-            subscriptionLoadState = .transientFailure
+        } catch let err as ClaudeSubscriptionService.FetchError {
+            applyFetchError(err)
         } catch {
             subscriptionError = String(describing: error)
             subscriptionLoadState = .failed
-            NSLog("CodeBurn: subscription fetch failed: \(error)")
         }
     }
 
-    /// Snapshot of live quota state for a given provider, used by AgentTab to render
-    /// the inline progress bar and the hover popover. Returns nil for providers without
-    /// a quota source (today: everything except Claude).
+    /// Background refresh. No-op if the user has not yet connected. Never triggers
+    /// a keychain prompt — uses our own keychain item exclusively.
+    func refreshSubscription() async {
+        _ = await refreshSubscriptionReportingSuccess()
+    }
+
+    /// Same as `refreshSubscription` but returns whether the fetch produced a
+    /// `.loaded` state, so the caller can anchor cadence timing on real success
+    /// rather than every attempt.
+    @discardableResult
+    func refreshSubscriptionReportingSuccess() async -> Bool {
+        guard ClaudeCredentialStore.isBootstrapCompleted else {
+            if subscriptionLoadState != .notBootstrapped {
+                subscriptionLoadState = .notBootstrapped
+            }
+            return false
+        }
+        if subscription == nil { subscriptionLoadState = .loading }
+        do {
+            guard let usage = try await ClaudeSubscriptionService.refreshIfBootstrapped() else {
+                return false
+            }
+            subscription = usage
+            subscriptionError = nil
+            subscriptionLoadState = .loaded
+            await captureSnapshots(for: usage)
+            return true
+        } catch let err as ClaudeSubscriptionService.FetchError {
+            applyFetchError(err)
+            return false
+        } catch {
+            subscriptionError = sanitizeForUI(String(describing: error))
+            subscriptionLoadState = .failed
+            return false
+        }
+    }
+
+    /// User-initiated disconnect — clears our keychain item and bootstrap flag,
+    /// plus all derived state so a reconnect (potentially under a different
+    /// account or tier) starts clean. capacityEstimates and the snapshot store
+    /// would otherwise contaminate "Based on last cycle" projections.
+    func disconnectSubscription() {
+        ClaudeSubscriptionService.disconnect()
+        subscription = nil
+        subscriptionError = nil
+        subscriptionLoadState = .notBootstrapped
+        capacityEstimates = [:]
+        Task.detached { await SubscriptionSnapshotStore.clearAll() }
+        // Notify the AppDelegate to clear its cadence-loop anchor so the next
+        // reconnect doesn't measure against a pre-disconnect timestamp.
+        NotificationCenter.default.post(name: .codeBurnSubscriptionDisconnected, object: nil)
+    }
+
+    private func applyFetchError(_ err: ClaudeSubscriptionService.FetchError) {
+        let sanitized = sanitizeForUI(err.errorDescription)
+        subscriptionError = sanitized
+        if err.isTerminal {
+            subscriptionLoadState = .terminalFailure(reason: sanitized)
+        } else if let retryAt = err.rateLimitRetryAt {
+            subscriptionLoadState = .transientFailure(retryAt: retryAt)
+        } else if case .notBootstrapped = err {
+            subscriptionLoadState = .notBootstrapped
+        } else if case let .bootstrapFailed(storeErr) = err, case .bootstrapNoSource = storeErr {
+            subscriptionLoadState = .noCredentials
+        } else {
+            subscriptionLoadState = .failed
+        }
+    }
+
+    /// Strip control characters and any token-shaped substrings from server-error
+    /// strings before they land in NSLog or the UI. Anthropic's error envelopes
+    /// don't typically echo tokens, but we also surface this in unified-log paths
+    /// readable by other local users via `log stream`.
+    private func sanitizeForUI(_ s: String?) -> String? {
+        guard let s, !s.isEmpty else { return nil }
+        var cleaned = s.replacingOccurrences(of: "\u{0000}", with: "")
+        // Token-shaped redaction. Claude OAuth tokens always start with sk-ant-
+        // followed by a category code and base64ish chars.
+        cleaned = cleaned.replacingOccurrences(
+            of: #"sk-ant-[A-Za-z0-9_-]+"#,
+            with: "sk-ant-***",
+            options: .regularExpression
+        )
+        // Cap length so a runaway server body cannot fill stderr.
+        if cleaned.count > 240 { cleaned = String(cleaned.prefix(240)) + "…" }
+        return cleaned
+    }
+
+    /// Snapshot of live quota state for a given provider. Returns nil when the user
+    /// has not connected yet — the bar slot stays empty so we never trigger a
+    /// keychain prompt at startup. Once bootstrapped, the bar persists across all
+    /// subsequent states (loading / stale / transient failure / terminal failure)
+    /// so it doesn't flicker on every refresh tick.
     func quotaSummary(for filter: ProviderFilter) -> QuotaSummary? {
         guard filter == .claude else { return nil }
+        if case .notBootstrapped = subscriptionLoadState { return nil }
+        if case .bootstrapping = subscriptionLoadState { return nil }
+        if case .noCredentials = subscriptionLoadState { return nil }
 
         let connection: QuotaSummary.Connection = {
             switch subscriptionLoadState {
-            case .idle, .loading: return subscription == nil ? .loading : .stale
+            case .notBootstrapped, .bootstrapping, .noCredentials: return .disconnected
+            case .loading: return subscription == nil ? .loading : .stale
             case .loaded: return .connected
-            case .noCredentials: return .disconnected
             case .failed: return subscription == nil ? .loading : .stale
             case let .terminalFailure(reason): return .terminalFailure(reason: reason)
             case .transientFailure: return .transientFailure
@@ -252,12 +336,6 @@ final class AppStore {
             if let pct = usage.sevenDaySonnetPercent {
                 details.append(.init(label: "Weekly · Sonnet", percent: pct / 100, resetsAt: usage.sevenDaySonnetResetsAt))
             }
-        }
-
-        // No data yet, no connection state worth showing → bail.
-        if primary == nil, case .disconnected = connection { return nil }
-        if primary == nil, case .loading = connection {
-            return QuotaSummary(providerFilter: filter, connection: connection, primary: nil, details: [])
         }
 
         return QuotaSummary(providerFilter: filter, connection: connection, primary: primary, details: details)
@@ -399,14 +477,19 @@ enum ProviderFilter: String, CaseIterable, Identifiable {
     }
 }
 
+extension Notification.Name {
+    static let codeBurnSubscriptionDisconnected = Notification.Name("com.codeburn.subscriptionDisconnected")
+}
+
 enum SubscriptionLoadState: Sendable, Equatable {
-    case idle           // never tried, awaiting user intent
-    case loading        // fetch in progress
-    case loaded         // success; subscription is populated
-    case noCredentials  // tried; user has no Claude OAuth (API user / not logged in)
-    case failed         // tried; non-recoverable transient error
+    case notBootstrapped  // no Keychain access yet — waiting for user to click Connect
+    case bootstrapping    // user clicked Connect; reading Claude's keychain (PROMPTS)
+    case loading          // background fetch in progress (subscription may already be populated)
+    case loaded           // success; subscription is populated
+    case noCredentials    // bootstrap tried; user has no Claude credentials at all
+    case failed           // generic non-recoverable failure
     case terminalFailure(reason: String?)  // refresh-token invalid; user must reconnect
-    case transientFailure                  // anthropic flaky; backing off
+    case transientFailure(retryAt: Date?)  // 429 / network blip; backing off automatically
 }
 
 enum InsightMode: String, CaseIterable, Identifiable {
