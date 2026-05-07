@@ -33,6 +33,16 @@ final class AppStore {
     var subscriptionLoadState: SubscriptionLoadState = ClaudeCredentialStore.isBootstrapCompleted ? .loading : .notBootstrapped
     var capacityEstimates: [String: CapacityEstimate] = [:]
 
+    var codexUsage: CodexUsage?
+    var codexError: String?
+    var codexLoadState: SubscriptionLoadState = CodexCredentialStore.isBootstrapCompleted ? .loading : .notBootstrapped
+
+    /// Generation tokens for the in-flight refresh tasks. Incremented on every
+    /// disconnect / reset so a fetch that started before the disconnect cannot
+    /// resume after the await and re-populate the freshly-cleared state.
+    private var claudeRefreshGen: Int = 0
+    private var codexRefreshGen: Int = 0
+
     private var cache: [PayloadCacheKey: CachedPayload] = [:]
     private var cacheDate: String = ""
     private var switchTask: Task<Void, Never>?
@@ -225,20 +235,28 @@ final class AppStore {
             }
             return false
         }
+        let gen = claudeRefreshGen
         if subscription == nil { subscriptionLoadState = .loading }
         do {
             guard let usage = try await ClaudeSubscriptionService.refreshIfBootstrapped() else {
                 return false
             }
+            // Disconnect-during-fetch guard: if the user clicked Disconnect
+            // while we were awaiting Anthropic, the generation token will
+            // have advanced and we must drop this result instead of writing
+            // it back over the freshly-cleared state.
+            guard gen == claudeRefreshGen else { return false }
             subscription = usage
             subscriptionError = nil
             subscriptionLoadState = .loaded
             await captureSnapshots(for: usage)
             return true
         } catch let err as ClaudeSubscriptionService.FetchError {
+            guard gen == claudeRefreshGen else { return false }
             applyFetchError(err)
             return false
         } catch {
+            guard gen == claudeRefreshGen else { return false }
             subscriptionError = sanitizeForUI(String(describing: error))
             subscriptionLoadState = .failed
             return false
@@ -251,6 +269,10 @@ final class AppStore {
     /// would otherwise contaminate "Based on last cycle" projections.
     func disconnectSubscription() {
         ClaudeSubscriptionService.disconnect()
+        // Bump the generation token so any in-flight refreshSubscription that
+        // resumes after this point detects the disconnect and discards its
+        // result instead of re-populating the cleared state.
+        claudeRefreshGen &+= 1
         subscription = nil
         subscriptionError = nil
         subscriptionLoadState = .notBootstrapped
@@ -259,6 +281,81 @@ final class AppStore {
         // Notify the AppDelegate to clear its cadence-loop anchor so the next
         // reconnect doesn't measure against a pre-disconnect timestamp.
         NotificationCenter.default.post(name: .codeBurnSubscriptionDisconnected, object: nil)
+    }
+
+    // MARK: - Codex
+
+    func bootstrapCodex() async {
+        codexLoadState = .bootstrapping
+        do {
+            let usage = try await CodexSubscriptionService.bootstrap()
+            codexUsage = usage
+            codexError = nil
+            codexLoadState = .loaded
+        } catch let err as CodexSubscriptionService.FetchError {
+            applyCodexFetchError(err)
+        } catch {
+            codexError = sanitizeForUI(String(describing: error))
+            codexLoadState = .failed
+        }
+    }
+
+    func refreshCodex() async {
+        _ = await refreshCodexReportingSuccess()
+    }
+
+    @discardableResult
+    func refreshCodexReportingSuccess() async -> Bool {
+        guard CodexCredentialStore.isBootstrapCompleted else {
+            if codexLoadState != .notBootstrapped { codexLoadState = .notBootstrapped }
+            return false
+        }
+        let gen = codexRefreshGen
+        if codexUsage == nil { codexLoadState = .loading }
+        do {
+            guard let usage = try await CodexSubscriptionService.refreshIfBootstrapped() else {
+                return false
+            }
+            guard gen == codexRefreshGen else { return false }
+            codexUsage = usage
+            codexError = nil
+            codexLoadState = .loaded
+            return true
+        } catch let err as CodexSubscriptionService.FetchError {
+            guard gen == codexRefreshGen else { return false }
+            applyCodexFetchError(err)
+            return false
+        } catch {
+            guard gen == codexRefreshGen else { return false }
+            codexError = sanitizeForUI(String(describing: error))
+            codexLoadState = .failed
+            return false
+        }
+    }
+
+    func disconnectCodex() {
+        CodexSubscriptionService.disconnect()
+        codexRefreshGen &+= 1
+        codexUsage = nil
+        codexError = nil
+        codexLoadState = .notBootstrapped
+        NotificationCenter.default.post(name: .codeBurnSubscriptionDisconnected, object: nil)
+    }
+
+    private func applyCodexFetchError(_ err: CodexSubscriptionService.FetchError) {
+        let sanitized = sanitizeForUI(err.errorDescription)
+        codexError = sanitized
+        if err.isTerminal {
+            codexLoadState = .terminalFailure(reason: sanitized)
+        } else if let retryAt = err.rateLimitRetryAt {
+            codexLoadState = .transientFailure(retryAt: retryAt)
+        } else if case .notBootstrapped = err {
+            codexLoadState = .notBootstrapped
+        } else if case let .bootstrapFailed(storeErr) = err, case .bootstrapNoSource = storeErr {
+            codexLoadState = .noCredentials
+        } else {
+            codexLoadState = .failed
+        }
     }
 
     private func applyFetchError(_ err: ClaudeSubscriptionService.FetchError) {
@@ -278,19 +375,23 @@ final class AppStore {
     }
 
     /// Strip control characters and any token-shaped substrings from server-error
-    /// strings before they land in NSLog or the UI. Anthropic's error envelopes
-    /// don't typically echo tokens, but we also surface this in unified-log paths
-    /// readable by other local users via `log stream`.
+    /// strings before they land in NSLog or the UI. Anthropic / OpenAI error
+    /// envelopes don't typically echo tokens, but we also surface this in
+    /// unified-log paths readable by other local users via `log stream`.
     private func sanitizeForUI(_ s: String?) -> String? {
         guard let s, !s.isEmpty else { return nil }
         var cleaned = s.replacingOccurrences(of: "\u{0000}", with: "")
-        // Token-shaped redaction. Claude OAuth tokens always start with sk-ant-
-        // followed by a category code and base64ish chars.
-        cleaned = cleaned.replacingOccurrences(
-            of: #"sk-ant-[A-Za-z0-9_-]+"#,
-            with: "sk-ant-***",
-            options: .regularExpression
-        )
+        // Token-shaped redaction. Apply to all known auth-token formats so
+        // an error body that quotes the request/response token is masked.
+        let patterns: [(pattern: String, replacement: String)] = [
+            (#"sk-ant-[A-Za-z0-9_-]+"#, "sk-ant-***"),
+            (#"sk-[A-Za-z0-9_-]{16,}"#, "sk-***"),
+            (#"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"#, "eyJ***"),
+            (#"(?i)Bearer\s+\S+"#, "Bearer ***"),
+        ]
+        for entry in patterns {
+            cleaned = cleaned.replacingOccurrences(of: entry.pattern, with: entry.replacement, options: .regularExpression)
+        }
         // Cap length so a runaway server body cannot fill stderr.
         if cleaned.count > 240 { cleaned = String(cleaned.prefix(240)) + "…" }
         return cleaned
@@ -301,8 +402,46 @@ final class AppStore {
     /// keychain prompt at startup. Once bootstrapped, the bar persists across all
     /// subsequent states (loading / stale / transient failure / terminal failure)
     /// so it doesn't flicker on every refresh tick.
+    /// Aggregate quota status across all connected providers, used by the menu
+    /// bar flame icon (color) and the popover warning row. Severity = worst
+    /// observed across any provider's worst window. Warning providers are
+    /// every connected provider at >= 70% utilization.
+    struct AggregateQuotaStatus {
+        let severity: QuotaSummary.Severity
+        let warnings: [(name: String, percent: Double)]   // sorted desc by percent
+    }
+
+    var aggregateQuotaStatus: AggregateQuotaStatus {
+        var providers: [(name: String, percent: Double)] = []
+        if case .loaded = subscriptionLoadState, let usage = subscription {
+            let worst = [
+                usage.fiveHourPercent,
+                usage.sevenDayPercent,
+                usage.sevenDayOpusPercent,
+                usage.sevenDaySonnetPercent,
+            ].compactMap { $0 }.max() ?? 0
+            if worst > 0 { providers.append(("Claude", worst)) }
+        }
+        if case .loaded = codexLoadState, let usage = codexUsage {
+            let worst = max(usage.primary?.usedPercent ?? 0, usage.secondary?.usedPercent ?? 0)
+            if worst > 0 { providers.append(("Codex", worst)) }
+        }
+        let worst = providers.map(\.percent).max() ?? 0
+        let severity = QuotaSummary.severity(for: worst / 100)
+        let sorted = providers.sorted { $0.percent > $1.percent }
+        let warnings = sorted.filter { $0.percent >= 70 }
+        return AggregateQuotaStatus(severity: severity, warnings: warnings)
+    }
+
     func quotaSummary(for filter: ProviderFilter) -> QuotaSummary? {
-        guard filter == .claude else { return nil }
+        switch filter {
+        case .claude: return claudeQuotaSummary(filter: filter)
+        case .codex:  return codexQuotaSummary(filter: filter)
+        default:      return nil
+        }
+    }
+
+    private func claudeQuotaSummary(filter: ProviderFilter) -> QuotaSummary? {
         if case .notBootstrapped = subscriptionLoadState { return nil }
         if case .bootstrapping = subscriptionLoadState { return nil }
         if case .noCredentials = subscriptionLoadState { return nil }
@@ -318,7 +457,6 @@ final class AppStore {
             }
         }()
 
-        // Build the windows. Weekly is the headline; details include all four for hover.
         var primary: QuotaSummary.Window?
         var details: [QuotaSummary.Window] = []
         if let usage = subscription {
@@ -337,8 +475,68 @@ final class AppStore {
                 details.append(.init(label: "Weekly · Sonnet", percent: pct / 100, resetsAt: usage.sevenDaySonnetResetsAt))
             }
         }
+        let plan = subscription?.tier.displayName
+        return QuotaSummary(providerFilter: filter, connection: connection, primary: primary, details: details, planLabel: plan, footerLines: [])
+    }
 
-        return QuotaSummary(providerFilter: filter, connection: connection, primary: primary, details: details)
+    private func codexQuotaSummary(filter: ProviderFilter) -> QuotaSummary? {
+        if case .notBootstrapped = codexLoadState { return nil }
+        if case .bootstrapping = codexLoadState { return nil }
+        if case .noCredentials = codexLoadState { return nil }
+
+        let connection: QuotaSummary.Connection = {
+            switch codexLoadState {
+            case .notBootstrapped, .bootstrapping, .noCredentials: return .disconnected
+            case .loading: return codexUsage == nil ? .loading : .stale
+            case .loaded: return .connected
+            case .failed: return codexUsage == nil ? .loading : .stale
+            case let .terminalFailure(reason): return .terminalFailure(reason: reason)
+            case .transientFailure: return .transientFailure
+            }
+        }()
+
+        var primary: QuotaSummary.Window?
+        var details: [QuotaSummary.Window] = []
+        if let usage = codexUsage {
+            if let w = usage.primary {
+                let row = QuotaSummary.Window(label: w.windowLabel, percent: w.usedPercent / 100, resetsAt: w.resetsAt)
+                primary = row
+                details.append(row)
+            }
+            if let w = usage.secondary {
+                let row = QuotaSummary.Window(label: w.windowLabel, percent: w.usedPercent / 100, resetsAt: w.resetsAt)
+                // Some Codex plans (free / guest tiers) only return a secondary
+                // window. Promote it to primary so the chip bar always has a
+                // data source instead of rendering as an empty track.
+                if primary == nil { primary = row }
+                details.append(row)
+            }
+            // Surface per-model additional rate limits (e.g. "GPT-5.3-Codex-Spark")
+            // only when the user has actually hit them. Skipping zero rows keeps
+            // the popover compact for the common case where the user only uses
+            // the main Codex window.
+            for extra in usage.additionalLimits {
+                if let p = extra.primary, p.usedPercent > 0 {
+                    details.append(.init(label: "\(extra.name) · \(p.windowLabel)", percent: p.usedPercent / 100, resetsAt: p.resetsAt))
+                }
+                if let s = extra.secondary, s.usedPercent > 0 {
+                    details.append(.init(label: "\(extra.name) · \(s.windowLabel)", percent: s.usedPercent / 100, resetsAt: s.resetsAt))
+                }
+            }
+        }
+        let plan = codexUsage?.plan.displayName
+        var footerLines: [String] = []
+        if let balance = codexUsage?.creditsBalance, balance > 0 {
+            // Format as plain dollars; ChatGPT settles in USD regardless of
+            // the user's display-currency preference.
+            let formatter = NumberFormatter()
+            formatter.numberStyle = .currency
+            formatter.currencyCode = "USD"
+            formatter.maximumFractionDigits = 2
+            let formatted = formatter.string(from: NSNumber(value: balance)) ?? "$\(balance)"
+            footerLines.append("Credits remaining · \(formatted)")
+        }
+        return QuotaSummary(providerFilter: filter, connection: connection, primary: primary, details: details, planLabel: plan, footerLines: footerLines)
     }
 
     /// Persist one snapshot per window so we can answer "what did the prior cycle end at?"

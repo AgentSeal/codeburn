@@ -145,14 +145,19 @@ enum ClaudeCredentialStore {
     /// keychain item — never prompts. Returns nil if not bootstrapped.
     static func currentRecord() throws -> CredentialRecord? {
         guard isBootstrapCompleted else { return nil }
-        if let cached = lock.withLock({ memoryCache })?.record { return cached }
+        // Honour the in-memory TTL: a stale cached record can mask a token
+        // that another process (e.g. claude /login again) has just rotated
+        // on disk. Re-read the file when the cache passes the TTL.
+        if let cached = lock.withLock({ memoryCache }), cached.isFresh {
+            return cached.record
+        }
         if let stored = try readOurCache() {
             cacheInMemory(stored)
             return stored
         }
-        // Bootstrap flag is set but our keychain item is missing — most likely
+        // Bootstrap flag is set but our cache file is missing — most likely
         // a fresh install resetting state, or the user manually deleted the
-        // item. Force re-bootstrap on next user action.
+        // file. Force re-bootstrap on next user action.
         isBootstrapCompleted = false
         return nil
     }

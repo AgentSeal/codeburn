@@ -207,28 +207,90 @@ private struct BurnFlame: View {
 
 private struct Header: View {
     @Environment(UpdateChecker.self) private var updateChecker
+    @Environment(AppStore.self) private var store
     var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 1) {
-                (
-                    Text("Code").foregroundStyle(.primary)
-                    + Text("Burn").foregroundStyle(Theme.brandEmber)
-                )
-                .font(.system(size: 13, weight: .semibold))
-                .tracking(-0.15)
-                Text("AI Coding Cost Tracker")
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                VStack(alignment: .leading, spacing: 1) {
+                    (
+                        Text("Code").foregroundStyle(.primary)
+                        + Text("Burn").foregroundStyle(Theme.brandEmber)
+                    )
+                    .font(.system(size: 13, weight: .semibold))
+                    .tracking(-0.15)
+                    Text("AI Coding Cost Tracker")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if updateChecker.updateAvailable {
+                    UpdateBadge()
+                }
+                AccentPicker()
             }
-            Spacer()
-            if updateChecker.updateAvailable {
-                UpdateBadge()
-            }
-            AccentPicker()
+            // Compact warning row when any connected provider crosses 70%.
+            // Lists all warning providers with their worst-window percent so
+            // the user knows whether to slow down on Claude, Codex, or both.
+            QuotaWarningRow(status: store.aggregateQuotaStatus)
         }
         .padding(.horizontal, 14)
         .padding(.top, 10)
         .padding(.bottom, 8)
+    }
+}
+
+private struct QuotaWarningRow: View {
+    let status: AppStore.AggregateQuotaStatus
+
+    var body: some View {
+        if !status.warnings.isEmpty {
+            HStack(spacing: 6) {
+                Image(systemName: severityIcon)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(severityColor)
+                Text(message)
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(severityColor)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(severityColor.opacity(0.12))
+            )
+        }
+    }
+
+    private var message: String {
+        let parts = status.warnings.map { "\($0.name) \(Int($0.percent.rounded()))%" }
+        if parts.count == 1 {
+            // Reads "Claude over limit (105%)" when any provider exceeds the
+            // quota cap, instead of the awkward "Claude 105% of quota used".
+            if case .danger = status.severity {
+                return "\(status.warnings[0].name) over limit (\(Int(status.warnings[0].percent.rounded()))%)"
+            }
+            return "\(parts[0]) of quota used"
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    private var severityColor: Color {
+        switch status.severity {
+        case .normal:   return .secondary
+        case .warning:  return .yellow
+        case .critical: return .orange
+        case .danger:   return .red
+        }
+    }
+
+    private var severityIcon: String {
+        switch status.severity {
+        case .normal:   return "info.circle"
+        case .warning:  return "exclamationmark.circle"
+        case .critical: return "exclamationmark.triangle"
+        case .danger:   return "octagon"
+        }
     }
 }
 

@@ -14,10 +14,13 @@ struct SettingsView: View {
             ClaudeSettingsTab()
                 .tabItem { Label("Claude", systemImage: "brain") }
 
+            CodexSettingsTab()
+                .tabItem { Label("Codex", systemImage: "chevron.left.forwardslash.chevron.right") }
+
             AboutSettingsTab()
                 .tabItem { Label("About", systemImage: "info.circle") }
         }
-        .frame(width: 520, height: 380)
+        .frame(width: 520, height: 400)
     }
 }
 
@@ -186,13 +189,144 @@ private struct ClaudeConnectionRow: View {
                     }
                     Button("Cancel", role: .cancel) {}
                 } message: {
-                    Text("CodeBurn will stop tracking your Claude quota and forget the cached credentials. Click Connect to resume.")
+                    Text("CodeBurn will stop tracking quota and delete its local copy of your Claude credentials. Your Claude Code keychain entry is untouched — Claude Code keeps working.")
                 }
         case .terminalFailure, .noCredentials, .failed:
             Button("Reconnect") { Task { await store.bootstrapSubscription() } }
                 .buttonStyle(.borderedProminent)
         case .notBootstrapped:
             Button("Connect") { Task { await store.bootstrapSubscription() } }
+                .buttonStyle(.borderedProminent)
+        case .bootstrapping:
+            ProgressView().controlSize(.small)
+        }
+    }
+}
+
+// MARK: - Codex
+
+private struct CodexSettingsTab: View {
+    @Environment(AppStore.self) private var store
+
+    var body: some View {
+        Form {
+            Section("Connection") {
+                CodexConnectionRow()
+            }
+            Section {
+                Text("Codex live-quota tracking reads `~/.codex/auth.json` once on Connect, then keeps a local copy under Application Support so subsequent quota fetches don't re-read the original. Only ChatGPT-mode auth (Plus / Pro / Team / Business) is supported — API-key users are billed per request and have a different reporting surface.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("How it works")
+            }
+        }
+        .formStyle(.grouped)
+        .padding()
+    }
+}
+
+private struct CodexConnectionRow: View {
+    @Environment(AppStore.self) private var store
+    @State private var showDisconnectConfirm = false
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: stateIcon)
+                .font(.system(size: 18))
+                .foregroundStyle(stateTint)
+                .frame(width: 22)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(stateTitle)
+                    .font(.system(size: 12, weight: .semibold))
+                Text(stateDetail)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+            Spacer()
+            actionButton
+        }
+        .padding(.vertical, 4)
+    }
+
+    private var stateIcon: String {
+        switch store.codexLoadState {
+        case .loaded: return "checkmark.circle.fill"
+        case .terminalFailure: return "exclamationmark.triangle.fill"
+        case .transientFailure: return "clock.arrow.circlepath"
+        case .bootstrapping, .loading: return "ellipsis.circle"
+        case .notBootstrapped, .noCredentials: return "link.circle"
+        case .failed: return "xmark.circle"
+        }
+    }
+
+    private var stateTint: Color {
+        switch store.codexLoadState {
+        case .loaded: return .green
+        case .terminalFailure, .failed: return .red
+        case .transientFailure: return .orange
+        default: return .secondary
+        }
+    }
+
+    private var stateTitle: String {
+        switch store.codexLoadState {
+        case .loaded: return "Connected"
+        case let .terminalFailure(reason): return reason ?? "Reconnect required"
+        case .transientFailure: return "Backing off"
+        case .bootstrapping: return "Connecting…"
+        case .loading: return "Refreshing…"
+        case .notBootstrapped, .noCredentials: return "Not connected"
+        case .failed: return "Couldn't load Codex quota"
+        }
+    }
+
+    private var stateDetail: String {
+        switch store.codexLoadState {
+        case .loaded:
+            if let plan = store.codexUsage?.plan.displayName {
+                return "Plan: \(plan)"
+            }
+            return "Live quota tracked from chatgpt.com."
+        case .terminalFailure:
+            // Be specific about the cause: the message we already surface in
+            // codexError will say "API-key mode" if that's the situation, so
+            // the generic "run codex login" hint covers both cases.
+            if let err = store.codexError, err.lowercased().contains("api-key") {
+                return "Codex is in API-key mode. Run `codex login` and choose a ChatGPT plan to enable quota tracking."
+            }
+            return "Run `codex login` in your terminal to sign in again, then click Reconnect."
+        case .transientFailure: return store.codexError ?? "ChatGPT rate-limited; auto-retrying."
+        case .bootstrapping: return "Reading ~/.codex/auth.json."
+        case .loading: return "Background refresh in progress."
+        case .notBootstrapped, .noCredentials:
+            return "Click Connect to read your Codex CLI credentials. If Connect fails, run `codex login` in your terminal first to create ~/.codex/auth.json."
+        case .failed: return store.codexError ?? ""
+        }
+    }
+
+    @ViewBuilder
+    private var actionButton: some View {
+        switch store.codexLoadState {
+        case .loaded, .transientFailure, .loading:
+            Button("Disconnect") { showDisconnectConfirm = true }
+                .confirmationDialog(
+                    "Disconnect Codex?",
+                    isPresented: $showDisconnectConfirm
+                ) {
+                    Button("Disconnect", role: .destructive) {
+                        store.disconnectCodex()
+                    }
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text("CodeBurn will stop tracking quota and delete its local copy of your Codex credentials. Your ~/.codex/auth.json is untouched — Codex CLI keeps working.")
+                }
+        case .terminalFailure, .noCredentials, .failed:
+            Button("Reconnect") { Task { await store.bootstrapCodex() } }
+                .buttonStyle(.borderedProminent)
+        case .notBootstrapped:
+            Button("Connect") { Task { await store.bootstrapCodex() } }
                 .buttonStyle(.borderedProminent)
         case .bootstrapping:
             ProgressView().controlSize(.small)

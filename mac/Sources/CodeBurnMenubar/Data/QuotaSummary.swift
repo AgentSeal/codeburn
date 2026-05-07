@@ -18,6 +18,15 @@ struct QuotaSummary: Equatable {
     let connection: Connection
     let primary: Window?              // weekly utilization, the headline bar
     let details: [Window]             // 5h, weekly, opus, sonnet — full hover card
+    /// Display label for the user's plan (e.g. "Max 20x", "Pro Lite"). Shown
+    /// in the top-right corner of the hover detail popover so users can
+    /// confirm at a glance which subscription is feeding the bar.
+    let planLabel: String?
+    /// Optional footer rows that the popover renders below the window list.
+    /// Used today only by Codex to surface the on-account credits balance,
+    /// but kept generic so future providers can add provider-specific facts
+    /// (e.g. "Anthropic incident in progress", "Cursor team seat").
+    let footerLines: [String]
 
     struct Window: Equatable {
         let label: String
@@ -25,15 +34,23 @@ struct QuotaSummary: Equatable {
         let resetsAt: Date?
     }
 
-    /// Color band thresholds matching CodexBar's convention.
+    /// Color band thresholds for the inline chip bar and aggregate menubar
+    /// flame tint. Four tiers so the icon can step from "you're approaching
+    /// your limit" (yellow) through "you're about to hit the wall" (orange)
+    /// to "you're over" (red) — matches what the user expects from a warning
+    /// indicator in the menu bar.
     static func severity(for percent: Double) -> Severity {
+        if percent >= 1.0 { return .danger }
         if percent >= 0.9 { return .critical }
         if percent >= 0.7 { return .warning }
         return .normal
     }
 
     enum Severity {
-        case normal, warning, critical
+        case normal     // <70%
+        case warning    // 70-90%
+        case critical   // 90-100%
+        case danger     // >=100%
     }
 }
 

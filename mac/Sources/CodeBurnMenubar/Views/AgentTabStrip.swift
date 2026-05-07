@@ -70,6 +70,16 @@ private struct AgentTab: View {
     @State private var hoverEnterTask: DispatchWorkItem?
     @State private var hoverExitTask: DispatchWorkItem?
 
+    /// Providers whose AgentTab chip reserves a 3pt bar slot underneath the
+    /// label, even when not yet connected. Driven by which providers we
+    /// actually implement live-quota fetching for in AppStore.quotaSummary.
+    static func providerSupportsQuota(_ filter: ProviderFilter) -> Bool {
+        switch filter {
+        case .claude, .codex: return true
+        default: return false
+        }
+    }
+
     var body: some View {
         VStack(spacing: 3) {
             HStack(spacing: 5) {
@@ -83,13 +93,17 @@ private struct AgentTab: View {
                         .tracking(-0.2)
                 }
             }
-            // Reserve the bar slot even when there is no quota source for this
-            // provider, so the chip height stays constant. Avoids the AgentTab
-            // strip jumping by 6pt when the user clicks Connect for the first
-            // time, and gives unsupported providers a consistent footprint.
-            AgentTabQuotaBar(quota: quota, isActive: isActive)
-                .frame(height: 3)
-                .opacity(quota == nil ? 0 : 1)
+            // Reserve the bar slot only for providers whose quota source we
+            // implement (Claude, Codex). Providers that will never have a bar
+            // (All / Cursor / Droid / Gemini / Copilot) skip the slot entirely
+            // so the text centers naturally and the chip stays compact.
+            // Reserving the slot for Claude/Codex prevents the strip from
+            // jumping by 6pt the moment the user clicks Connect.
+            if Self.providerSupportsQuota(filter) {
+                AgentTabQuotaBar(quota: quota, isActive: isActive)
+                    .frame(height: 3)
+                    .opacity(quota == nil ? 0 : 1)
+            }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 4)
@@ -158,8 +172,9 @@ private struct AgentTabQuotaBar: View {
         guard let pct = quota?.primary?.percent else { return .clear }
         switch QuotaSummary.severity(for: pct) {
         case .normal:   return isActive ? Color.white : Color.green.opacity(0.85)
-        case .warning:  return Color.orange
-        case .critical: return Color.red
+        case .warning:  return Color.yellow
+        case .critical: return Color.orange
+        case .danger:   return Color.red
         }
     }
 
@@ -177,7 +192,7 @@ private struct QuotaDetailPopover: View {
             case .terminalFailure(let reason):
                 terminalFailureCard(reason: reason)
             case .disconnected:
-                Text("Sign in to Claude Code to track quota.")
+                Text(disconnectedMessage)
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             case .loading where quota.details.isEmpty:
@@ -192,12 +207,19 @@ private struct QuotaDetailPopover: View {
         .frame(width: 260)
     }
 
+    private var disconnectedMessage: String {
+        switch quota.providerFilter {
+        case .codex:  return "Sign in with `codex` (ChatGPT mode) to track quota."
+        case .claude: return "Sign in to Claude Code to track quota."
+        default:      return "Sign in to track quota."
+        }
+    }
+
     private var rowsCard: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("Claude usage")
+            HStack(spacing: 6) {
+                Text("\(quota.providerFilter.rawValue) usage")
                     .font(.system(size: 11, weight: .semibold))
-                Spacer()
                 if case .stale = quota.connection {
                     Text("stale")
                         .font(.system(size: 9.5))
@@ -207,25 +229,70 @@ private struct QuotaDetailPopover: View {
                         .font(.system(size: 9.5))
                         .foregroundStyle(.orange)
                 }
+                Spacer()
+                if let plan = quota.planLabel, !plan.isEmpty {
+                    Text(plan)
+                        .font(.system(size: 9.5, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: 90, alignment: .trailing)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(Color.secondary.opacity(0.12))
+                        )
+                }
             }
             ForEach(Array(quota.details.enumerated()), id: \.offset) { _, w in
                 QuotaDetailRow(window: w)
+            }
+            if !quota.footerLines.isEmpty {
+                Divider()
+                    .padding(.top, 2)
+                ForEach(Array(quota.footerLines.enumerated()), id: \.offset) { _, line in
+                    Text(line)
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(.secondary)
+                }
             }
         }
     }
 
     private func terminalFailureCard(reason: String?) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Reconnect Claude")
+            Text(reconnectTitle)
                 .font(.system(size: 11.5, weight: .semibold))
                 .foregroundStyle(.red)
-            Text(reason ?? "Refresh token rejected by Anthropic.")
+            Text(reason ?? defaultReconnectReason)
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
                 .lineLimit(2)
-            Text("Open Claude Code in your terminal and type `/login`, then click Reconnect.")
+            Text(reconnectInstruction)
                 .font(.system(size: 10.5))
                 .foregroundStyle(.secondary)
+        }
+    }
+
+    private var reconnectTitle: String {
+        switch quota.providerFilter {
+        case .codex:  return "Reconnect Codex"
+        default:      return "Reconnect Claude"
+        }
+    }
+
+    private var defaultReconnectReason: String {
+        switch quota.providerFilter {
+        case .codex:  return "Refresh token rejected by OpenAI."
+        default:      return "Refresh token rejected by Anthropic."
+        }
+    }
+
+    private var reconnectInstruction: String {
+        switch quota.providerFilter {
+        case .codex:  return "Run `codex login` in your terminal, then click Reconnect."
+        default:      return "Open Claude Code in your terminal and type `/login`, then click Reconnect."
         }
     }
 }
@@ -262,8 +329,9 @@ private struct QuotaDetailRow: View {
     private var barColor: Color {
         switch QuotaSummary.severity(for: window.percent) {
         case .normal:   return Color.green.opacity(0.85)
-        case .warning:  return Color.orange
-        case .critical: return Color.red
+        case .warning:  return Color.yellow
+        case .critical: return Color.orange
+        case .danger:   return Color.red
         }
     }
 }
