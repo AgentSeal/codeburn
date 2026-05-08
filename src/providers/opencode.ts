@@ -4,7 +4,7 @@ import { homedir } from 'os'
 
 import { calculateCost, getShortModelName } from '../models.js'
 import { extractBashCommands } from '../bash-utils.js'
-import { isSqliteAvailable, getSqliteLoadError, openDatabase, type SqliteDatabase } from '../sqlite.js'
+import { isSqliteAvailable, getSqliteLoadError, openDatabase, blobToText, type SqliteDatabase } from '../sqlite.js'
 import type {
   Provider,
   SessionSource,
@@ -15,18 +15,18 @@ import type {
 type MessageRow = {
   id: string
   time_created: number
-  data: string
+  data: Uint8Array | string
 }
 
 type PartRow = {
   message_id: string
-  data: string
+  data: Uint8Array | string
 }
 
 type SessionRow = {
   id: string
-  directory: string
-  title: string
+  directory: Uint8Array | string
+  title: Uint8Array | string
   time_created: number
 }
 
@@ -169,19 +169,19 @@ function createParser(
         }
 
         const messages = db.query<MessageRow>(
-          'SELECT id, time_created, data FROM message WHERE session_id = ? ORDER BY time_created ASC',
+          'SELECT id, time_created, CAST(data AS BLOB) AS data FROM message WHERE session_id = ? ORDER BY time_created ASC',
           [sessionId],
         )
 
         const parts = db.query<PartRow>(
-          'SELECT message_id, data FROM part WHERE session_id = ? ORDER BY message_id, id',
+          'SELECT message_id, CAST(data AS BLOB) AS data FROM part WHERE session_id = ? ORDER BY message_id, id',
           [sessionId],
         )
 
         const partsByMsg = new Map<string, PartData[]>()
         for (const part of parts) {
           try {
-            const parsed = JSON.parse(part.data) as PartData
+            const parsed = JSON.parse(blobToText(part.data)) as PartData
             const list = partsByMsg.get(part.message_id) ?? []
             list.push(parsed)
             partsByMsg.set(part.message_id, list)
@@ -195,7 +195,7 @@ function createParser(
         for (const msg of messages) {
           let data: MessageData
           try {
-            data = JSON.parse(msg.data) as MessageData
+            data = JSON.parse(blobToText(msg.data)) as MessageData
           } catch {
             continue
           }
@@ -294,14 +294,18 @@ async function discoverFromDb(dbPath: string): Promise<SessionSource[]> {
 
   try {
     const rows = db.query<SessionRow>(
-      'SELECT id, directory, title, time_created FROM session WHERE time_archived IS NULL AND parent_id IS NULL ORDER BY time_created DESC',
+      'SELECT id, CAST(directory AS BLOB) AS directory, CAST(title AS BLOB) AS title, time_created FROM session WHERE time_archived IS NULL AND parent_id IS NULL ORDER BY time_created DESC',
     )
 
-    return rows.map((row) => ({
-      path: `${dbPath}:${row.id}`,
-      project: row.directory ? sanitize(row.directory) : sanitize(row.title),
-      provider: 'opencode',
-    }))
+    return rows.map((row) => {
+      const dir = blobToText(row.directory)
+      const title = blobToText(row.title)
+      return {
+        path: `${dbPath}:${row.id}`,
+        project: dir ? sanitize(dir) : sanitize(title),
+        provider: 'opencode',
+      }
+    })
   } catch {
     return []
   } finally {

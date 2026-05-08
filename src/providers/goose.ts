@@ -3,7 +3,7 @@ import { homedir, platform } from 'os'
 
 import { calculateCost, getShortModelName } from '../models.js'
 import { extractBashCommands } from '../bash-utils.js'
-import { isSqliteAvailable, getSqliteLoadError, openDatabase, type SqliteDatabase } from '../sqlite.js'
+import { isSqliteAvailable, getSqliteLoadError, openDatabase, blobToText, type SqliteDatabase } from '../sqlite.js'
 import type { Provider, SessionSource, SessionParser, ParsedProviderCall } from './types.js'
 
 type SessionRow = {
@@ -15,7 +15,7 @@ type SessionRow = {
   accumulated_input_tokens: number | null
   accumulated_output_tokens: number | null
   provider_name: string | null
-  model_config_json: string | null
+  model_config_json: Uint8Array | string | null
 }
 
 type ModelConfig = {
@@ -26,7 +26,7 @@ type ModelConfig = {
 type MessageRow = {
   message_id: string
   role: string
-  content_json: string
+  content_json: Uint8Array | string
   created_timestamp: number
 }
 
@@ -86,15 +86,15 @@ function extractToolsFromMessages(db: SqliteDatabase, sessionId: string): { tool
   const seen = new Set<string>()
 
   try {
-    const rows = db.query<{ content_json: string }>(
-      "SELECT content_json FROM messages WHERE session_id = ? AND role = 'assistant' AND content_json LIKE '%toolRequest%'",
+    const rows = db.query<{ content_json: Uint8Array | string }>(
+      "SELECT CAST(content_json AS BLOB) AS content_json FROM messages WHERE session_id = ? AND role = 'assistant' AND content_json LIKE '%toolRequest%'",
       [sessionId],
     )
 
     for (const row of rows) {
       let items: ContentItem[]
       try {
-        items = JSON.parse(row.content_json) as ContentItem[]
+        items = JSON.parse(blobToText(row.content_json)) as ContentItem[]
       } catch {
         continue
       }
@@ -124,12 +124,12 @@ function extractToolsFromMessages(db: SqliteDatabase, sessionId: string): { tool
 
 function getFirstUserMessage(db: SqliteDatabase, sessionId: string): string {
   try {
-    const rows = db.query<{ content_json: string }>(
-      "SELECT content_json FROM messages WHERE session_id = ? AND role = 'user' ORDER BY created_timestamp ASC LIMIT 1",
+    const rows = db.query<{ content_json: Uint8Array | string }>(
+      "SELECT CAST(content_json AS BLOB) AS content_json FROM messages WHERE session_id = ? AND role = 'user' ORDER BY created_timestamp ASC LIMIT 1",
       [sessionId],
     )
     if (rows.length === 0) return ''
-    const items = JSON.parse(rows[0]!.content_json) as ContentItem[]
+    const items = JSON.parse(blobToText(rows[0]!.content_json)) as ContentItem[]
     const text = items.find(i => i.type === 'text') as { text?: string } | undefined
     return (text?.text ?? '').slice(0, 500)
   } catch {
@@ -161,7 +161,7 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
         if (!validateSchema(db)) return
 
         const rows = db.query<SessionRow>(
-          'SELECT id, name, working_dir, created_at, updated_at, accumulated_input_tokens, accumulated_output_tokens, provider_name, model_config_json FROM sessions WHERE id = ?',
+          'SELECT id, name, working_dir, created_at, updated_at, accumulated_input_tokens, accumulated_output_tokens, provider_name, CAST(model_config_json AS BLOB) AS model_config_json FROM sessions WHERE id = ?',
           [sessionId],
         )
         if (rows.length === 0) return
@@ -175,7 +175,7 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
         if (seenKeys.has(dedupKey)) return
         seenKeys.add(dedupKey)
 
-        const config = parseModelConfig(session.model_config_json)
+        const config = parseModelConfig(blobToText(session.model_config_json))
         const model = config.model_name ?? 'unknown'
         const costUSD = calculateCost(model, inputTokens, outputTokens, 0, 0, 0)
 
@@ -223,7 +223,7 @@ async function discoverFromDb(dbPath: string): Promise<SessionSource[]> {
 
   try {
     const rows = db.query<SessionRow>(
-      'SELECT id, name, working_dir, created_at, updated_at, accumulated_input_tokens, accumulated_output_tokens, provider_name, model_config_json FROM sessions ORDER BY updated_at DESC',
+      'SELECT id, name, working_dir, created_at, updated_at, accumulated_input_tokens, accumulated_output_tokens, provider_name, CAST(model_config_json AS BLOB) AS model_config_json FROM sessions ORDER BY updated_at DESC',
     )
 
     return rows

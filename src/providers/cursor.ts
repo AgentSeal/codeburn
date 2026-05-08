@@ -4,7 +4,7 @@ import { homedir } from 'os'
 
 import { calculateCost } from '../models.js'
 import { readCachedResults, writeCachedResults } from '../cursor-cache.js'
-import { isSqliteAvailable, getSqliteLoadError, openDatabase, type SqliteDatabase } from '../sqlite.js'
+import { isSqliteAvailable, getSqliteLoadError, openDatabase, blobToText, type SqliteDatabase } from '../sqlite.js'
 import type { Provider, SessionSource, SessionParser, ParsedProviderCall } from './types.js'
 
 const CURSOR_COST_MODEL = 'claude-sonnet-4-5'
@@ -33,16 +33,16 @@ type BubbleRow = {
   model: string | null
   created_at: string | null
   conversation_id: string | null
-  user_text: string | null
+  user_text: Uint8Array | string | null
   text_length: number | null
   bubble_type: number | null
-  code_blocks: string | null
+  code_blocks: Uint8Array | string | null
 }
 
 type AgentKvRow = {
   key: string
   role: string | null
-  content: string | null
+  content: Uint8Array | string | null
   request_id: string | null
   content_length: number
 }
@@ -107,10 +107,10 @@ const BUBBLE_QUERY_BASE = `
     json_extract(value, '$.modelInfo.modelName') as model,
     json_extract(value, '$.createdAt') as created_at,
     json_extract(value, '$.conversationId') as conversation_id,
-    substr(json_extract(value, '$.text'), 1, 500) as user_text,
+    CAST(substr(json_extract(value, '$.text'), 1, 500) AS BLOB) as user_text,
     length(json_extract(value, '$.text')) as text_length,
     json_extract(value, '$.type') as bubble_type,
-    json_extract(value, '$.codeBlocks') as code_blocks
+    CAST(json_extract(value, '$.codeBlocks') AS BLOB) as code_blocks
   FROM cursorDiskKV
   WHERE key LIKE 'bubbleId:%'
 `
@@ -119,7 +119,7 @@ const AGENTKV_QUERY = `
   SELECT
     key,
     json_extract(value, '$.role') as role,
-    json_extract(value, '$.content') as content,
+    CAST(json_extract(value, '$.content') AS BLOB) as content,
     json_extract(value, '$.providerOptions.cursor.requestId') as request_id,
     length(value) as content_length
   FROM cursorDiskKV
@@ -132,7 +132,7 @@ const USER_MESSAGES_QUERY = `
   SELECT
     json_extract(value, '$.conversationId') as conversation_id,
     json_extract(value, '$.createdAt') as created_at,
-    substr(json_extract(value, '$.text'), 1, 500) as text
+    CAST(substr(json_extract(value, '$.text'), 1, 500) AS BLOB) as text
   FROM cursorDiskKV
   WHERE key LIKE 'bubbleId:%'
     AND json_extract(value, '$.type') = 1
@@ -162,7 +162,7 @@ function validateSchema(db: SqliteDatabase): boolean {
   }
 }
 
-type UserMsgRow = { conversation_id: string; created_at: string; text: string }
+type UserMsgRow = { conversation_id: string; created_at: string; text: Uint8Array | string }
 
 /// Per-conversation user-message buffer. We pop messages in arrival order via
 /// the `pos` cursor — a previous implementation called Array.shift() which is
@@ -179,11 +179,12 @@ function buildUserMessageMap(db: SqliteDatabase, timeFloor: string): Map<string,
     const rows = db.query<UserMsgRow>(USER_MESSAGES_QUERY, [timeFloor])
     for (const row of rows) {
       if (!row.conversation_id || !row.text) continue
+      const text = blobToText(row.text)
       const existing = map.get(row.conversation_id)
       if (existing) {
-        existing.messages.push(row.text)
+        existing.messages.push(text)
       } else {
-        map.set(row.conversation_id, { messages: [row.text], pos: 0 })
+        map.set(row.conversation_id, { messages: [text], pos: 0 })
       }
     }
   } catch {}
@@ -291,10 +292,10 @@ function parseBubbles(db: SqliteDatabase, seenKeys: Set<string>): { calls: Parse
 
       const timestamp = createdAt || new Date().toISOString()
       const userQuestion = takeUserMessage(userMessages, conversationId)
-      const assistantText = row.user_text ?? ''
+      const assistantText = blobToText(row.user_text)
       const userText = (userQuestion + ' ' + assistantText).trim()
 
-      const languages = extractLanguages(row.code_blocks)
+      const languages = extractLanguages(blobToText(row.code_blocks))
       const hasCode = languages.length > 0
 
       const cursorTools: string[] = hasCode ? ['cursor:edit', ...languages.map(l => `lang:${l}`)] : []
@@ -375,20 +376,21 @@ function parseAgentKv(db: SqliteDatabase, seenKeys: Set<string>, dbPath: string)
 
   for (const row of rows) {
     if (!row.role || !row.content) continue
+    const contentText = blobToText(row.content)
 
     let content: AgentKvContent[]
     let plainTextLength = 0
     try {
-      const parsed = JSON.parse(row.content)
+      const parsed = JSON.parse(contentText)
       if (Array.isArray(parsed)) {
         content = parsed
       } else {
         content = []
-        plainTextLength = row.content.length
+        plainTextLength = contentText.length
       }
     } catch {
       content = []
-      plainTextLength = row.content.length
+      plainTextLength = contentText.length
     }
 
     const requestId = row.request_id ?? currentRequestId
@@ -404,7 +406,7 @@ function parseAgentKv(db: SqliteDatabase, seenKeys: Set<string>, dbPath: string)
       const existing = sessions.get(requestId) ?? { inputChars: 0, outputChars: 0, model: null, userText: '' }
       existing.inputChars += textLength
       if (!existing.userText) {
-        const text = content[0]?.text ?? row.content
+        const text = content[0]?.text ?? contentText
         const queryMatch = text.match(/<user_query>([\s\S]*?)<\/user_query>/)
         existing.userText = queryMatch ? queryMatch[1].trim().slice(0, 500) : text.slice(0, 500)
       }
