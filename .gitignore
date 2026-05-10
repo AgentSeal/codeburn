@@ -16,7 +16,7 @@ Thumbs.db
 # Planning artifacts (internal, not shipped)
 docs/superpowers/
 .claude/
-CLAUDE.md
+/CLAUDE.md
 
 # Config / secrets
 .env

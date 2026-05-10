@@ -1,0 +1,41 @@
+# Cursor Agent
+
+Cursor's background agent transcripts (separate from the regular chat).
+
+- **Source:** `src/providers/cursor-agent.ts`
+- **Loading:** lazy (`src/providers/index.ts:62-87`)
+- **Test:** `tests/providers/cursor-agent.test.ts` (243 lines)
+
+## Where it reads from
+
+`~/.cursor/projects/<projectId>/agent-transcripts/`. Inside each project, two layouts coexist:
+
+1. **Legacy:** `*.txt` flat files.
+2. **Composer 2:** UUID-named subdirectories, each containing JSONL.
+
+Subagents (delegated runs) live in `subagents/` subdirectories under the parent (`cursor-agent.ts:479-490`). They are picked up too.
+
+## Storage format
+
+- Legacy: free-form text transcripts. The parser does line-based heuristic parsing (`cursor-agent.ts:219-314`).
+- Composer 2: JSONL (`cursor-agent.ts:167-217`).
+
+## Caching
+
+None at the provider level. Conversation metadata is read from the same Cursor SQLite db (`state.vscdb`), specifically the `conversation_summaries` table (`cursor-agent.ts:46-50`). If the summary is missing, file mtime is used as the timestamp.
+
+## Deduplication
+
+Per `<provider>:<conversationId>:<turnIndex>` (`cursor-agent.ts:379`).
+
+## Quirks
+
+- A file with a UUID-shaped name is treated as the conversation ID directly (`cursor-agent.ts:142-143`); other names are derived from the parent directory.
+- Token counts are estimated from char count (`CHARS_PER_TOKEN = 4`, `cursor-agent.ts:35`, `:81-84`). The legacy text format never reports real tokens.
+- The text parser is regex-driven and brittle. It is easier to fix a Composer 2 (JSONL) bug than a legacy (text) bug.
+
+## When fixing a bug here
+
+1. Check which format the failing transcript uses before opening a fix.
+2. For text-format bugs, copy the redacted transcript verbatim into `tests/fixtures/cursor-agent/` so the regex change can be regression-tested.
+3. If the bug is "wrong project", look at `cursor-agent.ts:46-50` and whether a `conversation_summaries` row exists for the conversation.
