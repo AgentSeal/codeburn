@@ -5,6 +5,7 @@ import Observation
 private let refreshIntervalSeconds: UInt64 = 30
 private let nanosPerSecond: UInt64 = 1_000_000_000
 private let refreshIntervalNanos: UInt64 = refreshIntervalSeconds * nanosPerSecond
+private let forceRefreshWatchdogSeconds: TimeInterval = 90
 private let statusItemWidth: CGFloat = NSStatusItem.variableLength
 private let popoverWidth: CGFloat = 360
 private let popoverHeight: CGFloat = 660
@@ -36,6 +37,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var pendingRefreshWork: DispatchWorkItem?
     private var refreshLoopTask: Task<Void, Never>?
     private var forceRefreshTask: Task<Void, Never>?
+    private var forceRefreshStartedAt: Date?
+    private var forceRefreshGeneration: UInt64 = 0
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         // Set accessory policy before the app's focus chain forms. On macOS Tahoe
@@ -90,6 +93,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             Task { @MainActor in
                 self?.forceRefreshTask?.cancel()
                 self?.forceRefreshTask = nil
+                self?.forceRefreshStartedAt = nil
+                self?.forceRefreshGeneration &+= 1
                 self?.refreshLoopTask?.cancel()
                 self?.refreshLoopTask = nil
             }
@@ -208,17 +213,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     private var lastRefreshTime: Date = .distantPast
 
+    @discardableResult
+    private func clearStaleForceRefreshIfNeeded(now: Date = Date()) -> Bool {
+        if let started = forceRefreshStartedAt, forceRefreshTask != nil {
+            let elapsed = now.timeIntervalSince(started)
+            guard elapsed > forceRefreshWatchdogSeconds else { return false }
+            NSLog("CodeBurn: force refresh stuck for %ds — cancelling and restarting", Int(elapsed))
+            forceRefreshTask?.cancel()
+            forceRefreshTask = nil
+            forceRefreshStartedAt = nil
+            forceRefreshGeneration &+= 1
+            store.resetLoadingState()
+            return true
+        }
+        return false
+    }
+
     private func forceRefresh() {
         let now = Date()
+        _ = clearStaleForceRefreshIfNeeded(now: now)
         guard now.timeIntervalSince(lastRefreshTime) > 5 else { return }
         lastRefreshTime = now
+        forceRefreshStartedAt = now
+        forceRefreshGeneration &+= 1
+        let generation = forceRefreshGeneration
 
-        forceRefreshTask?.cancel()
         forceRefreshTask = Task {
             async let main: Void = store.refresh(includeOptimize: false, force: true, showLoading: true)
             async let today: Void = store.refreshQuietly(period: .today)
             _ = await (main, today)
             refreshStatusButton()
+            await MainActor.run { [weak self] in
+                guard let self, self.forceRefreshGeneration == generation else { return }
+                self.forceRefreshTask = nil
+                self.forceRefreshStartedAt = nil
+                self.lastRefreshTime = Date()
+            }
         }
     }
 
@@ -259,12 +289,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             }
             while !Task.isCancelled {
                 guard let self else { return }
+                let clearedStaleForceRefresh = self.clearStaleForceRefreshIfNeeded()
+                let clearedStaleLoading = self.store.clearStaleLoadingIfNeeded()
                 // Skip the loop's tick if a wake / manual / distributed-
                 // notification refresh just ran. Without this gate, every
                 // wake produced two refreshes (forceRefresh from the wake
                 // observer plus the loop's natural tick).
                 let sinceLast = Date().timeIntervalSince(self.lastRefreshTime)
-                if sinceLast >= 5 {
+                if self.forceRefreshTask == nil && (clearedStaleForceRefresh || clearedStaleLoading || sinceLast >= 5) {
                     if self.store.selectedPeriod != .today || self.store.selectedProvider != .all {
                         async let quiet: Void = self.store.refreshQuietly(period: .today)
                         async let main: Void = self.store.refresh(includeOptimize: false, force: true)

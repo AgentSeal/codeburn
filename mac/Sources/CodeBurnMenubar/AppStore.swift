@@ -25,9 +25,14 @@ final class AppStore {
     }
     var showingAccentPicker: Bool = false
     var currency: String = "USD"
-    var isLoading: Bool { loadingCount > 0 }
-    private var loadingCount: Int = 0
-    var lastError: String?
+    var isLoading: Bool { loadingCountsByKey.values.contains { $0 > 0 } }
+    var isCurrentKeyLoading: Bool { loadingCountsByKey[currentKey, default: 0] > 0 }
+    var hasAttemptedCurrentKeyLoad: Bool { attemptedKeys.contains(currentKey) }
+    var lastError: String? { lastErrorByKey[currentKey] }
+    private var loadingCountsByKey: [PayloadCacheKey: Int] = [:]
+    private var loadingStartedAtByKey: [PayloadCacheKey: Date] = [:]
+    private var attemptedKeys: Set<PayloadCacheKey> = []
+    private var lastErrorByKey: [PayloadCacheKey: String] = [:]
     var subscription: SubscriptionUsage?
     var subscriptionError: String?
     var subscriptionLoadState: SubscriptionLoadState = ClaudeCredentialStore.isBootstrapCompleted ? .loading : .notBootstrapped
@@ -130,8 +135,49 @@ final class AppStore {
     private var inFlightKeys: Set<PayloadCacheKey> = []
 
     func resetLoadingState() {
-        loadingCount = 0
+        loadingCountsByKey.removeAll()
+        loadingStartedAtByKey.removeAll()
         inFlightKeys.removeAll()
+    }
+
+    private let loadingWatchdogSeconds: TimeInterval = 60
+
+    @discardableResult
+    func clearStaleLoadingIfNeeded() -> Bool {
+        let now = Date()
+        let staleEntries = loadingStartedAtByKey.filter {
+            now.timeIntervalSince($0.value) > loadingWatchdogSeconds
+        }
+        guard !staleEntries.isEmpty else { return false }
+
+        for (key, started) in staleEntries {
+            NSLog("CodeBurn: loading stuck for %ds on %@/%@ — auto-clearing",
+                  Int(now.timeIntervalSince(started)), key.period.rawValue, key.provider.rawValue)
+            loadingCountsByKey[key] = nil
+            loadingStartedAtByKey[key] = nil
+            inFlightKeys.remove(key)
+            if cache[key] == nil {
+                lastErrorByKey[key] = "Refresh took longer than expected. CodeBurn will keep retrying in the background."
+            }
+        }
+        return true
+    }
+
+    private func beginLoading(for key: PayloadCacheKey) {
+        if loadingCountsByKey[key, default: 0] == 0 {
+            loadingStartedAtByKey[key] = Date()
+        }
+        loadingCountsByKey[key, default: 0] += 1
+    }
+
+    private func finishLoading(for key: PayloadCacheKey) {
+        guard let count = loadingCountsByKey[key], count > 0 else { return }
+        if count == 1 {
+            loadingCountsByKey[key] = nil
+            loadingStartedAtByKey[key] = nil
+        } else {
+            loadingCountsByKey[key] = count - 1
+        }
     }
 
     private func invalidateStaleDayCache() {
@@ -155,9 +201,11 @@ final class AppStore {
         if !force, cache[key]?.isFresh == true { return }
         if !force, inFlightKeys.contains(key) { return }
         inFlightKeys.insert(key)
+        attemptedKeys.insert(key)
+        lastErrorByKey[key] = nil
         let didShowLoading = showLoading || cache[key] == nil
         if didShowLoading {
-            loadingCount += 1
+            beginLoading(for: key)
         }
         // Diagnostic anchor: if this key has been empty for a long time (the
         // popover would currently be showing "Loading..."), log how stale the
@@ -172,7 +220,9 @@ final class AppStore {
         }
         defer {
             inFlightKeys.remove(key)
-            if didShowLoading { loadingCount = max(loadingCount - 1, 0) }
+            if didShowLoading {
+                finishLoading(for: key)
+            }
         }
         do {
             let fresh = try await DataClient.fetch(period: key.period, provider: key.provider, includeOptimize: includeOptimize)
@@ -194,7 +244,7 @@ final class AppStore {
             }
             cache[key] = CachedPayload(payload: fresh, fetchedAt: Date())
             lastSuccessByKey[key] = Date()
-            lastError = nil
+            lastErrorByKey[key] = nil
         } catch {
             if Task.isCancelled { return }
             NSLog("CodeBurn: fetch failed for \(key.period.rawValue)/\(key.provider.rawValue): \(error)")
@@ -205,14 +255,14 @@ final class AppStore {
                     if cacheDate != cacheDateAtStart { return }
                     cache[key] = CachedPayload(payload: fallback, fetchedAt: Date())
                     lastSuccessByKey[key] = Date()
-                    lastError = nil
+                    lastErrorByKey[key] = nil
                     return
                 } catch {
                     if Task.isCancelled { return }
                     NSLog("CodeBurn: fallback fetch also failed: \(error)")
                 }
             }
-            lastError = String(describing: error)
+            lastErrorByKey[key] = String(describing: error)
         }
 
         let allKey = PayloadCacheKey(period: selectedPeriod, provider: .all)
@@ -232,7 +282,10 @@ final class AppStore {
             // Same day-rollover guard as refresh(): drop yesterday's payload if
             // the calendar rolled over during the fetch.
             if cacheDate != cacheDateAtStart { return }
-            cache[PayloadCacheKey(period: period, provider: .all)] = CachedPayload(payload: fresh, fetchedAt: Date())
+            let key = PayloadCacheKey(period: period, provider: .all)
+            cache[key] = CachedPayload(payload: fresh, fetchedAt: Date())
+            lastSuccessByKey[key] = Date()
+            lastErrorByKey[key] = nil
         } catch {
             NSLog("CodeBurn: quiet refresh failed for \(period.rawValue): \(error)")
         }

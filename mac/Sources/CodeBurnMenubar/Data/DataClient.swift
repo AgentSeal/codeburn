@@ -61,41 +61,27 @@ struct DataClient {
             throw DataClientError.spawn(error.localizedDescription)
         }
 
-        // Wall-clock timeout: if the CLI hangs (parser stuck, disk stall), kill it.
-        // Log when this fires so a recurring stuck-popover state has an actual
-        // diagnostic — historically users saw "Loading..." forever with no signal
-        // about what failed; the only way to debug was to read process state at
-        // the wrong time. The log line names the subcommand so we can correlate
-        // with a specific period/provider combination.
         let timeoutTask = Task.detached(priority: .utility) {
             try? await Task.sleep(nanoseconds: spawnTimeoutSeconds * 1_000_000_000)
             if process.isRunning {
                 NSLog("CodeBurn: CLI subprocess timed out after %llus for %@ — terminating",
                       spawnTimeoutSeconds, subcommand.joined(separator: " "))
-                process.terminate()
+                terminateWithEscalation(process)
             }
         }
         defer { timeoutTask.cancel() }
 
-        // If the caller cancels its Task (rapid period/provider tab clicks
-        // cancel switchTask in AppStore), terminate the in-flight subprocess.
-        // Without this the cancelled Task returns immediately but the spawned
-        // CLI keeps running to completion, piling up zombie codeburn processes
-        // on rapid UI interactions. We hold a strong reference to the Process
-        // in the cancellation handler so the closure can find it even if the
-        // surrounding scope has gone async.
+        let outHandle = outPipe.fileHandleForReading
+        let errHandle = errPipe.fileHandleForReading
         let (out, err) = await withTaskCancellationHandler {
-            // Drain both pipes concurrently so a large stderr can't deadlock stdout
-            // (the child blocks on write once the pipe buffer fills). `drain`
-            // also enforces a byte cap.
-            async let stdoutData = drain(outPipe.fileHandleForReading, limit: maxPayloadBytes)
-            async let stderrData = drain(errPipe.fileHandleForReading, limit: maxStderrBytes)
+            async let stdoutData = drain(outHandle, limit: maxPayloadBytes)
+            async let stderrData = drain(errHandle, limit: maxStderrBytes)
             return await (stdoutData, stderrData)
         } onCancel: {
-            if process.isRunning {
-                process.terminate()
-            }
+            terminateWithEscalation(process)
         }
+        try? outHandle.close()
+        try? errHandle.close()
         process.waitUntilExit()
 
         if out.count >= maxPayloadBytes {
@@ -106,22 +92,45 @@ struct DataClient {
         return ProcessResult(stdout: out, stderr: stderrString, exitCode: process.terminationStatus)
     }
 
-    /// Pulls bytes off a pipe until EOF or `limit`. Intentionally uses `availableData`, which
-    /// returns empty on EOF -- no blocking once the child exits.
+    private static func terminateWithEscalation(_ process: Process) {
+        guard process.isRunning else { return }
+        process.terminate()
+        let pid = process.processIdentifier
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.5) {
+            if process.isRunning { kill(pid, SIGKILL) }
+        }
+    }
+
     private static func drain(_ handle: FileHandle, limit: Int) async -> Data {
-        await Task.detached(priority: .utility) {
-            var buffer = Data()
-            while buffer.count < limit {
-                let chunk = handle.availableData
-                if chunk.isEmpty { break }
-                let remaining = limit - buffer.count
-                if chunk.count > remaining {
-                    buffer.append(chunk.prefix(remaining))
-                    break
-                }
-                buffer.append(chunk)
+        let fd = handle.fileDescriptor
+        let flags = Darwin.fcntl(fd, F_GETFL)
+        if flags >= 0 {
+            _ = Darwin.fcntl(fd, F_SETFL, flags | O_NONBLOCK)
+        } else {
+            NSLog("CodeBurn: fcntl F_GETFL failed on fd %d, drain may block", fd)
+        }
+
+        var buffer = Data()
+        var chunk = [UInt8](repeating: 0, count: 65_536)
+
+        while buffer.count < limit && !Task.isCancelled {
+            let toRead = min(chunk.count, limit - buffer.count)
+            let n = chunk.withUnsafeMutableBufferPointer { ptr in
+                Darwin.read(fd, ptr.baseAddress!, toRead)
             }
-            return buffer
-        }.value
+            if n > 0 {
+                buffer.append(contentsOf: chunk.prefix(n))
+            } else if n == 0 {
+                break
+            } else if errno == EAGAIN || errno == EWOULDBLOCK {
+                try? await Task.sleep(nanoseconds: 5_000_000)
+            } else if errno == EINTR {
+                continue
+            } else {
+                NSLog("CodeBurn: drain read() failed on fd %d: errno %d", fd, errno)
+                break
+            }
+        }
+        return buffer
     }
 }

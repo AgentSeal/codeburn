@@ -47,7 +47,10 @@ struct MenuBarContent: View {
                 // error, etc.), surface a retry card instead of leaving the
                 // user stuck on a perpetual "Loading..." spinner.
                 if !store.hasCachedData {
-                    if let err = store.lastError, !store.isLoading {
+                    if store.isCurrentKeyLoading || !store.hasAttemptedCurrentKeyLoad {
+                        BurnLoadingOverlay(periodLabel: store.selectedPeriod.rawValue)
+                            .transition(.opacity)
+                    } else if let err = store.lastError {
                         FetchErrorOverlay(
                             error: err,
                             periodLabel: store.selectedPeriod.rawValue,
@@ -55,7 +58,11 @@ struct MenuBarContent: View {
                         )
                         .transition(.opacity)
                     } else {
-                        BurnLoadingOverlay(periodLabel: store.selectedPeriod.rawValue)
+                        FetchErrorOverlay(
+                            error: "The last refresh stopped before returning data. CodeBurn will keep retrying, or you can retry now.",
+                            periodLabel: store.selectedPeriod.rawValue,
+                            retry: { Task { await store.refresh(includeOptimize: false, force: true, showLoading: true) } }
+                        )
                             .transition(.opacity)
                     }
                 }
