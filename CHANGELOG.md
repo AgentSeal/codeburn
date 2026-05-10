@@ -41,6 +41,19 @@
   reconcile. Closes #279.
 
 ### Fixed (CLI)
+- **Cursor cost shown for every model, not just Auto.** Cursor emits model
+  names in a `claude-<dot-version>-<tier>` shape (`claude-4.6-sonnet`,
+  `claude-4.5-opus`, `claude-4.5-opus-high-thinking`, etc.) plus its own
+  `composer-1` house model, none of which match the canonical LiteLLM
+  pricing keys (`claude-sonnet-4-6`, `claude-opus-4-5`). The alias map in
+  `src/models.ts` filled some of these in v0.9.4 but missed the plain
+  no-suffix forms (`claude-4.5-opus`, `claude-4.5-sonnet`,
+  `claude-4.6-opus`), the haiku tier, the forward-looking 4.7 variant,
+  and `composer-1`. The dashboard rendered $0 for sessions that used any
+  unaliased model. Visible to users in #159 even after the v0.9.4 fix.
+  Every Cursor variant in `src/providers/cursor.ts:modelDisplayNames`
+  now has an alias and a regression test asserting non-zero pricing
+  resolution. Closes #159.
 - **Activity classifier no longer mislabels feature work as debugging.**
   Messages like "add error handling", "create an issue tracker", or
   "implement the 404 page" used to land in the Debugging bucket because

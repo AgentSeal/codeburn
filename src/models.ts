@@ -170,12 +170,49 @@ const BUILTIN_ALIASES: Record<string, string> = {
   'cline-auto':                    'claude-sonnet-4-5',
   'openclaw-auto':                 'claude-sonnet-4-5',
   'qwen-auto':                     'claude-sonnet-4-5',
-  // Cursor emits dot-version tier-last names
-  'claude-4.6-sonnet':              'claude-sonnet-4-6',
-  'claude-4.5-sonnet-thinking':     'claude-sonnet-4-5',
+  // Cursor emits dot-version tier-last names plus tier/reasoning suffixes
+  // that LiteLLM does not index (`-high`, `-low`, `-medium`, `-thinking`,
+  // `-high-thinking`, `-fast-mode`). Missing aliases here surface as $0 in
+  // the dashboard for users on non-Auto models (issue #159). Sources: the
+  // display map at `src/providers/cursor.ts:modelDisplayNames`, Cursor's
+  // public model docs at https://cursor.com/docs/models, and forum bug
+  // reports that quote literal slugs (e.g. forum.cursor.com/t/154933).
+  'claude-4-sonnet':                'claude-sonnet-4',
+  'claude-4-sonnet-1m':             'claude-sonnet-4',
   'claude-4-sonnet-thinking':       'claude-sonnet-4-5',
-  'claude-4-opus':                  'claude-opus-4-5',
+  'claude-4.5-sonnet':              'claude-sonnet-4-5',
+  'claude-4.5-sonnet-thinking':     'claude-sonnet-4-5',
+  'claude-4.6-sonnet':              'claude-sonnet-4-6',
+  'claude-4.6-sonnet-high':         'claude-sonnet-4-6',
+  'claude-4.6-sonnet-low':          'claude-sonnet-4-6',
+  'claude-4.6-sonnet-thinking':     'claude-sonnet-4-6',
+  'claude-4.6-sonnet-high-thinking':'claude-sonnet-4-6',
+  'claude-4-opus':                  'claude-opus-4',
+  'claude-4.5-opus':                'claude-opus-4-5',
+  'claude-4.5-opus-high':           'claude-opus-4-5',
+  'claude-4.5-opus-low':            'claude-opus-4-5',
+  'claude-4.5-opus-medium':         'claude-opus-4-5',
   'claude-4.5-opus-high-thinking':  'claude-opus-4-5',
+  'claude-4.6-opus':                'claude-opus-4-6',
+  'claude-4.6-opus-fast-mode':      'claude-opus-4-6',
+  'claude-4.6-opus-high':           'claude-opus-4-6',
+  'claude-4.6-opus-low':            'claude-opus-4-6',
+  'claude-4.6-opus-medium':         'claude-opus-4-6',
+  'claude-4.6-opus-high-thinking':  'claude-opus-4-6',
+  'claude-4.7-opus':                'claude-opus-4-7',
+  // Dash form (NOT dot) seen in forum.cursor.com/t/158597.
+  'claude-opus-4-7-thinking-high':  'claude-opus-4-7',
+  'claude-4.5-haiku':               'claude-haiku-4-5',
+  'claude-4.6-haiku':               'claude-haiku-4-5',
+  // Cursor's house models have no LiteLLM pricing entry. composer-1 is
+  // sonnet-4.5-class per Cursor docs; composer-2 is built on Sonnet 4.6
+  // per cursor.com/blog/composer-2.
+  'composer-1':                     'claude-sonnet-4-5',
+  'composer-1.5':                   'claude-sonnet-4-5',
+  'composer-2':                     'claude-sonnet-4-6',
+  // Cursor's "fast" routing variant of GPT-5 is the same model behind a
+  // lower-latency endpoint; price as base GPT-5 until LiteLLM tracks it.
+  'gpt-5-fast':                     'gpt-5',
   'gpt-4.1':                        'gpt-4.1',
   'gpt-5.2-low':                    'gpt-5',
   'gpt-5.1-codex-high':             'gpt-5.3-codex',

@@ -179,3 +179,72 @@ describe('existing model names still resolve', () => {
     expect(getModelCosts('anthropic/claude-opus-4-6')).not.toBeNull()
   })
 })
+
+// Issue #159: every model name Cursor emits in its SQLite database must
+// resolve to a non-zero pricing entry, otherwise the dashboard shows $0 for
+// that model. Each case asserts the resolved pricing identity matches the
+// pricing of the expected canonical key, so an accidental alias swap (e.g.
+// `claude-4.6-opus` aliased to a haiku entry) fails the test even though
+// haiku also has positive pricing.
+describe('Cursor model variants resolve to pricing', () => {
+  const cases: Array<[string, string]> = [
+    // Sonnet family
+    ['claude-4-sonnet', 'claude-sonnet-4'],
+    ['claude-4-sonnet-1m', 'claude-sonnet-4'],
+    ['claude-4-sonnet-thinking', 'claude-sonnet-4-5'],
+    ['claude-4.5-sonnet', 'claude-sonnet-4-5'],
+    ['claude-4.5-sonnet-thinking', 'claude-sonnet-4-5'],
+    ['claude-4.6-sonnet', 'claude-sonnet-4-6'],
+    ['claude-4.6-sonnet-high', 'claude-sonnet-4-6'],
+    ['claude-4.6-sonnet-low', 'claude-sonnet-4-6'],
+    ['claude-4.6-sonnet-thinking', 'claude-sonnet-4-6'],
+    ['claude-4.6-sonnet-high-thinking', 'claude-sonnet-4-6'],
+    // Opus family
+    ['claude-4-opus', 'claude-opus-4'],
+    ['claude-4.5-opus', 'claude-opus-4-5'],
+    ['claude-4.5-opus-high', 'claude-opus-4-5'],
+    ['claude-4.5-opus-low', 'claude-opus-4-5'],
+    ['claude-4.5-opus-medium', 'claude-opus-4-5'],
+    ['claude-4.5-opus-high-thinking', 'claude-opus-4-5'],
+    ['claude-4.6-opus', 'claude-opus-4-6'],
+    ['claude-4.6-opus-fast-mode', 'claude-opus-4-6'],
+    ['claude-4.6-opus-high', 'claude-opus-4-6'],
+    ['claude-4.6-opus-low', 'claude-opus-4-6'],
+    ['claude-4.6-opus-medium', 'claude-opus-4-6'],
+    ['claude-4.6-opus-high-thinking', 'claude-opus-4-6'],
+    ['claude-4.7-opus', 'claude-opus-4-7'],
+    ['claude-opus-4-7-thinking-high', 'claude-opus-4-7'],
+    // Haiku family
+    ['claude-4.5-haiku', 'claude-haiku-4-5'],
+    ['claude-4.6-haiku', 'claude-haiku-4-5'],
+    // Cursor house models
+    ['composer-1', 'claude-sonnet-4-5'],
+    ['composer-1.5', 'claude-sonnet-4-5'],
+    ['composer-2', 'claude-sonnet-4-6'],
+    ['cursor-auto', 'claude-sonnet-4-5'],
+    // OpenAI variants Cursor emits
+    ['gpt-5', 'gpt-5'],
+    ['gpt-5-fast', 'gpt-5'],
+    ['gpt-5.2', 'gpt-5.2'],
+    ['gpt-5.2-low', 'gpt-5'],
+    // Direct LiteLLM hits where no alias is required
+    ['grok-code-fast-1', 'grok-code-fast-1'],
+    ['gemini-3-pro', 'gemini-3-pro-preview'],
+  ]
+
+  for (const [input, expectedAlias] of cases) {
+    it(`${input} resolves to ${expectedAlias} pricing`, () => {
+      const costs = getModelCosts(input)
+      expect(costs, `${input} should resolve to pricing (and not produce $0 in the dashboard)`).not.toBeNull()
+      expect(costs!.inputCostPerToken).toBeGreaterThan(0)
+      expect(costs!.outputCostPerToken).toBeGreaterThan(0)
+      const expected = getModelCosts(expectedAlias)
+      expect(expected, `expected target ${expectedAlias} should itself resolve`).not.toBeNull()
+      // Identity check: the alias must produce the SAME pricing object as
+      // the canonical key, not just any non-zero pricing. Catches drift
+      // where a future edit re-points an alias at a wrong-but-positive entry.
+      expect(costs!.inputCostPerToken).toBe(expected!.inputCostPerToken)
+      expect(costs!.outputCostPerToken).toBe(expected!.outputCostPerToken)
+    })
+  }
+})
