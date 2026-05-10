@@ -5,7 +5,13 @@ import { randomBytes } from 'crypto'
 
 import type { ParsedProviderCall } from './providers/types.js'
 
-const CURSOR_CACHE_VERSION = 2
+// Bumped to 3 for the workspace-aware breakdown change: the cursor parser
+// now derives `sessionId` from the bubble row key (the real composer id)
+// rather than the empty `conversationId` JSON field, and the workspace
+// router relies on those composer ids to bucket calls per project.
+// Version 2 caches contain `sessionId: 'unknown'` for every call and would
+// route everything to the orphan project, so we invalidate them.
+const CURSOR_CACHE_VERSION = 3
 
 type ResultCache = {
   version?: number

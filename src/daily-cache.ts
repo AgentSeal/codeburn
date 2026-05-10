@@ -5,7 +5,14 @@ import { homedir } from 'os'
 import { join } from 'path'
 import type { DateRange, ProjectSummary } from './types.js'
 
-export const DAILY_CACHE_VERSION = 4
+// Bumped to 5 alongside the Cursor per-project breakdown: prior daily
+// entries recorded every Cursor session under a single 'cursor' project
+// label. After the upgrade, the breakdown produces per-workspace project
+// labels for new days; without invalidation the dashboard would show
+// 'cursor' for historical days and `-Users-you-myproject` for new ones
+// in the same window, producing a confusing mixed projection. v5 forces a
+// full recompute.
+export const DAILY_CACHE_VERSION = 5
 const MIN_SUPPORTED_VERSION = 2
 const DAILY_CACHE_FILENAME = 'daily-cache.json'
 

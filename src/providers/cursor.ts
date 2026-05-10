@@ -1,4 +1,4 @@
-import { existsSync, statSync } from 'fs'
+import { existsSync, statSync, readdirSync, readFileSync } from 'fs'
 import { join } from 'path'
 import { homedir } from 'os'
 
@@ -68,6 +68,190 @@ function getCursorDbPath(): string {
     return join(homedir(), 'AppData', 'Roaming', 'Cursor', 'User', 'globalStorage', 'state.vscdb')
   }
   return join(homedir(), '.config', 'Cursor', 'User', 'globalStorage', 'state.vscdb')
+}
+
+function getCursorWorkspaceStorageDir(globalDbPath: string): string {
+  // Sibling of globalStorage. Cursor lays out User/{globalStorage,workspaceStorage}/.
+  // We derive the workspaceStorage path from the global DB path so a test or
+  // override can supply both consistently from one root.
+  // globalDbPath = .../User/globalStorage/state.vscdb
+  // workspaceStorage = .../User/workspaceStorage
+  const userDir = join(globalDbPath, '..', '..')
+  return join(userDir, 'workspaceStorage')
+}
+
+/// Per-conversation workspace lookup table. Cursor stores each chat as
+/// `bubbleId:<composerId>:<bubbleUuid>` rows in the GLOBAL state.vscdb but
+/// does NOT carry a workspace path on the bubble itself. The mapping lives
+/// in per-workspace dirs at `workspaceStorage/<hash>/`:
+///   - `workspace.json` carries the folder URI (`file:///Users/me/proj`)
+///   - `state.vscdb`'s `ItemTable['composer.composerData']` lists every
+///     composerId opened in that workspace
+/// We walk every workspace dir, pull both, and build composerId -> folder.
+type WorkspaceMapping = {
+  composerToWorkspace: Map<string, string>     // composerId -> folder URI
+  workspaceProjectName: Map<string, string>    // folder URI -> sanitized project name
+}
+
+const ORPHAN_TAG = '__orphan__'
+// Catch-all project label for composers that did not register against any
+// workspace. When the user has no workspaces at all this is the only label
+// shown, matching the pre-PR `cursor` project so legacy installs are not
+// renamed by the breakdown change.
+const ORPHAN_PROJECT = 'cursor'
+
+function sanitizeWorkspaceUri(uri: string): string {
+  // Mirrors Claude's slug convention so two providers reporting the same
+  // project path produce identical project keys for cross-provider rollup.
+  // file:///Users/me/myproject → -Users-me-myproject
+  // vscode-remote://wsl+Ubuntu/home/me/proj → -wsl-Ubuntu-home-me-proj
+  let path: string
+  if (uri.startsWith('file://')) {
+    path = uri.slice('file://'.length)
+  } else {
+    // Other URI schemes (vscode-remote://, ssh+remote://, etc.): swap "://"
+    // for a leading "/" so the slugifier produces a predictable shape.
+    path = uri.replace(/^[^:]+:\/\//, '/').replace(/\+/g, '-')
+  }
+  try {
+    path = decodeURIComponent(path)
+  } catch {
+    // Malformed percent encoding — keep as-is rather than throw.
+  }
+  return path.replace(/\/+/g, '-')
+}
+
+let workspaceMapCache: WorkspaceMapping | null = null
+let workspaceMapCacheRoot: string | null = null
+
+/// Visible for tests so a fixture can rebuild the map after writing fresh
+/// workspace directories.
+export function clearCursorWorkspaceMapCache(): void {
+  workspaceMapCache = null
+  workspaceMapCacheRoot = null
+}
+
+function loadWorkspaceMap(workspaceStorageDir: string): WorkspaceMapping {
+  if (workspaceMapCache && workspaceMapCacheRoot === workspaceStorageDir) {
+    return workspaceMapCache
+  }
+  const result: WorkspaceMapping = {
+    composerToWorkspace: new Map(),
+    workspaceProjectName: new Map(),
+  }
+
+  let entries: string[]
+  try {
+    entries = readdirSync(workspaceStorageDir)
+  } catch {
+    workspaceMapCache = result
+    workspaceMapCacheRoot = workspaceStorageDir
+    return result
+  }
+
+  for (const hashDir of entries) {
+    const wsJsonPath = join(workspaceStorageDir, hashDir, 'workspace.json')
+    const wsDbPath = join(workspaceStorageDir, hashDir, 'state.vscdb')
+
+    let wsJsonRaw: string
+    try {
+      wsJsonRaw = readFileSync(wsJsonPath, 'utf-8')
+    } catch {
+      continue
+    }
+
+    let folder: string | undefined
+    try {
+      const parsed = JSON.parse(wsJsonRaw) as { folder?: string }
+      folder = parsed.folder
+    } catch {
+      continue
+    }
+    if (!folder) continue
+    if (!existsSync(wsDbPath)) continue
+
+    let db: SqliteDatabase
+    try {
+      db = openDatabase(wsDbPath)
+    } catch {
+      continue
+    }
+    try {
+      const rows = db.query<{ value: string }>(
+        "SELECT value FROM ItemTable WHERE key='composer.composerData'",
+      )
+      if (rows.length === 0) continue
+      let parsed: { allComposers?: Array<{ composerId?: string }> }
+      try {
+        parsed = JSON.parse(rows[0]!.value)
+      } catch {
+        continue
+      }
+      const project = sanitizeWorkspaceUri(folder)
+      let added = 0
+      for (const c of parsed.allComposers ?? []) {
+        if (typeof c.composerId === 'string') {
+          result.composerToWorkspace.set(c.composerId, folder)
+          added += 1
+        }
+      }
+      if (added > 0) {
+        result.workspaceProjectName.set(folder, project)
+      }
+    } catch {
+      // best-effort
+    } finally {
+      db.close()
+    }
+  }
+
+  workspaceMapCache = result
+  workspaceMapCacheRoot = workspaceStorageDir
+  return result
+}
+
+/// Pulls the composer id out of a `bubbleId:<composerId>:<bubbleUuid>` key.
+/// Returns null when the composer segment contains a CR/LF, which is the
+/// signature Cursor uses for tool-call sub-composer rows in real data —
+/// e.g. `bubbleId:task-call_xxxx\nfc_yyyy:<bubbleUuid>` is one key with a
+/// literal newline between the `task-call_` and `fc_` halves. Those rows
+/// are not standalone composers and would otherwise inflate the orphan
+/// project's session count.
+function parseComposerIdFromKey(key: string | undefined): string | null {
+  if (!key) return null
+  const firstColon = key.indexOf(':')
+  if (firstColon < 0) return null
+  const secondColon = key.indexOf(':', firstColon + 1)
+  if (secondColon < 0) return null
+  const candidate = key.slice(firstColon + 1, secondColon)
+  if (!candidate) return null
+  // Reject any multi-line / control-char composer id. Real composer ids
+  // (UUIDs) and synthetic fixture ids are both single-line.
+  if (/[\r\n\x00]/.test(candidate)) return null
+  return candidate
+}
+
+// Encodes the active workspace into source.path so the parser knows which
+// composers to filter for. `#cursor-ws=` is a private separator: `state.vscdb`
+// does not contain `#` (we construct the path ourselves), and the literal
+// token only appears in source paths emitted from this provider, so there
+// is no realistic collision.
+const WORKSPACE_SEP = '#cursor-ws='
+
+function encodeSourcePath(dbPath: string, workspaceTag: string): string {
+  return `${dbPath}${WORKSPACE_SEP}${workspaceTag}`
+}
+
+function decodeSourcePath(sourcePath: string): { dbPath: string; workspaceTag: string } {
+  const idx = sourcePath.indexOf(WORKSPACE_SEP)
+  // Backwards-compat: a bare DB path with no workspace tag means "give me
+  // every call from this DB". Older cached SessionSource entries and any
+  // hand-constructed source from a test land here.
+  if (idx < 0) return { dbPath: sourcePath, workspaceTag: '__all__' }
+  return {
+    dbPath: sourcePath.slice(0, idx),
+    workspaceTag: sourcePath.slice(idx + WORKSPACE_SEP.length),
+  }
 }
 
 type CodeBlock = { languageId?: string }
@@ -273,7 +457,20 @@ function parseBubbles(db: SqliteDatabase, seenKeys: Set<string>): { calls: Parse
       }
 
       const createdAt = row.created_at ?? ''
-      const conversationId = row.conversation_id ?? 'unknown'
+      // The JSON `conversationId` field on bubbles is empty in current
+      // Cursor builds. The real composerId lives in the row key
+      // `bubbleId:<composerId>:<bubbleUuid>`. Extract from the key so the
+      // workspace map join works. parseComposerIdFromKey returns null for
+      // non-UUID composer segments (Cursor stores tool-call output under
+      // `bubbleId:task-call_xxx\nfc_yyy:<bubbleUuid>` and similar shapes —
+      // those bubbles are NOT standalone sessions; their tokens are
+      // already accounted for inside the parent composer's stream).
+      const parsedComposerId = parseComposerIdFromKey(row.bubble_key)
+      if (!parsedComposerId) {
+        skipped++
+        continue
+      }
+      const conversationId = parsedComposerId
       // Use the SQLite row key (bubbleId:<unique>) as the dedup key.
       // Cursor mutates token counts on the row in place when streaming
       // completes — including tokens in the dedup key (the previous
@@ -467,41 +664,75 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
         return
       }
 
-      const cached = await readCachedResults(source.path)
-      if (cached) {
-        for (const call of cached) {
-          if (seenKeys.has(call.deduplicationKey)) continue
-          seenKeys.add(call.deduplicationKey)
-          yield call
+      const { dbPath, workspaceTag } = decodeSourcePath(source.path)
+
+      // Decide which composers belong to this source. The workspace map is
+      // built once per process from `workspaceStorage/*` and reused across
+      // every workspace-scoped source, so we pay the directory walk cost
+      // only once per CLI run regardless of how many projects the user has.
+      // `composerFilter` holds the set of composers EITHER allowed (workspace
+      // source) or denied (orphan source); `filterMode` says which.
+      let composerFilter: Set<string> | null = null
+      let filterMode: 'include' | 'exclude' = 'include'
+      if (workspaceTag !== '__all__') {
+        const wsMap = loadWorkspaceMap(getCursorWorkspaceStorageDir(dbPath))
+        if (workspaceTag === ORPHAN_TAG) {
+          // Orphan source: every composer that is mapped to SOME workspace
+          // is excluded here, so unmapped composers (and any non-UUID
+          // sub-composer ids that slip through) land in this bucket.
+          composerFilter = new Set(wsMap.composerToWorkspace.keys())
+          filterMode = 'exclude'
+        } else {
+          composerFilter = new Set()
+          for (const [composerId, folder] of wsMap.composerToWorkspace) {
+            if (folder === workspaceTag) composerFilter.add(composerId)
+          }
+          filterMode = 'include'
         }
-        return
       }
 
-      let db: SqliteDatabase
-      try {
-        db = openDatabase(source.path)
-      } catch (err) {
-        process.stderr.write(`codeburn: cannot open Cursor database: ${err instanceof Error ? err.message : err}\n`)
-        return
-      }
-
-      try {
-        if (!validateSchema(db)) {
-          process.stderr.write('codeburn: Cursor storage format not recognized. You may need to update CodeBurn.\n')
+      // Cache is keyed on the bare DB path so multiple workspace-scoped
+      // sources reuse one parsed bubble set per CLI run. Filtering happens
+      // post-cache so each source emits only its own composers.
+      let allCalls: ParsedProviderCall[] | null = null
+      const cached = await readCachedResults(dbPath)
+      if (cached) {
+        allCalls = cached
+      } else {
+        let db: SqliteDatabase
+        try {
+          db = openDatabase(dbPath)
+        } catch (err) {
+          process.stderr.write(`codeburn: cannot open Cursor database: ${err instanceof Error ? err.message : err}\n`)
           return
         }
-
-        const { calls: bubbleCalls } = parseBubbles(db, seenKeys)
-        const { calls: agentKvCalls } = parseAgentKv(db, seenKeys, source.path)
-        const calls = [...bubbleCalls, ...agentKvCalls]
-
-        await writeCachedResults(source.path, calls)
-
-        for (const call of calls) {
-          yield call
+        try {
+          if (!validateSchema(db)) {
+            process.stderr.write('codeburn: Cursor storage format not recognized. You may need to update CodeBurn.\n')
+            return
+          }
+          // Use a fresh local Set for intra-parse dedup so the global
+          // seenKeys is not mutated by calls that the workspace filter is
+          // about to drop. Cross-source dedup happens at yield time.
+          const localSeen = new Set<string>()
+          const { calls: bubbleCalls } = parseBubbles(db, localSeen)
+          const { calls: agentKvCalls } = parseAgentKv(db, localSeen, dbPath)
+          allCalls = [...bubbleCalls, ...agentKvCalls]
+          await writeCachedResults(dbPath, allCalls)
+        } finally {
+          db.close()
         }
-      } finally {
-        db.close()
+      }
+
+      for (const call of allCalls) {
+        if (composerFilter !== null) {
+          const inSet = composerFilter.has(call.sessionId)
+          if (filterMode === 'include' && !inSet) continue
+          if (filterMode === 'exclude' && inSet) continue
+        }
+        if (seenKeys.has(call.deduplicationKey)) continue
+        seenKeys.add(call.deduplicationKey)
+        yield call
       }
     },
   }
@@ -526,7 +757,27 @@ export function createCursorProvider(dbPathOverride?: string): Provider {
       const dbPath = dbPathOverride ?? getCursorDbPath()
       if (!existsSync(dbPath)) return []
 
-      return [{ path: dbPath, project: 'cursor', provider: 'cursor' }]
+      const wsMap = loadWorkspaceMap(getCursorWorkspaceStorageDir(dbPath))
+      const sources: SessionSource[] = []
+      for (const [folder, project] of wsMap.workspaceProjectName) {
+        sources.push({
+          path: encodeSourcePath(dbPath, folder),
+          project,
+          provider: 'cursor',
+        })
+      }
+      // Always emit a catch-all source for composers with no workspace
+      // mapping. About a third of composers in real-world Cursor installs
+      // are unmapped (multi-root workspaces, "no folder open" sessions,
+      // deleted workspaces with surviving global rows). When the user has
+      // no workspaces at all this source captures everything and the
+      // dashboard looks identical to the pre-PR `cursor` project.
+      sources.push({
+        path: encodeSourcePath(dbPath, ORPHAN_TAG),
+        project: ORPHAN_PROJECT,
+        provider: 'cursor',
+      })
+      return sources
     },
 
     createSessionParser(source: SessionSource, seenKeys: Set<string>): SessionParser {

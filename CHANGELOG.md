@@ -41,6 +41,23 @@
   reconcile. Closes #279.
 
 ### Fixed (CLI)
+- **Cursor sessions break down by project, not one row called "cursor".**
+  Cursor's chat history sat under a single dashboard row labeled `cursor`
+  because the provider had no way to attribute bubbles to a workspace.
+  The fix walks `~/Library/Application Support/Cursor/User/workspaceStorage/*`
+  for each workspace's `workspace.json` (folder URI) and
+  `composer.composerData` (the composer ids opened in that workspace),
+  then joins those composer ids against the global bubbles. Each
+  workspace becomes its own project row, sanitized into the same slug
+  shape Claude uses (e.g. `-Users-you-myproject`); composers that have
+  no workspace mapping (multi-root workspaces, "no folder open"
+  sessions, deleted workspaces) remain under a catch-all `cursor` row.
+  As part of this the cursor parser now derives `sessionId` from the
+  bubble row key (`bubbleId:<composerId>:<bubbleUuid>`) instead of the
+  empty `conversationId` JSON field, which was always falling back to
+  `'unknown'`. Cursor result cache version bumped to 3 to invalidate
+  prior caches that recorded the old session id. Closes the per-project
+  half of #196.
 - **Cursor cost shown for every model, not just Auto.** Cursor emits model
   names in a `claude-<dot-version>-<tier>` shape (`claude-4.6-sonnet`,
   `claude-4.5-opus`, `claude-4.5-opus-high-thinking`, etc.) plus its own
