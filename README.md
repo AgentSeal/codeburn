@@ -89,28 +89,28 @@ Arrow keys switch between Today, 7 Days, 30 Days, Month, and 6 Months (use `--fr
 
 ## Supported Providers
 
-| Provider | Data Location | Supported |
-|----------|--------------|-----------|
-| Claude Code | `~/.claude/projects/` | Yes |
-| Claude Desktop | `~/Library/Application Support/Claude/local-agent-mode-sessions/` | Yes |
-| Codex (OpenAI) | `~/.codex/sessions/` | Yes |
-| Cursor | `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb` | Yes |
-| cursor-agent | `~/.cursor/projects/` | Yes |
-| Gemini CLI | `~/.gemini/tmp/<project>/chats/` | Yes |
-| GitHub Copilot | `~/.copilot/session-state/` + VS Code `workspaceStorage/` | Yes |
-| Kiro | `~/Library/Application Support/Kiro/User/globalStorage/kiro.kiroagent/` | Yes |
-| OpenCode | `~/.local/share/opencode/` (SQLite) | Yes |
-| OpenClaw | `~/.openclaw/agents/` (+ legacy `.clawdbot`, `.moltbot`, `.moldbot`) | Yes |
-| Pi | `~/.pi/agent/sessions/` | Yes |
-| OMP (Oh My Pi) | `~/.omp/agent/sessions/` | Yes |
-| Droid | `~/.factory/projects/` | Yes |
-| Roo Code | VS Code `globalStorage/rooveterinaryinc.roo-cline/tasks/` | Yes |
-| KiloCode | VS Code `globalStorage/kilocode.kilo-code/tasks/` | Yes |
-| Qwen | `~/.qwen/projects/<project>/chats/` | Yes |
-| Goose | `~/.local/share/goose/sessions/sessions.db` (SQLite) | Yes |
-| Antigravity | `~/.gemini/antigravity/conversations/` | Yes |
+| Provider | Supported | Doc |
+|----------|-----------|-----|
+| Claude Code | Yes | [claude.md](docs/providers/claude.md) |
+| Claude Desktop | Yes | [claude.md](docs/providers/claude.md) |
+| Codex (OpenAI) | Yes | [codex.md](docs/providers/codex.md) |
+| Cursor | Yes | [cursor.md](docs/providers/cursor.md) |
+| cursor-agent | Yes | [cursor-agent.md](docs/providers/cursor-agent.md) |
+| Gemini CLI | Yes | [gemini.md](docs/providers/gemini.md) |
+| GitHub Copilot | Yes | [copilot.md](docs/providers/copilot.md) |
+| Kiro | Yes | [kiro.md](docs/providers/kiro.md) |
+| OpenCode | Yes | [opencode.md](docs/providers/opencode.md) |
+| OpenClaw | Yes | [openclaw.md](docs/providers/openclaw.md) |
+| Pi | Yes | [pi.md](docs/providers/pi.md) |
+| OMP (Oh My Pi) | Yes | [omp.md](docs/providers/omp.md) |
+| Droid | Yes | [droid.md](docs/providers/droid.md) |
+| Roo Code | Yes | [roo-code.md](docs/providers/roo-code.md) |
+| KiloCode | Yes | [kilo-code.md](docs/providers/kilo-code.md) |
+| Qwen | Yes | [qwen.md](docs/providers/qwen.md) |
+| Goose | Yes | [goose.md](docs/providers/goose.md) |
+| Antigravity | Yes | [antigravity.md](docs/providers/antigravity.md) |
 
-Paths shown are for macOS. Linux and Windows equivalents are detected automatically. If a path has changed or is wrong, please [open an issue](https://github.com/getagentseal/codeburn/issues).
+Each provider doc lists the exact data location, storage format, and known quirks. Linux and Windows paths are detected automatically. If a path has changed or is wrong, please [open an issue](https://github.com/getagentseal/codeburn/issues).
 
 CodeBurn auto-detects which AI coding tools you use. If multiple providers have session data on disk, press `p` in the dashboard to toggle between them.
 
