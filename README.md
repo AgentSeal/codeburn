@@ -95,28 +95,31 @@ Arrow keys switch between Today, 7 Days, 30 Days, Month, and 6 Months (use `--fr
 
 ## Supported Providers
 
-| Provider | Supported | Doc |
-|----------|-----------|-----|
-| Claude Code | Yes | [claude.md](docs/providers/claude.md) |
-| Claude Desktop | Yes | [claude.md](docs/providers/claude.md) |
-| Codex (OpenAI) | Yes | [codex.md](docs/providers/codex.md) |
-| Cursor | Yes | [cursor.md](docs/providers/cursor.md) |
-| cursor-agent | Yes | [cursor-agent.md](docs/providers/cursor-agent.md) |
-| Gemini CLI | Yes | [gemini.md](docs/providers/gemini.md) |
-| GitHub Copilot | Yes | [copilot.md](docs/providers/copilot.md) |
-| Kiro | Yes | [kiro.md](docs/providers/kiro.md) |
-| OpenCode | Yes | [opencode.md](docs/providers/opencode.md) |
-| OpenClaw | Yes | [openclaw.md](docs/providers/openclaw.md) |
-| Pi | Yes | [pi.md](docs/providers/pi.md) |
-| OMP (Oh My Pi) | Yes | [omp.md](docs/providers/omp.md) |
-| Droid | Yes | [droid.md](docs/providers/droid.md) |
-| Roo Code | Yes | [roo-code.md](docs/providers/roo-code.md) |
-| KiloCode | Yes | [kilo-code.md](docs/providers/kilo-code.md) |
-| Qwen | Yes | [qwen.md](docs/providers/qwen.md) |
-| Goose | Yes | [goose.md](docs/providers/goose.md) |
-| Antigravity | Yes | [antigravity.md](docs/providers/antigravity.md) |
+| | Provider | Supported | Doc |
+|---|----------|-----------|-----|
+| <img src="assets/providers/claude.jpg" width="28" /> | Claude Code | Yes | [claude.md](docs/providers/claude.md) |
+| <img src="assets/providers/claude.jpg" width="28" /> | Claude Desktop | Yes | [claude.md](docs/providers/claude.md) |
+| <img src="assets/providers/codex.png" width="28" /> | Codex (OpenAI) | Yes | [codex.md](docs/providers/codex.md) |
+| <img src="assets/providers/cursor.jpg" width="28" /> | Cursor | Yes | [cursor.md](docs/providers/cursor.md) |
+| <img src="assets/providers/cursor-agent.jpg" width="28" /> | cursor-agent | Yes | [cursor-agent.md](docs/providers/cursor-agent.md) |
+| <img src="assets/providers/gemini.png" width="28" /> | Gemini CLI | Yes | [gemini.md](docs/providers/gemini.md) |
+| <img src="assets/providers/copilot.jpg" width="28" /> | GitHub Copilot | Yes | [copilot.md](docs/providers/copilot.md) |
+| <img src="assets/providers/kiro.png" width="28" /> | Kiro | Yes | [kiro.md](docs/providers/kiro.md) |
+| <img src="assets/providers/opencode.png" width="28" /> | OpenCode | Yes | [opencode.md](docs/providers/opencode.md) |
+| <img src="assets/providers/openclaw.jpg" width="28" /> | OpenClaw | Yes | [openclaw.md](docs/providers/openclaw.md) |
+| <img src="assets/providers/pi.png" width="28" /> | Pi | Yes | [pi.md](docs/providers/pi.md) |
+| <img src="assets/providers/omp.svg" width="28" /> | OMP (Oh My Pi) | Yes | [omp.md](docs/providers/omp.md) |
+| <img src="assets/providers/droid.png" width="28" /> | Droid | Yes | [droid.md](docs/providers/droid.md) |
+| <img src="assets/providers/roo-code.png" width="28" /> | Roo Code | Yes | [roo-code.md](docs/providers/roo-code.md) |
+| <img src="assets/providers/kilo-code.png" width="28" /> | KiloCode | Yes | [kilo-code.md](docs/providers/kilo-code.md) |
+| <img src="assets/providers/qwen.png" width="28" /> | Qwen | Yes | [qwen.md](docs/providers/qwen.md) |
+| <img src="assets/providers/goose.png" width="28" /> | Goose | Yes | [goose.md](docs/providers/goose.md) |
+| <img src="assets/providers/antigravity.png" width="28" /> | Antigravity | Yes | [antigravity.md](docs/providers/antigravity.md) |
+| <img src="assets/providers/crush.png" width="28" /> | Crush | Yes | [crush.md](docs/providers/crush.md) |
 
 Each provider doc lists the exact data location, storage format, and known quirks. Linux and Windows paths are detected automatically. If a path has changed or is wrong, please [open an issue](https://github.com/getagentseal/codeburn/issues).
+
+Provider logos are trademarks of their respective owners. The icon set was sourced from [tokscale](https://github.com/junhoyeo/tokscale) (MIT) plus official vendor assets, used under nominative fair use for the purpose of identifying supported tools.
 
 CodeBurn auto-detects which AI coding tools you use. If multiple providers have session data on disk, press `p` in the dashboard to toggle between them.
 

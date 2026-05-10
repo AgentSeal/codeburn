@@ -128,10 +128,10 @@ type Provider = {
 }
 ```
 
-`src/providers/index.ts` registers seventeen providers across two tiers:
+`src/providers/index.ts` registers eighteen providers across two tiers:
 
 - **Eager**: `claude`, `codex`, `copilot`, `droid`, `gemini`, `kilo-code`, `kiro`, `openclaw`, `pi`, `omp`, `qwen`, `roo-code`. Imported at module load.
-- **Lazy**: `antigravity`, `goose`, `cursor`, `opencode`, `cursor-agent`. Imported via dynamic `import()` so the heavy dependencies (SQLite, protobuf) do not touch users who do not have those tools installed.
+- **Lazy**: `antigravity`, `goose`, `cursor`, `opencode`, `cursor-agent`, `crush`. Imported via dynamic `import()` so the heavy dependencies (SQLite, protobuf) do not touch users who do not have those tools installed.
 
 Both lists hit the same `getAllProviders()` aggregator. A failed lazy import is silent and excludes that provider from the run.
 
@@ -177,13 +177,13 @@ The `prepublishOnly` hook in `package.json` runs `npm run build` so `npm publish
 
 ## Tests
 
-`npm test` runs vitest. Forty-one test files live under `tests/`:
+`npm test` runs vitest. Forty-two test files live under `tests/`:
 
 - `tests/` root (27 files) covers CLI, parser, optimize, cache, format, models, plans.
 - `tests/security/` (1 file) covers prototype-pollution guards.
-- `tests/providers/` (13 files) covers per-provider parsing.
+- `tests/providers/` (14 files) covers per-provider parsing.
 - `tests/fixtures/` holds redacted real-world session data.
 
-Five providers ship without test files today: `antigravity`, `claude`, `gemini`, `goose`, `qwen`. Closing this gap is a standing good-first-issue.
+Five providers ship without dedicated test files today: `antigravity`, `claude`, `gemini`, `goose`, `qwen`. Closing this gap is a standing good-first-issue.
 
 CI runs Semgrep against `.semgrep/rules/no-bracket-assign-hot-paths.yml` over `src/providers/` and `src/parser.ts` (`.github/workflows/ci.yml`). It does not run vitest in CI today; tests run locally before publish.

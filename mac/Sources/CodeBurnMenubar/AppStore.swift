@@ -680,6 +680,7 @@ enum ProviderFilter: String, CaseIterable, Identifiable {
     case qwen = "Qwen"
     case omp = "OMP"
     case rooCode = "Roo Code"
+    case crush = "Crush"
 
     var id: String { rawValue }
 
@@ -710,6 +711,7 @@ enum ProviderFilter: String, CaseIterable, Identifiable {
         case .qwen: "qwen"
         case .omp: "omp"
         case .rooCode: "roo-code"
+        case .crush: "crush"
         }
     }
 }

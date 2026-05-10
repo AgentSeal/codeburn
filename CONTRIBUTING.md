@@ -24,7 +24,7 @@ There is no separate build step required to run the dev CLI. `npm run dev` runs 
 
 | Command | What it does |
 |---|---|
-| `npm test` | Runs the vitest suite (41 test files, 558 tests). |
+| `npm test` | Runs the vitest suite (42 test files, 568 tests). |
 | `npm run dev -- status` | Runs the CLI in dev mode against your real data. |
 | `npm run build` | Bundles the litellm pricing snapshot, then runs `tsup` to produce `dist/cli.js`. |
 | `npm run bundle-litellm` | Refreshes `src/data/litellm-snapshot.json` from the upstream litellm repo. |

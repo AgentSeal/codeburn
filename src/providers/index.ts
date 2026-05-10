@@ -62,6 +62,9 @@ let opencodeLoadAttempted = false
 let cursorAgentProvider: Provider | null = null
 let cursorAgentLoadAttempted = false
 
+let crushProvider: Provider | null = null
+let crushLoadAttempted = false
+
 async function loadOpenCode(): Promise<Provider | null> {
   if (opencodeLoadAttempted) return opencodeProvider
   opencodeLoadAttempted = true
@@ -86,16 +89,29 @@ async function loadCursorAgent(): Promise<Provider | null> {
   }
 }
 
+async function loadCrush(): Promise<Provider | null> {
+  if (crushLoadAttempted) return crushProvider
+  crushLoadAttempted = true
+  try {
+    const { crush } = await import('./crush.js')
+    crushProvider = crush
+    return crush
+  } catch {
+    return null
+  }
+}
+
 const coreProviders: Provider[] = [claude, codex, copilot, droid, gemini, kiloCode, kiro, openclaw, pi, omp, qwen, rooCode]
 
 export async function getAllProviders(): Promise<Provider[]> {
-  const [ag, gs, cursor, opencode, cursorAgent] = await Promise.all([loadAntigravity(), loadGoose(), loadCursor(), loadOpenCode(), loadCursorAgent()])
+  const [ag, gs, cursor, opencode, cursorAgent, crush] = await Promise.all([loadAntigravity(), loadGoose(), loadCursor(), loadOpenCode(), loadCursorAgent(), loadCrush()])
   const all = [...coreProviders]
   if (ag) all.push(ag)
   if (gs) all.push(gs)
   if (cursor) all.push(cursor)
   if (opencode) all.push(opencode)
   if (cursorAgent) all.push(cursorAgent)
+  if (crush) all.push(crush)
   return all
 }
 
@@ -134,6 +150,10 @@ export async function getProvider(name: string): Promise<Provider | undefined> {
   if (name === 'cursor-agent') {
     const ca = await loadCursorAgent()
     return ca ?? undefined
+  }
+  if (name === 'crush') {
+    const c = await loadCrush()
+    return c ?? undefined
   }
   return coreProviders.find(p => p.name === name)
 }
