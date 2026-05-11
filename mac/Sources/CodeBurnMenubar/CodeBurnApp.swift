@@ -705,10 +705,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             alert.icon = codeburnAlertIcon()
             if updateChecker.updateAvailable, let latest = updateChecker.latestVersion {
                 alert.messageText = "Update Available"
-                alert.informativeText = "v\(latest) is available (you have v\(updateChecker.currentVersion)). Run:\n\ncodeburn menubar --force"
+                alert.informativeText = "\(AppVersion.display(latest)) is available (you have \(AppVersion.display(updateChecker.currentVersion))). Run:\n\ncodeburn menubar --force"
             } else {
                 alert.messageText = "Up to Date"
-                alert.informativeText = "You're on the latest version (v\(updateChecker.currentVersion))."
+                alert.informativeText = "You're on the latest version (\(AppVersion.display(updateChecker.currentVersion)))."
             }
             alert.alertStyle = .informational
             alert.addButton(withTitle: "OK")

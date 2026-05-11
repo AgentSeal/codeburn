@@ -9,6 +9,8 @@
 set -euo pipefail
 
 VERSION="${1:-dev}"
+ASSET_VERSION="${VERSION#mac-}"
+BUNDLE_VERSION="${ASSET_VERSION#v}"
 BUNDLE_NAME="CodeBurnMenubar.app"
 BUNDLE_ID="org.agentseal.codeburn-menubar"
 EXECUTABLE_NAME="CodeBurnMenubar"
@@ -66,9 +68,9 @@ cat > "${BUNDLE}/Contents/Info.plist" <<PLIST
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>${VERSION}</string>
+    <string>${BUNDLE_VERSION}</string>
     <key>CFBundleVersion</key>
-    <string>${VERSION}</string>
+    <string>${BUNDLE_VERSION}</string>
     <key>LSMinimumSystemVersion</key>
     <string>${MIN_MACOS}</string>
     <key>LSUIElement</key>
@@ -93,7 +95,7 @@ echo "▸ Ad-hoc signing..."
 codesign --force --sign - --timestamp=none --deep "${BUNDLE}" 2>/dev/null || true
 codesign --verify --deep --strict "${BUNDLE}" 2>/dev/null || echo "  (signature verify skipped)"
 
-ZIP_NAME="CodeBurnMenubar-${VERSION}.zip"
+ZIP_NAME="CodeBurnMenubar-${ASSET_VERSION}.zip"
 ZIP_PATH="${DIST_DIR}/${ZIP_NAME}"
 echo "▸ Packaging ${ZIP_NAME}..."
 (cd "${DIST_DIR}" && COPYFILE_DISABLE=1 /usr/bin/ditto -c -k --norsrc --keepParent "${BUNDLE_NAME}" "${ZIP_NAME}")

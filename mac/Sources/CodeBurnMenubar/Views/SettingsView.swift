@@ -337,10 +337,8 @@ private struct CodexConnectionRow: View {
 // MARK: - About
 
 private struct AboutSettingsTab: View {
-    private let appVersion: String =
-        (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "—"
-    private let buildVersion: String =
-        (Bundle.main.infoDictionary?["CFBundleVersion"] as? String) ?? "—"
+    private let appVersion: String = AppVersion.normalizedBundleShortVersion
+    private let buildVersion: String = AppVersion.normalizedBundleBuildVersion
 
     var body: some View {
         VStack(spacing: 14) {

@@ -567,7 +567,7 @@ struct FooterBar: View {
 
             Spacer()
 
-            Text("v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?")")
+            Text(AppVersion.displayBundleShortVersion)
                 .font(.system(size: 10, weight: .regular, design: .monospaced))
                 .foregroundStyle(.tertiary)
 
