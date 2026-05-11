@@ -21,6 +21,9 @@ final class AppStore {
     var selectedProvider: ProviderFilter = .all
     var selectedPeriod: Period = .today
     var selectedInsight: InsightMode = .trend
+    var headlineMetric: HeadlineMetric = .persisted {
+        didSet { HeadlineMetric.persist(headlineMetric) }
+    }
     var accentPreset: AccentPreset = ThemeState.shared.preset {
         didSet { ThemeState.shared.preset = accentPreset }
     }
@@ -964,6 +967,26 @@ enum Period: String, CaseIterable, Identifiable {
     }
 }
 
+enum HeadlineMetric: String, CaseIterable, Identifiable {
+    case cost = "Cost"
+    case tokens = "Tokens"
+
+    private static let storageKey = "CodeBurnHeadlineMetric"
+
+    var id: String { rawValue }
+
+    static var persisted: HeadlineMetric {
+        guard let raw = UserDefaults.standard.string(forKey: storageKey),
+              let metric = HeadlineMetric(rawValue: raw)
+        else { return .cost }
+        return metric
+    }
+
+    static func persist(_ metric: HeadlineMetric) {
+        UserDefaults.standard.set(metric.rawValue, forKey: storageKey)
+    }
+}
+
 /// NumberFormatter is expensive to instantiate (~microseconds each) and currency/token values
 /// are formatted dozens of times per popover refresh. These shared instances avoid thousands of
 /// allocations per frame while SwiftUI's Observation framework still triggers redraws when
@@ -1006,5 +1029,18 @@ private let thousandsFormatter: NumberFormatter = {
 extension Int {
     func asThousandsSeparated() -> String {
         thousandsFormatter.string(from: NSNumber(value: self)) ?? "\(self)"
+    }
+
+    func asCompactTokens() -> String {
+        Double(self).asCompactTokens()
+    }
+}
+
+extension Double {
+    func asCompactTokens() -> String {
+        if self >= 1_000_000_000 { return String(format: "%.1fB", self / 1_000_000_000) }
+        if self >= 1_000_000 { return String(format: "%.1fM", self / 1_000_000) }
+        if self >= 1_000 { return String(format: "%.1fK", self / 1_000) }
+        return String(format: "%.0f", self)
     }
 }

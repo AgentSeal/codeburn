@@ -45,16 +45,30 @@ export function aggregateProjectsIntoDays(projects: ProjectSummary[]): DailyEntr
 
         const editTurns = turn.hasEdits ? 1 : 0
         const oneShotTurns = turn.hasEdits && turn.retries === 0 ? 1 : 0
-        const turnCost = turn.assistantCalls.reduce((s, c) => s + c.costUSD, 0)
+        const turnTotals = turn.assistantCalls.reduce((acc, call) => {
+          acc.cost += call.costUSD
+          acc.inputTokens += call.usage.inputTokens
+          acc.outputTokens += call.usage.outputTokens
+          acc.cacheReadTokens += call.usage.cacheReadInputTokens
+          acc.cacheWriteTokens += call.usage.cacheCreationInputTokens
+          return acc
+        }, { cost: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 })
 
         turnDay.editTurns += editTurns
         turnDay.oneShotTurns += oneShotTurns
 
-        const cat = turnDay.categories[turn.category] ?? { turns: 0, cost: 0, editTurns: 0, oneShotTurns: 0 }
+        const cat = turnDay.categories[turn.category] ?? {
+          turns: 0, cost: 0, editTurns: 0, oneShotTurns: 0,
+          inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0,
+        }
         cat.turns += 1
-        cat.cost += turnCost
+        cat.cost += turnTotals.cost
         cat.editTurns += editTurns
         cat.oneShotTurns += oneShotTurns
+        cat.inputTokens += turnTotals.inputTokens
+        cat.outputTokens += turnTotals.outputTokens
+        cat.cacheReadTokens += turnTotals.cacheReadTokens
+        cat.cacheWriteTokens += turnTotals.cacheWriteTokens
         turnDay.categories[turn.category] = cat
 
         for (const call of turn.assistantCalls) {
@@ -96,7 +110,16 @@ export function aggregateProjectsIntoDays(projects: ProjectSummary[]): DailyEntr
 export function buildPeriodDataFromDays(days: DailyEntry[], label: string): PeriodData {
   let cost = 0, calls = 0, sessions = 0
   let inputTokens = 0, outputTokens = 0, cacheReadTokens = 0, cacheWriteTokens = 0
-  const catTotals: Record<string, { turns: number; cost: number; editTurns: number; oneShotTurns: number }> = {}
+  const catTotals: Record<string, {
+    turns: number
+    cost: number
+    editTurns: number
+    oneShotTurns: number
+    inputTokens: number
+    outputTokens: number
+    cacheReadTokens: number
+    cacheWriteTokens: number
+  }> = {}
   const modelTotals: Record<string, { calls: number; cost: number }> = {}
 
   for (const d of days) {
@@ -115,11 +138,18 @@ export function buildPeriodDataFromDays(days: DailyEntry[], label: string): Peri
       modelTotals[name] = acc
     }
     for (const [cat, c] of Object.entries(d.categories)) {
-      const acc = catTotals[cat] ?? { turns: 0, cost: 0, editTurns: 0, oneShotTurns: 0 }
+      const acc = catTotals[cat] ?? {
+        turns: 0, cost: 0, editTurns: 0, oneShotTurns: 0,
+        inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0,
+      }
       acc.turns += c.turns
       acc.cost += c.cost
       acc.editTurns += c.editTurns
       acc.oneShotTurns += c.oneShotTurns
+      acc.inputTokens += c.inputTokens
+      acc.outputTokens += c.outputTokens
+      acc.cacheReadTokens += c.cacheReadTokens
+      acc.cacheWriteTokens += c.cacheWriteTokens
       catTotals[cat] = acc
     }
   }

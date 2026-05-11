@@ -381,7 +381,16 @@ program
 
 function buildPeriodData(label: string, projects: ProjectSummary[]): PeriodData {
   const sessions = projects.flatMap(p => p.sessions)
-  const catTotals: Record<string, { turns: number; cost: number; editTurns: number; oneShotTurns: number }> = {}
+  const catTotals: Record<string, {
+    turns: number
+    cost: number
+    editTurns: number
+    oneShotTurns: number
+    inputTokens: number
+    outputTokens: number
+    cacheReadTokens: number
+    cacheWriteTokens: number
+  }> = {}
   const modelTotals: Record<string, { calls: number; cost: number }> = {}
   let inputTokens = 0, outputTokens = 0, cacheReadTokens = 0, cacheWriteTokens = 0
 
@@ -390,12 +399,26 @@ function buildPeriodData(label: string, projects: ProjectSummary[]): PeriodData 
     outputTokens += sess.totalOutputTokens
     cacheReadTokens += sess.totalCacheReadTokens
     cacheWriteTokens += sess.totalCacheWriteTokens
-    for (const [cat, d] of Object.entries(sess.categoryBreakdown)) {
-      if (!catTotals[cat]) catTotals[cat] = { turns: 0, cost: 0, editTurns: 0, oneShotTurns: 0 }
-      catTotals[cat].turns += d.turns
-      catTotals[cat].cost += d.costUSD
-      catTotals[cat].editTurns += d.editTurns
-      catTotals[cat].oneShotTurns += d.oneShotTurns
+    for (const turn of sess.turns) {
+      if (!catTotals[turn.category]) {
+        catTotals[turn.category] = {
+          turns: 0, cost: 0, editTurns: 0, oneShotTurns: 0,
+          inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0,
+        }
+      }
+      const bucket = catTotals[turn.category]!
+      bucket.turns += 1
+      if (turn.hasEdits) {
+        bucket.editTurns += 1
+        if (turn.retries === 0) bucket.oneShotTurns += 1
+      }
+      for (const call of turn.assistantCalls) {
+        bucket.cost += call.costUSD
+        bucket.inputTokens += call.usage.inputTokens
+        bucket.outputTokens += call.usage.outputTokens
+        bucket.cacheReadTokens += call.usage.cacheReadInputTokens
+        bucket.cacheWriteTokens += call.usage.cacheCreationInputTokens
+      }
     }
     for (const [model, d] of Object.entries(sess.modelBreakdown)) {
       if (!modelTotals[model]) modelTotals[model] = { calls: 0, cost: 0 }
@@ -479,33 +502,14 @@ program
         scanProjects = todayProjects
         scanRange = todayRange
       } else {
+        // Per-provider token mode needs the full period scan because the daily
+        // cache stores provider cost/calls but not provider-scoped token buckets.
         cache = await loadDailyCache()
-        const cacheIsCurrent = cache.lastComputedDate !== null
-          && cache.lastComputedDate >= yesterdayStr
-        if (cacheIsCurrent && rangeStartStr < todayStr) {
-          const todayProviderProjects = fp(await parseAllSessions(todayRange, pf))
-          todayProviderData = buildPeriodData(periodInfo.label, todayProviderProjects)
-          const historicalDays = getDaysInRange(cache, rangeStartStr, yesterdayStr)
-          let histCost = 0, histCalls = 0
-          for (const d of historicalDays) {
-            const prov = d.providers[pf]
-            if (prov) { histCost += prov.cost; histCalls += prov.calls }
-          }
-          currentData = {
-            ...todayProviderData,
-            cost: todayProviderData.cost + histCost,
-            calls: todayProviderData.calls + histCalls,
-          }
-          scanProjects = todayProviderProjects
-          scanRange = todayRange
-          usedPerProviderCachePath = true
-        } else {
-          const fullProjects = fp(await parseAllSessions(periodInfo.range, pf))
-          todayProviderData = buildPeriodData(periodInfo.label, fullProjects)
-          currentData = todayProviderData
-          scanProjects = fullProjects
-          scanRange = periodInfo.range
-        }
+        const projects = fp(await parseAllSessions(periodInfo.range, pf))
+        todayProviderData = buildPeriodData(periodInfo.label, projects)
+        currentData = todayProviderData
+        scanProjects = projects
+        scanRange = periodInfo.range
       }
 
       // PROVIDERS

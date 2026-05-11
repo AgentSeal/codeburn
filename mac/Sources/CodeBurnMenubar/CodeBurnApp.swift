@@ -624,6 +624,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             // Track currency so the menubar title catches up immediately on
             // currency switch instead of waiting for the next 30s payload tick.
             _ = self.store.currency
+            _ = self.store.headlineMetric
             // Track the live-quota state too so the flame icon re-tints on
             // every subscription / codex usage update, not just every 30s.
             _ = self.store.subscription
@@ -695,7 +696,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         // macOS reflow the status item in the menubar and detaches the
         // anchored popover (it pops to a stale default position). The
         // popoverDidClose delegate calls back through here once the popover
-        // is dismissed so the menubar cost catches up immediately on close.
+        // is dismissed so the menubar metric catches up immediately on close.
         if popover != nil && popover.isShown { return }
 
         // Clear any previously-set image so the attachment is the only glyph rendered.
@@ -728,11 +729,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
         let hasPayload = store.todayPayload != nil
         let compact = isCompact
-        let fallback = compact ? "$-" : "$—"
-        let formatted = store.todayPayload?.current.cost
-        let valueText = compact
-            ? (formatted?.asCompactCurrencyWhole() ?? fallback)
-            : " " + (formatted?.asCompactCurrency() ?? fallback)
+        let valueText = statusValueText(compact: compact)
 
         var textAttrs: [NSAttributedString.Key: Any] = [.font: font, .baselineOffset: -1.0]
         if !hasPayload {
@@ -743,6 +740,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         composed.append(NSAttributedString(attachment: attachment))
         composed.append(NSAttributedString(string: valueText, attributes: textAttrs))
         button.attributedTitle = composed
+    }
+
+    private func statusValueText(compact: Bool) -> String {
+        guard let current = store.todayPayload?.current else {
+            let fallback = fallbackStatusText(compact: compact)
+            return compact ? fallback : " " + fallback
+        }
+        switch store.headlineMetric {
+        case .cost:
+            return compact ? current.cost.asCompactCurrencyWhole() : " " + current.cost.asCompactCurrency()
+        case .tokens:
+            let tokens = current.totalTokens.asCompactTokens()
+            return compact ? tokens : " \(tokens) tok"
+        }
+    }
+
+    private func fallbackStatusText(compact: Bool) -> String {
+        switch store.headlineMetric {
+        case .cost: return compact ? "$-" : "$—"
+        case .tokens: return compact ? "-" : "—"
+        }
     }
 
     // MARK: - Popover

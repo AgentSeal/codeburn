@@ -10,7 +10,17 @@ export type PeriodData = {
   outputTokens: number
   cacheReadTokens: number
   cacheWriteTokens: number
-  categories: Array<{ name: string; cost: number; turns: number; editTurns: number; oneShotTurns: number }>
+  categories: Array<{
+    name: string
+    cost: number
+    turns: number
+    editTurns: number
+    oneShotTurns: number
+    inputTokens: number
+    outputTokens: number
+    cacheReadTokens: number
+    cacheWriteTokens: number
+  }>
   models: Array<{ name: string; cost: number; calls: number }>
 }
 
@@ -55,11 +65,17 @@ export type MenubarPayload = {
     oneShotRate: number | null
     inputTokens: number
     outputTokens: number
+    cacheReadTokens: number
+    cacheWriteTokens: number
     cacheHitPercent: number
     topActivities: Array<{
       name: string
       cost: number
       turns: number
+      inputTokens: number
+      outputTokens: number
+      cacheReadTokens: number
+      cacheWriteTokens: number
       oneShotRate: number | null
     }>
     topModels: Array<{
@@ -106,10 +122,17 @@ function cacheHitPercent(inputTokens: number, cacheReadTokens: number): number {
 }
 
 function buildTopActivities(categories: PeriodData['categories']): MenubarPayload['current']['topActivities'] {
+  // The CLI supplies categories sorted by cost. There are fewer than 20 known
+  // task categories today, so the macOS token-mode resort still receives every
+  // category while keeping this payload compact if the taxonomy grows later.
   return categories.slice(0, TOP_ACTIVITIES_LIMIT).map(cat => ({
     name: cat.name,
     cost: cat.cost,
     turns: cat.turns,
+    inputTokens: cat.inputTokens,
+    outputTokens: cat.outputTokens,
+    cacheReadTokens: cat.cacheReadTokens,
+    cacheWriteTokens: cat.cacheWriteTokens,
     oneShotRate: oneShotRateFor(cat.editTurns, cat.oneShotTurns),
   }))
 }
@@ -171,6 +194,8 @@ export function buildMenubarPayload(
       oneShotRate: aggregateOneShotRate(current.categories),
       inputTokens: current.inputTokens,
       outputTokens: current.outputTokens,
+      cacheReadTokens: current.cacheReadTokens,
+      cacheWriteTokens: current.cacheWriteTokens,
       cacheHitPercent: cacheHitPercent(current.inputTokens, current.cacheReadTokens),
       topActivities: buildTopActivities(current.categories),
       topModels: buildTopModels(current.models),

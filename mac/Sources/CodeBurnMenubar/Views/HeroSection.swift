@@ -8,10 +8,12 @@ struct HeroSection: View {
             SectionCaption(text: caption)
 
             HStack(alignment: .firstTextBaseline) {
-                Text(store.payload.current.cost.asCurrency())
+                Text(primaryValue)
                     .font(.system(size: 32, weight: .semibold, design: .rounded))
                     .monospacedDigit()
                     .tracking(-1)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
                     .foregroundStyle(
                         LinearGradient(
                             colors: [Theme.brandAccent, Theme.brandAccentDeep],
@@ -41,10 +43,20 @@ struct HeroSection: View {
 
     private var caption: String {
         let label = store.payload.current.label.isEmpty ? store.selectedPeriod.rawValue : store.payload.current.label
+        let metricLabel = store.headlineMetric == .tokens ? "\(label) tokens" : label
         if store.selectedPeriod == .today {
-            return "\(label) · \(todayDate)"
+            return "\(metricLabel) · \(todayDate)"
         }
-        return label
+        return metricLabel
+    }
+
+    private var primaryValue: String {
+        switch store.headlineMetric {
+        case .cost:
+            return store.payload.current.cost.asCurrency()
+        case .tokens:
+            return "\(store.payload.current.totalTokens.asCompactTokens()) tokens"
+        }
     }
 
     private var todayDate: String {

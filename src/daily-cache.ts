@@ -5,11 +5,16 @@ import { homedir } from 'os'
 import { join } from 'path'
 import type { DateRange, ProjectSummary } from './types.js'
 
-// Bumped to 7: new providers (Codebuff, Mistral Vibe, Kimi, Cline) and
-// the per-provider menubar path now reads historical cost from the cache.
-// Stale entries computed by older binaries may carry incorrect totals.
-export const DAILY_CACHE_VERSION = 7
-const MIN_SUPPORTED_VERSION = 7
+// Bumped to 8 alongside the menubar Cost/Tokens toggle: v7 entries can contain
+// provider rollups but still do not retain per-category token totals, so
+// historical Activity rows could not switch to tokens without a clean
+// recompute.
+export const DAILY_CACHE_VERSION = 8
+// MIN_SUPPORTED_VERSION stays pinned to the active version. The migration path
+// only fills in missing default fields; it does not recompute provider,
+// category, or model rollups from raw sessions because those sessions are not
+// stored in the cache. Older cache files are backed up and rebuilt cleanly.
+const MIN_SUPPORTED_VERSION = DAILY_CACHE_VERSION
 const DAILY_CACHE_FILENAME = 'daily-cache.json'
 
 export type DailyEntry = {
@@ -31,7 +36,16 @@ export type DailyEntry = {
     cacheReadTokens: number
     cacheWriteTokens: number
   }>
-  categories: Record<string, { turns: number; cost: number; editTurns: number; oneShotTurns: number }>
+  categories: Record<string, {
+    turns: number
+    cost: number
+    editTurns: number
+    oneShotTurns: number
+    inputTokens: number
+    outputTokens: number
+    cacheReadTokens: number
+    cacheWriteTokens: number
+  }>
   providers: Record<string, { calls: number; cost: number }>
 }
 

@@ -42,7 +42,11 @@ struct HeatmapSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            InsightPillSwitcher(selected: bindingMode, visibleModes: visibleModes)
+            HStack(spacing: 6) {
+                InsightPillSwitcher(selected: bindingMode, visibleModes: visibleModes)
+                Spacer(minLength: 4)
+                HeadlineMetricSwitcher()
+            }
             content
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -103,9 +107,9 @@ private struct InsightPillSwitcher: View {
                     selected = mode
                 } label: {
                     Text(mode.rawValue)
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: 10.5, weight: .medium))
                         .foregroundStyle(selected == mode ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
-                        .padding(.horizontal, 10)
+                        .padding(.horizontal, 6)
                         .padding(.vertical, 4)
                         .background(
                             RoundedRectangle(cornerRadius: 6)
@@ -115,6 +119,32 @@ private struct InsightPillSwitcher: View {
                 .buttonStyle(.plain)
             }
         }
+    }
+}
+
+private struct HeadlineMetricSwitcher: View {
+    @Environment(AppStore.self) private var store
+
+    var body: some View {
+        HStack(spacing: 3) {
+            ForEach(HeadlineMetric.allCases) { metric in
+                Button {
+                    store.headlineMetric = metric
+                } label: {
+                    Text(metric.rawValue)
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(store.headlineMetric == metric ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 4)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(store.headlineMetric == metric ? AnyShapeStyle(Theme.brandAccent) : AnyShapeStyle(Color.secondary.opacity(0.10)))
+                        )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .help("Switch headline and activity metric")
     }
 }
 
@@ -1390,4 +1420,3 @@ private func relativeReset(_ date: Date) -> String {
     let days = Int(ceil(hours / 24))
     return "in \(days)d"
 }
-

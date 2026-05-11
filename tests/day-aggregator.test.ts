@@ -129,6 +129,10 @@ describe('aggregateProjectsIntoDays', () => {
       cost: 3,
       editTurns: 1,
       oneShotTurns: 1,
+      inputTokens: 100,
+      outputTokens: 200,
+      cacheReadTokens: 50,
+      cacheWriteTokens: 0,
     })
   })
 
@@ -217,7 +221,18 @@ describe('buildPeriodDataFromDays', () => {
         'Opus 4.7': { calls: 8, cost: cost * 0.8, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
         'Haiku 4.5': { calls: 2, cost: cost * 0.2, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
       },
-      categories: { 'coding': { turns: 2, cost: cost * 0.5, editTurns: 2, oneShotTurns: 1 } },
+      categories: {
+        'coding': {
+          turns: 2,
+          cost: cost * 0.5,
+          editTurns: 2,
+          oneShotTurns: 1,
+          inputTokens: 50,
+          outputTokens: 100,
+          cacheReadTokens: 150,
+          cacheWriteTokens: 25,
+        },
+      },
       providers: { 'claude': { calls: 10, cost } },
     }
   }
@@ -251,6 +266,10 @@ describe('buildPeriodDataFromDays', () => {
     expect(coding.editTurns).toBe(4)
     expect(coding.oneShotTurns).toBe(2)
     expect(coding.cost).toBeCloseTo(15)
+    expect(coding.inputTokens).toBe(100)
+    expect(coding.outputTokens).toBe(200)
+    expect(coding.cacheReadTokens).toBe(300)
+    expect(coding.cacheWriteTokens).toBe(50)
   })
 
   it('returns empty period totals when no days supplied', () => {

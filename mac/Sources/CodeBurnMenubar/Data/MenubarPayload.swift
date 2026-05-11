@@ -66,17 +66,78 @@ struct CurrentBlock: Codable, Sendable {
     let oneShotRate: Double?
     let inputTokens: Int
     let outputTokens: Int
+    let cacheReadTokens: Int
+    let cacheWriteTokens: Int
     let cacheHitPercent: Double
     let topActivities: [ActivityEntry]
     let topModels: [ModelEntry]
     let providers: [String: Double]
+
+    var totalTokens: Int {
+        inputTokens + outputTokens + cacheReadTokens + cacheWriteTokens
+    }
 }
 
 struct ActivityEntry: Codable, Sendable {
     let name: String
     let cost: Double
     let turns: Int
+    let inputTokens: Int
+    let outputTokens: Int
+    let cacheReadTokens: Int
+    let cacheWriteTokens: Int
     let oneShotRate: Double?
+
+    var totalTokens: Int {
+        inputTokens + outputTokens + cacheReadTokens + cacheWriteTokens
+    }
+}
+
+extension CurrentBlock {
+    enum CodingKeys: String, CodingKey {
+        case label, cost, calls, sessions, oneShotRate, inputTokens, outputTokens
+        case cacheReadTokens, cacheWriteTokens, cacheHitPercent, topActivities, topModels, providers
+    }
+
+    /// Legacy current blocks already carried input/output tokens; only cache
+    /// read/write tokens are new here, so malformed payloads still fail loudly
+    /// for the pre-existing required fields.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        label = try c.decode(String.self, forKey: .label)
+        cost = try c.decode(Double.self, forKey: .cost)
+        calls = try c.decode(Int.self, forKey: .calls)
+        sessions = try c.decode(Int.self, forKey: .sessions)
+        oneShotRate = try c.decodeIfPresent(Double.self, forKey: .oneShotRate)
+        inputTokens = try c.decode(Int.self, forKey: .inputTokens)
+        outputTokens = try c.decode(Int.self, forKey: .outputTokens)
+        cacheReadTokens = try c.decodeIfPresent(Int.self, forKey: .cacheReadTokens) ?? 0
+        cacheWriteTokens = try c.decodeIfPresent(Int.self, forKey: .cacheWriteTokens) ?? 0
+        cacheHitPercent = try c.decode(Double.self, forKey: .cacheHitPercent)
+        topActivities = try c.decode([ActivityEntry].self, forKey: .topActivities)
+        topModels = try c.decode([ModelEntry].self, forKey: .topModels)
+        providers = try c.decode([String: Double].self, forKey: .providers)
+    }
+}
+
+extension ActivityEntry {
+    enum CodingKeys: String, CodingKey {
+        case name, cost, turns, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, oneShotRate
+    }
+
+    /// Older activity rows only carried cost/turns/one-shot data, so every
+    /// per-activity token bucket defaults to zero for defensive readback.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        name = try c.decode(String.self, forKey: .name)
+        cost = try c.decode(Double.self, forKey: .cost)
+        turns = try c.decode(Int.self, forKey: .turns)
+        inputTokens = try c.decodeIfPresent(Int.self, forKey: .inputTokens) ?? 0
+        outputTokens = try c.decodeIfPresent(Int.self, forKey: .outputTokens) ?? 0
+        cacheReadTokens = try c.decodeIfPresent(Int.self, forKey: .cacheReadTokens) ?? 0
+        cacheWriteTokens = try c.decodeIfPresent(Int.self, forKey: .cacheWriteTokens) ?? 0
+        oneShotRate = try c.decodeIfPresent(Double.self, forKey: .oneShotRate)
+    }
 }
 
 struct ModelEntry: Codable, Sendable {
@@ -112,6 +173,8 @@ extension MenubarPayload {
             oneShotRate: nil,
             inputTokens: 0,
             outputTokens: 0,
+            cacheReadTokens: 0,
+            cacheWriteTokens: 0,
             cacheHitPercent: 0,
             topActivities: [],
             topModels: [],

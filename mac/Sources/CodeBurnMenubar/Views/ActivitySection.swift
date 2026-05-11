@@ -10,7 +10,7 @@ struct ActivitySection: View {
             isExpanded: $isExpanded,
             trailing: {
                 HStack(spacing: 8) {
-                    Text("Cost").frame(minWidth: 54, alignment: .trailing)
+                    Text(store.headlineMetric.rawValue).frame(minWidth: metricColumnWidth, alignment: .trailing)
                     Text("Turns").frame(minWidth: 52, alignment: .trailing)
                     Text("1-shot").frame(minWidth: 44, alignment: .trailing)
                 }
@@ -20,32 +20,62 @@ struct ActivitySection: View {
             }
         ) {
             VStack(alignment: .leading, spacing: 7) {
-                let maxCost = store.payload.current.topActivities.map(\.cost).max() ?? 1
-                ForEach(store.payload.current.topActivities, id: \.name) { activity in
-                    ActivityRow(activity: activity, maxCost: maxCost)
+                let activities = sortedActivities
+                let maxValue = max(activities.map(metricValue).max() ?? 1, 1)
+                ForEach(activities, id: \.name) { activity in
+                    ActivityRow(
+                        activity: activity,
+                        metric: store.headlineMetric,
+                        metricValue: metricValue(activity),
+                        maxValue: maxValue,
+                        metricColumnWidth: metricColumnWidth
+                    )
                 }
             }
+        }
+    }
+
+    private var metricColumnWidth: CGFloat {
+        store.headlineMetric == .tokens ? 62 : 54
+    }
+
+    private var sortedActivities: [ActivityEntry] {
+        store.payload.current.topActivities.sorted { lhs, rhs in
+            let lhsValue = metricValue(lhs)
+            let rhsValue = metricValue(rhs)
+            if lhsValue == rhsValue { return lhs.name < rhs.name }
+            return lhsValue > rhsValue
+        }
+    }
+
+    private func metricValue(_ activity: ActivityEntry) -> Double {
+        switch store.headlineMetric {
+        case .cost: return activity.cost
+        case .tokens: return Double(activity.totalTokens)
         }
     }
 }
 
 struct ActivityRow: View {
     let activity: ActivityEntry
-    let maxCost: Double
+    let metric: HeadlineMetric
+    let metricValue: Double
+    let maxValue: Double
+    let metricColumnWidth: CGFloat
 
     var body: some View {
         HStack(spacing: 8) {
-            FixedBar(fraction: activity.cost / maxCost)
+            FixedBar(fraction: metricValue / maxValue)
                 .frame(width: 56, height: 6)
 
             Text(activity.name)
                 .font(.system(size: 12.5, weight: .medium))
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            Text(activity.cost.asCompactCurrency())
+            Text(primaryText)
                 .font(.codeMono(size: 12, weight: .medium))
                 .tracking(-0.2)
-                .frame(minWidth: 54, alignment: .trailing)
+                .frame(minWidth: metricColumnWidth, alignment: .trailing)
 
             Text("\(activity.turns)")
                 .font(.system(size: 11))
@@ -66,6 +96,13 @@ struct ActivityRow: View {
     private var oneShotText: String {
         guard let rate = activity.oneShotRate else { return "—" }
         return "\(Int(rate * 100))%"
+    }
+
+    private var primaryText: String {
+        switch metric {
+        case .cost: return activity.cost.asCompactCurrency()
+        case .tokens: return activity.totalTokens.asCompactTokens()
+        }
     }
 }
 

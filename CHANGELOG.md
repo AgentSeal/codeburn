@@ -28,6 +28,15 @@
   `Shell`, `ReadFile`, and `WriteFile`, and maps hidden managed Kimi Code
   model aliases to priced Kimi K2 entries.
 
+### Added (macOS menubar)
+- **Cost/Tokens headline toggle.** The popover now has a Cost/Tokens switch
+  next to the insight tabs. Tokens mode flips the hero headline, Activity
+  row values and bars, and the always-visible status-item number to token
+  totals while keeping the existing currency selector scoped to money.
+  The menubar JSON payload now carries cache read/write token totals on
+  `current` and per-activity token totals so historical periods can render
+  the same metric without re-parsing raw sessions. Closes #305.
+
 ## 0.9.9 - 2026-05-15
 
 ### Added (CLI)

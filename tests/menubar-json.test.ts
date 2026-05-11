@@ -18,6 +18,21 @@ function emptyPeriod(label: string): PeriodData {
   }
 }
 
+function category(overrides: Partial<PeriodData['categories'][number]> = {}): PeriodData['categories'][number] {
+  return {
+    name: 'Coding',
+    cost: 0,
+    turns: 0,
+    editTurns: 0,
+    oneShotTurns: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    ...overrides,
+  }
+}
+
 describe('buildMenubarPayload', () => {
   it('emits the full schema with current-period metrics and iso timestamp', () => {
     const period: PeriodData = {
@@ -41,6 +56,8 @@ describe('buildMenubarPayload', () => {
     expect(payload.current.sessions).toBe(97)
     expect(payload.current.inputTokens).toBe(19100)
     expect(payload.current.outputTokens).toBe(675600)
+    expect(payload.current.cacheReadTokens).toBe(0)
+    expect(payload.current.cacheWriteTokens).toBe(0)
   })
 
   it('computes per-category oneShotRate from editTurns and skips categories without edits', () => {
@@ -49,8 +66,8 @@ describe('buildMenubarPayload', () => {
       cost: 0, calls: 0, sessions: 0,
       inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0,
       categories: [
-        { name: 'Coding', cost: 15.83, turns: 7, editTurns: 7, oneShotTurns: 6 },
-        { name: 'Conversation', cost: 16.69, turns: 47, editTurns: 0, oneShotTurns: 0 },
+        category({ name: 'Coding', cost: 15.83, turns: 7, editTurns: 7, oneShotTurns: 6 }),
+        category({ name: 'Conversation', cost: 16.69, turns: 47, editTurns: 0, oneShotTurns: 0 }),
       ],
       models: [],
     }
@@ -69,9 +86,9 @@ describe('buildMenubarPayload', () => {
       cost: 0, calls: 0, sessions: 0,
       inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0,
       categories: [
-        { name: 'Coding', cost: 1, turns: 7, editTurns: 10, oneShotTurns: 8 },
-        { name: 'Debugging', cost: 1, turns: 5, editTurns: 10, oneShotTurns: 6 },
-        { name: 'Conversation', cost: 1, turns: 40, editTurns: 0, oneShotTurns: 0 },
+        category({ name: 'Coding', cost: 1, turns: 7, editTurns: 10, oneShotTurns: 8 }),
+        category({ name: 'Debugging', cost: 1, turns: 5, editTurns: 10, oneShotTurns: 6 }),
+        category({ name: 'Conversation', cost: 1, turns: 40, editTurns: 0, oneShotTurns: 0 }),
       ],
       models: [],
     }
@@ -84,7 +101,7 @@ describe('buildMenubarPayload', () => {
       label: 'Today',
       cost: 0, calls: 0, sessions: 0,
       inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0,
-      categories: [{ name: 'Conversation', cost: 1, turns: 5, editTurns: 0, oneShotTurns: 0 }],
+      categories: [category({ name: 'Conversation', cost: 1, turns: 5, editTurns: 0, oneShotTurns: 0 })],
       models: [],
     }
     const payload = buildMenubarPayload(period, [], null)
@@ -114,12 +131,41 @@ describe('buildMenubarPayload', () => {
       cost: 0, calls: 0, sessions: 0,
       inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0,
       categories: Array.from({ length: 25 }, (_, i) => ({
-        name: `Cat${i}`, cost: 1, turns: 1, editTurns: 1, oneShotTurns: 1,
+        ...category({ name: `Cat${i}`, cost: 1, turns: 1, editTurns: 1, oneShotTurns: 1 }),
       })),
       models: [],
     }
     const payload = buildMenubarPayload(period, [], null)
     expect(payload.current.topActivities).toHaveLength(20)
+  })
+
+  it('passes token totals through topActivities for the menubar token view', () => {
+    const period: PeriodData = {
+      label: 'Today',
+      cost: 0, calls: 0, sessions: 0,
+      inputTokens: 300, outputTokens: 120, cacheReadTokens: 900, cacheWriteTokens: 80,
+      categories: [
+        category({
+          name: 'Coding',
+          cost: 7,
+          turns: 2,
+          inputTokens: 100,
+          outputTokens: 50,
+          cacheReadTokens: 500,
+          cacheWriteTokens: 25,
+        }),
+      ],
+      models: [],
+    }
+    const payload = buildMenubarPayload(period, [], null)
+    expect(payload.current.cacheReadTokens).toBe(900)
+    expect(payload.current.cacheWriteTokens).toBe(80)
+    expect(payload.current.topActivities[0]).toMatchObject({
+      inputTokens: 100,
+      outputTokens: 50,
+      cacheReadTokens: 500,
+      cacheWriteTokens: 25,
+    })
   })
 
   it('computes cacheHitPercent from cache reads over input plus cache reads', () => {
