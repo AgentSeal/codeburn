@@ -19,6 +19,11 @@ import { getAllProviders } from './providers/index.js'
 import { clearPlan, readConfig, readPlan, saveConfig, savePlan, getConfigFilePath, type PlanId } from './config.js'
 import { clampResetDay, getPlanUsageOrNull, type PlanUsage } from './plan-usage.js'
 import { getPresetPlan, isPlanId, isPlanProvider, planDisplayName } from './plans.js'
+import {
+  inspectChatGPTDesktop,
+  redactChatGPTDesktopDiagnostics,
+  renderChatGPTDesktopDiagnostics,
+} from './chatgpt-desktop-diagnostics.js'
 import { createRequire } from 'node:module'
 
 const require = createRequire(import.meta.url)
@@ -655,6 +660,28 @@ program
       const message = err instanceof Error ? err.message : String(err)
       console.error(`\n  Menubar install failed: ${message}\n`)
       process.exit(1)
+    }
+  })
+
+program
+  .command('doctor [target]')
+  .description('Run local diagnostics for provider support investigations')
+  .option('--format <format>', 'Output format: text, json', 'text')
+  .action(async (target = 'chatgpt-desktop', opts: { format?: string }) => {
+    const normalized = target.toLowerCase()
+    if (!['chatgpt-desktop', 'chatgpt'].includes(normalized)) {
+      console.error(`\n  Unknown doctor target: ${target}`)
+      console.error('  Available targets: chatgpt-desktop (alias: chatgpt)\n')
+      process.exitCode = 1
+      return
+    }
+
+    assertFormat(opts.format ?? 'text', ['text', 'json'], 'doctor')
+    const report = await inspectChatGPTDesktop()
+    if (opts.format === 'json') {
+      console.log(JSON.stringify(redactChatGPTDesktopDiagnostics(report), null, 2))
+    } else {
+      console.log(renderChatGPTDesktopDiagnostics(report))
     }
   })
 

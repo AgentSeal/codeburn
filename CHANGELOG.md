@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.9.9 - Unreleased
+
+### Added (CLI)
+- **ChatGPT Desktop diagnostic.** New `codeburn doctor chatgpt-desktop`
+  command for issue #234. It probes `com.openai.chat` and `com.openai.atlas`
+  local SQLite storage read-only and prints schema metadata plus redacted local
+  paths: database filenames, table names, and usage-like column names. It
+  intentionally does not register a ChatGPT provider or estimate costs from
+  message text until token/cost fields are confirmed in the local schema.
+
 ## 0.9.8 - 2026-05-10
 
 ### Added (CLI)

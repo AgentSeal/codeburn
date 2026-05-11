@@ -91,6 +91,17 @@ codeburn models --task feature         # filter to feature-development work
 codeburn models --provider claude      # filter to one provider
 ```
 
+### Diagnostics
+
+```bash
+codeburn doctor chatgpt-desktop        # schema-only probe for issue #234
+```
+
+The ChatGPT Desktop diagnostic prints macOS local SQLite database names, table
+names, column names, and redacted local paths from `com.openai.chat` /
+`com.openai.atlas`. It does not read conversation rows or message text. Use
+`--format json` when sharing output in an issue.
+
 Arrow keys switch between Today, 7 Days, 30 Days, Month, and 6 Months (use `--from` / `--to` for an exact historical window). Press `q` to quit, `1` `2` `3` `4` `5` as shortcuts, `c` to open model comparison, `o` to open optimize. The dashboard auto-refreshes every 30 seconds by default (`--refresh 0` to disable). It also shows average cost per session and the five most expensive sessions across all projects.
 
 ## Supported Providers

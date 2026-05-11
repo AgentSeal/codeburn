@@ -40,6 +40,12 @@ For the architectural picture, see `../architecture.md`.
 |---|---|---|
 | [vscode-cline-parser](vscode-cline-parser.md) | `kilo-code`, `roo-code` | `src/providers/vscode-cline-parser.ts` |
 
+### Investigations
+
+| Topic | Source | CLI |
+|---|---|---|
+| [ChatGPT Desktop](chatgpt-desktop.md) | `src/chatgpt-desktop-diagnostics.ts` | `codeburn doctor chatgpt-desktop` |
+
 ## File Format
 
 Each provider doc has the same structure:
