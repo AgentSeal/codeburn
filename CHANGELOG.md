@@ -11,6 +11,10 @@
 - **Claude 1-hour cache write pricing.** 1-hour cache writes are now priced
   at 2x base input (previously used the 5-minute 1.25x rate for all writes).
   Daily cache bumped to v6 so stale totals are recomputed. Closes #276.
+- **OpenCode MCP usage now counted.** OpenCode stores MCP tool calls as
+  `<server>_<tool>` names, which the shared MCP pipeline did not recognize.
+  The provider now normalizes these to the canonical `mcp__<server>__<tool>`
+  form so MCP breakdowns and `optimize` work correctly. Closes #308.
 
 ## 0.9.8 - 2026-05-10
 
@@ -53,13 +57,6 @@
   reconcile. Closes #279.
 
 ### Fixed (CLI)
-- **OpenCode MCP usage is now counted.** OpenCode records MCP tool calls as
-  `<server>_<tool>` part names such as `clickup_clickup_get_task`, while the
-  shared CodeBurn MCP reporting pipeline expects `mcp__<server>__<tool>`.
-  The OpenCode provider now normalizes external tool calls into that canonical
-  shape before aggregation, so dashboard/JSON MCP breakdowns show servers like
-  ClickUp and Figma as used and `optimize` no longer recommends removing
-  configured servers that were invoked from OpenCode. Closes #308.
 - **Cursor sessions break down by project, not one row called "cursor".**
   Cursor's chat history sat under a single dashboard row labeled `cursor`
   because the provider had no way to attribute bubbles to a workspace.
