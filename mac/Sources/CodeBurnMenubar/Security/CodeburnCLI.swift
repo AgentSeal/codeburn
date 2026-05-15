@@ -13,6 +13,7 @@ enum CodeburnCLI {
     /// PATH additions for GUI-launched apps, which otherwise get a minimal PATH that misses
     /// Homebrew and npm global installs.
     private static let additionalPathEntries = ["/opt/homebrew/bin", "/usr/local/bin"]
+    private static let cachedDiscoveredUserPathEntries = discoverUserPathEntries()
 
     /// Returns the argv that launches the CLI. Dev override via `CODEBURN_BIN` is honoured only
     /// if every whitespace-delimited token passes `safeArgPattern`. Otherwise falls back to the
@@ -36,11 +37,14 @@ enum CodeburnCLI {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         var environment = ProcessInfo.processInfo.environment
-        environment["PATH"] = augmentedPath(environment["PATH"] ?? "")
+        let existingPath = environment["PATH"] ?? ""
+        let combinedPath = augmentedPath(existingPath)
+        environment["PATH"] = combinedPath
         process.environment = environment
         // `env --` treats everything following as argv, not VAR=val pairs -- guards against an
         // argument accidentally resembling an env assignment.
-        process.arguments = ["--"] + baseArgv() + subcommand
+        let argv = ["--"] + baseArgv() + subcommand
+        process.arguments = argv
         // The menubar runs as an accessory app with no foreground window, and macOS
         // background-throttles accessory apps and their children. Without this lift the
         // codeburn subprocess parses 5-10x slower than the same command run from a
@@ -54,11 +58,58 @@ enum CodeburnCLI {
         return safeArgPattern.firstMatch(in: s, range: range) != nil
     }
 
-    private static func augmentedPath(_ existing: String) -> String {
+    static func augmentedPath(existing: String, discoveredUserPathEntries: [String]) -> String {
         var parts = existing.split(separator: ":", omittingEmptySubsequences: true).map(String.init)
-        for extra in additionalPathEntries where !parts.contains(extra) {
+        let dynamicEntries = additionalPathEntries + discoveredUserPathEntries
+        for extra in dynamicEntries where !parts.contains(extra) {
             parts.append(extra)
         }
         return parts.joined(separator: ":")
+    }
+
+    private static func augmentedPath(_ existing: String) -> String {
+        augmentedPath(existing: existing, discoveredUserPathEntries: cachedDiscoveredUserPathEntries)
+    }
+
+    private static func discoverUserPathEntries() -> [String] {
+        let fileManager = FileManager.default
+        return discoverUserPathEntries(
+            homeDirectory: NSHomeDirectory(),
+            fileExists: { fileManager.fileExists(atPath: $0) },
+            isExecutableFile: { fileManager.isExecutableFile(atPath: $0) },
+            contentsOfDirectory: { try? fileManager.contentsOfDirectory(atPath: $0) }
+        )
+    }
+
+    static func discoverUserPathEntries(
+        homeDirectory: String,
+        fileExists: (String) -> Bool,
+        isExecutableFile: (String) -> Bool,
+        contentsOfDirectory: (String) -> [String]?
+    ) -> [String] {
+        var entries: [String] = []
+
+        let staticUserCandidates = [
+            "\(homeDirectory)/.volta/bin",
+            "\(homeDirectory)/.npm-global/bin",
+            "\(homeDirectory)/.asdf/shims",
+        ]
+        for candidate in staticUserCandidates where fileExists(candidate) {
+            entries.append(candidate)
+        }
+
+        let nvmRoot = "\(homeDirectory)/.nvm/versions/node"
+        if let nodeVersions = contentsOfDirectory(nvmRoot) {
+            // Prefer newer versions first to match typical `nvm current` semantics.
+            for version in nodeVersions.sorted(by: >) {
+                let binPath = "\(nvmRoot)/\(version)/bin"
+                let codeburnPath = "\(binPath)/codeburn"
+                if isExecutableFile(codeburnPath) {
+                    entries.append(binPath)
+                }
+            }
+        }
+
+        return entries
     }
 }
