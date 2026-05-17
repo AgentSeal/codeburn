@@ -278,6 +278,32 @@ describe('codex provider - JSONL parsing', () => {
     expect(call.deduplicationKey).toContain('codex:')
   })
 
+  it('normalizes Codex subagent tool calls to Agent', async () => {
+    const filePath = await writeSession(tmpDir, '2026-04-14', 'rollout-agent.jsonl', [
+      sessionMeta({ session_id: 'sess-agent', model: 'gpt-5.5' }),
+      userMessage('delegate the review'),
+      functionCall('spawn_agent'),
+      functionCall('wait_agent'),
+      functionCall('close_agent'),
+      tokenCount({
+        timestamp: '2026-04-14T10:01:00Z',
+        last: { input: 300, output: 100 },
+        total: { total: 400 },
+      }),
+    ])
+
+    const provider = createCodexProvider(tmpDir)
+    const source = { path: filePath, project: 'test', provider: 'codex' }
+    const parser = provider.createSessionParser(source, new Set())
+    const calls: ParsedProviderCall[] = []
+    for await (const call of parser.parse()) {
+      calls.push(call)
+    }
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.tools).toEqual(['Agent', 'Agent', 'Agent'])
+  })
+
   it('skips duplicate token_count events', async () => {
     const filePath = await writeSession(tmpDir, '2026-04-14', 'rollout-dedup.jsonl', [
       sessionMeta(),

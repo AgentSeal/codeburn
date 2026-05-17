@@ -1321,18 +1321,24 @@ async function parseSessionFile(
 
 async function collectJsonlFiles(dirPath: string): Promise<string[]> {
   const files = await readdir(dirPath).catch(() => [])
-  const jsonlFiles = files.filter(f => f.endsWith('.jsonl')).map(f => join(dirPath, f))
+  const jsonlFiles = new Set(files.filter(f => f.endsWith('.jsonl')).map(f => join(dirPath, f)))
+
+  const directSubagentsPath = join(dirPath, 'subagents')
+  const directSubFiles = await readdir(directSubagentsPath).catch(() => [])
+  for (const sf of directSubFiles) {
+    if (sf.endsWith('.jsonl')) jsonlFiles.add(join(directSubagentsPath, sf))
+  }
 
   for (const entry of files) {
     if (entry.endsWith('.jsonl')) continue
     const subagentsPath = join(dirPath, entry, 'subagents')
     const subFiles = await readdir(subagentsPath).catch(() => [])
     for (const sf of subFiles) {
-      if (sf.endsWith('.jsonl')) jsonlFiles.push(join(subagentsPath, sf))
+      if (sf.endsWith('.jsonl')) jsonlFiles.add(join(subagentsPath, sf))
     }
   }
 
-  return jsonlFiles
+  return [...jsonlFiles]
 }
 
 async function scanProjectDirs(
@@ -1639,6 +1645,14 @@ function getOrCreateProviderSection(cache: SessionCache, provider: string): Prov
   return section
 }
 
+function cachedFileNeedsProviderReparse(providerName: string, cached: CachedFile): boolean {
+  if (providerName !== 'gemini') return false
+
+  return cached.turns.some(turn =>
+    turn.calls.some(call => call.deduplicationKey === `gemini:${turn.sessionId}`),
+  )
+}
+
 const warnedProviderReadFailures = new Set<string>()
 
 function warnProviderReadFailureOnce(providerName: string, err: unknown): void {
@@ -1674,9 +1688,10 @@ async function parseProviderSources(
     const fp = await fingerprintFile(source.path)
     if (!fp) continue
 
-    const action = reconcileFile(fp, section.files[source.path])
-    if (action.action === 'unchanged') {
-      unchangedSources.push({ source, cached: section.files[source.path]! })
+    const cached = section.files[source.path]
+    const action = reconcileFile(fp, cached)
+    if (action.action === 'unchanged' && cached && !cachedFileNeedsProviderReparse(providerName, cached)) {
+      unchangedSources.push({ source, cached })
     } else {
       changedSources.push({ source, fp })
     }

@@ -151,6 +151,63 @@ describe('parseAllSessions with large Claude fixture', () => {
     expect(sess.apiCalls).toBeGreaterThanOrEqual(1)
   })
 
+  it('discovers direct Claude subagent JSONL files under a project directory', async () => {
+    const projectDir = join(home, '.claude', 'projects', 'direct-subagents')
+    const subagentsDir = join(projectDir, 'subagents')
+    await mkdir(subagentsDir, { recursive: true })
+
+    const lines = [
+      userLine('subagent-session', '2026-04-10T10:00:00Z', 100),
+      assistantLine('subagent-session', '2026-04-10T10:01:00Z', 'subagent-msg', {
+        contentSize: 0,
+        toolCount: 2,
+      }),
+    ]
+    await writeFile(join(subagentsDir, 'worker.jsonl'), lines.join('\n'))
+
+    const range: DateRange = {
+      start: new Date('2026-04-10T00:00:00Z'),
+      end: new Date('2026-04-10T23:59:59Z'),
+    }
+
+    const projects = await parseAllSessions(range, 'claude')
+
+    expect(projects).toHaveLength(1)
+    const session = projects[0]!.sessions[0]!
+    expect(session.sessionId).toBe('worker')
+    expect(session.apiCalls).toBe(1)
+    expect(session.toolBreakdown['Edit']?.calls).toBe(1)
+    expect(session.toolBreakdown['Read']?.calls).toBe(1)
+  })
+
+  it('discovers nested Claude subagent JSONL files under a direct subagents directory', async () => {
+    const projectDir = join(home, '.claude', 'projects', 'nested-subagents')
+    const nestedSubagentsDir = join(projectDir, 'subagents', 'subagents')
+    await mkdir(nestedSubagentsDir, { recursive: true })
+
+    const lines = [
+      userLine('nested-subagent-session', '2026-04-10T11:00:00Z', 100),
+      assistantLine('nested-subagent-session', '2026-04-10T11:01:00Z', 'nested-subagent-msg', {
+        contentSize: 0,
+        toolCount: 1,
+      }),
+    ]
+    await writeFile(join(nestedSubagentsDir, 'worker.jsonl'), lines.join('\n'))
+
+    const range: DateRange = {
+      start: new Date('2026-04-10T00:00:00Z'),
+      end: new Date('2026-04-10T23:59:59Z'),
+    }
+
+    const projects = await parseAllSessions(range, 'claude')
+
+    expect(projects).toHaveLength(1)
+    const session = projects[0]!.sessions[0]!
+    expect(session.sessionId).toBe('worker')
+    expect(session.apiCalls).toBe(1)
+    expect(session.toolBreakdown['Edit']?.calls).toBe(1)
+  })
+
   it('parses huge message-first assistant lines without full JSON.parse expansion', async () => {
     const projectDir = join(home, '.claude', 'projects', 'messagefirst')
     await mkdir(projectDir, { recursive: true })

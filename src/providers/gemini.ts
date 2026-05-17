@@ -66,83 +66,80 @@ type GeminiSession = {
 function parseSession(data: GeminiSession, seenKeys: Set<string>): ParsedProviderCall[] {
   const results: ParsedProviderCall[] = []
 
-  const geminiMessages = data.messages.filter(m => m.type === 'gemini' && m.tokens && m.model)
-  if (geminiMessages.length === 0) return results
+  let lastUserMessage = ''
+  let geminiOrdinal = 0
 
-  const dedupKey = `gemini:${data.sessionId}`
-  if (seenKeys.has(dedupKey)) return results
-  seenKeys.add(dedupKey)
+  for (const msg of data.messages) {
+    if (msg.type === 'user') {
+      if (Array.isArray(msg.content)) {
+        lastUserMessage = msg.content.map(c => c.text).join(' ').slice(0, 500)
+      } else if (typeof msg.content === 'string') {
+        lastUserMessage = msg.content.slice(0, 500)
+      }
+      continue
+    }
 
-  let totalInput = 0
-  let totalOutput = 0
-  let totalCached = 0
-  let totalThoughts = 0
-  const allTools: string[] = []
-  const bashCommands: string[] = []
-  let model = ''
+    if (msg.type !== 'gemini' || !msg.tokens || !msg.model) continue
 
-  for (const msg of geminiMessages) {
-    const t = msg.tokens!
-    totalInput += t.input ?? 0
-    totalOutput += t.output ?? 0
-    totalCached += t.cached ?? 0
-    totalThoughts += t.thoughts ?? 0
-    if (msg.model && !model) model = msg.model
+    const t = msg.tokens
+    const totalInput = t.input ?? 0
+    const totalOutput = t.output ?? 0
+    const totalCached = t.cached ?? 0
+    const totalThoughts = t.thoughts ?? 0
+    if (totalInput === 0 && totalOutput === 0 && totalCached === 0 && totalThoughts === 0) continue
+
+    const messageKey = msg.id || `idx-${geminiOrdinal}`
+    geminiOrdinal++
+    const dedupKey = `gemini:${data.sessionId}:${messageKey}`
+    if (seenKeys.has(dedupKey)) continue
+
+    const tools: string[] = []
+    const bashCommands: string[] = []
 
     if (msg.toolCalls) {
       for (const tc of msg.toolCalls) {
         const mapped = toolNameMap[tc.displayName ?? ''] ?? toolNameMap[tc.name] ?? tc.displayName ?? tc.name
-        allTools.push(mapped)
+        tools.push(mapped)
         if (mapped === 'Bash' && tc.args && typeof tc.args.command === 'string') {
           bashCommands.push(...extractBashCommands(tc.args.command))
         }
       }
     }
+
+    // Gemini's `input` count includes `cached` tokens as a subset, so fresh
+    // input must subtract cached to avoid double-charging at both rates.
+    const freshInput = Math.max(0, totalInput - totalCached)
+
+    const tsDate = new Date(msg.timestamp || data.startTime)
+    if (isNaN(tsDate.getTime()) || tsDate.getTime() < 1_000_000_000_000) continue
+
+    seenKeys.add(dedupKey)
+
+    // Gemini bills thoughts at the output token rate; calculateCost does not
+    // accept a reasoning parameter, so fold thoughts into the output count for
+    // pricing while keeping outputTokens / reasoningTokens reported separately.
+    const costUSD = calculateCost(msg.model, freshInput, totalOutput + totalThoughts, 0, totalCached, 0)
+
+    results.push({
+      provider: 'gemini',
+      model: msg.model,
+      inputTokens: freshInput,
+      outputTokens: totalOutput,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: totalCached,
+      cachedInputTokens: totalCached,
+      reasoningTokens: totalThoughts,
+      webSearchRequests: 0,
+      costUSD,
+      tools: [...new Set(tools)],
+      bashCommands: [...new Set(bashCommands)],
+      timestamp: tsDate.toISOString(),
+      speed: 'standard',
+      deduplicationKey: dedupKey,
+      userMessage: lastUserMessage,
+      sessionId: data.sessionId,
+    })
   }
-
-  if (totalInput === 0 && totalOutput === 0) return results
-
-  // Gemini's `input` count includes `cached` tokens as a subset, so fresh input
-  // must subtract cached to avoid double-charging at both rates.
-  const freshInput = totalInput - totalCached
-
-  let userMessage = ''
-  const firstUser = data.messages.find(m => m.type === 'user')
-  if (firstUser) {
-    if (Array.isArray(firstUser.content)) {
-      userMessage = firstUser.content.map(c => c.text).join(' ').slice(0, 500)
-    } else if (typeof firstUser.content === 'string') {
-      userMessage = firstUser.content.slice(0, 500)
-    }
-  }
-
-  const tsDate = new Date(data.startTime)
-  if (isNaN(tsDate.getTime()) || tsDate.getTime() < 1_000_000_000_000) return results
-
-  // Gemini bills thoughts at the output token rate; calculateCost does not
-  // accept a reasoning parameter, so fold thoughts into the output count for
-  // pricing while keeping outputTokens / reasoningTokens reported separately.
-  const costUSD = calculateCost(model, freshInput, totalOutput + totalThoughts, 0, totalCached, 0)
-
-  results.push({
-    provider: 'gemini',
-    model,
-    inputTokens: freshInput,
-    outputTokens: totalOutput,
-    cacheCreationInputTokens: 0,
-    cacheReadInputTokens: totalCached,
-    cachedInputTokens: totalCached,
-    reasoningTokens: totalThoughts,
-    webSearchRequests: 0,
-    costUSD,
-    tools: [...new Set(allTools)],
-    bashCommands: [...new Set(bashCommands)],
-    timestamp: tsDate.toISOString(),
-    speed: 'standard',
-    deduplicationKey: dedupKey,
-    userMessage,
-    sessionId: data.sessionId,
-  })
 
   return results
 }

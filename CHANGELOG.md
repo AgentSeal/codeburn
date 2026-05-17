@@ -3,6 +3,15 @@
 ## Unreleased
 
 ### Added (CLI)
+- **Agent and subagent tracking coverage.** Gemini sessions now emit one
+  provider call per assistant message with token usage instead of one aggregate
+  call per session, preserving per-message tools, bash commands, timestamps,
+  and nearest user prompts. Existing cached aggregate Gemini entries are
+  reparsed so the new per-message shape takes effect, and per-tool counts may
+  increase because repeated tools are now attributed to the specific Gemini
+  message that used them. Claude discovery also scans direct project-level
+  `subagents/*.jsonl` files, and Codex agent tool normalization is covered by
+  regression tests. Addresses #336.
 - **Multiple subscription plans can be tracked at the same time.**
   `codeburn plan set` now stores plans in a provider-keyed `plans` map, so
   setting a Codex custom plan no longer overwrites an existing Claude plan.
