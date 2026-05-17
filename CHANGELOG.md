@@ -28,6 +28,13 @@
   `Shell`, `ReadFile`, and `WriteFile`, and maps hidden managed Kimi Code
   model aliases to priced Kimi K2 entries.
 
+### Fixed (CLI)
+- **OpenCode child sessions are attributed to their root session.** The
+  OpenCode parser now walks the unarchived `session.parent_id` subtree so
+  child and grandchild agent sessions contribute token and tool usage under
+  the discovered root session while still excluding child sessions from
+  top-level discovery to avoid double counting.
+
 ## 0.9.9 - 2026-05-15
 
 ### Added (CLI)

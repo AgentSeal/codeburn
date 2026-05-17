@@ -643,6 +643,103 @@ skipUnlessSqlite('opencode provider - session parsing', () => {
     expect(calls[1]!.userMessage).toBe('second question')
   })
 
+  it('attributes child and grandchild session calls back to the root session', async () => {
+    const dbPath = createTestDb(tmpDir)
+    withTestDb(dbPath, (db) => {
+      insertSession(db, 'root')
+      insertSession(db, 'child', { parentId: 'root' })
+      insertSession(db, 'grandchild', { parentId: 'child' })
+
+      insertMessage(db, 'msg-root-user', 'root', 1700000000000, { role: 'user' })
+      insertPart(db, 'part-root-user', 'msg-root-user', 'root', { type: 'text', text: 'root prompt' })
+      insertMessage(db, 'msg-root-assistant', 'root', 1700000001000, {
+        role: 'assistant',
+        modelID: 'claude-opus-4-6',
+        cost: 0.01,
+        tokens: { input: 10, output: 20, reasoning: 0, cache: { read: 0, write: 0 } },
+      })
+      insertPart(db, 'part-root-tool', 'msg-root-assistant', 'root', {
+        type: 'tool',
+        tool: 'read',
+        state: { status: 'completed', input: {} },
+      })
+
+      insertMessage(db, 'msg-child-user', 'child', 1700000002000, { role: 'user' })
+      insertPart(db, 'part-child-user', 'msg-child-user', 'child', { type: 'text', text: 'child prompt' })
+      insertMessage(db, 'msg-child-assistant', 'child', 1700000003000, {
+        role: 'assistant',
+        modelID: 'claude-opus-4-6',
+        cost: 0.02,
+        tokens: { input: 30, output: 40, reasoning: 5, cache: { read: 0, write: 0 } },
+      })
+      insertPart(db, 'part-child-tool', 'msg-child-assistant', 'child', {
+        type: 'tool',
+        tool: 'task',
+        state: { status: 'completed', input: {} },
+      })
+
+      insertMessage(db, 'msg-grand-user', 'grandchild', 1700000004000, { role: 'user' })
+      insertPart(db, 'part-grand-user', 'msg-grand-user', 'grandchild', { type: 'text', text: 'grandchild prompt' })
+      insertMessage(db, 'msg-grand-assistant', 'grandchild', 1700000005000, {
+        role: 'assistant',
+        modelID: 'claude-opus-4-6',
+        cost: 0.03,
+        tokens: { input: 50, output: 60, reasoning: 0, cache: { read: 0, write: 0 } },
+      })
+      insertPart(db, 'part-grand-tool', 'msg-grand-assistant', 'grandchild', {
+        type: 'tool',
+        tool: 'bash',
+        state: { status: 'completed', input: { command: 'npm test' } },
+      })
+    })
+
+    const calls = await collectCalls(createOpenCodeProvider(tmpDir), dbPath, 'root')
+
+    expect(calls).toHaveLength(3)
+    expect(calls.map(call => call.sessionId)).toEqual(['root', 'root', 'root'])
+    expect(calls.map(call => call.deduplicationKey)).toEqual([
+      'opencode:root:msg-root-assistant',
+      'opencode:child:msg-child-assistant',
+      'opencode:grandchild:msg-grand-assistant',
+    ])
+    expect(calls.map(call => call.userMessage)).toEqual([
+      'root prompt',
+      'child prompt',
+      'grandchild prompt',
+    ])
+    expect(calls[0]!.tools).toEqual(['Read'])
+    expect(calls[1]!.tools).toEqual(['Agent'])
+    expect(calls[2]!.tools).toEqual(['Bash'])
+    expect(calls[2]!.bashCommands).toEqual(['npm'])
+  })
+
+  it('does not include archived child sessions in the root subtree', async () => {
+    const dbPath = createTestDb(tmpDir)
+    withTestDb(dbPath, (db) => {
+      insertSession(db, 'root')
+      insertSession(db, 'archived-child', { parentId: 'root', archived: 1700000002500 })
+
+      insertMessage(db, 'msg-root-assistant', 'root', 1700000001000, {
+        role: 'assistant',
+        modelID: 'claude-opus-4-6',
+        cost: 0.01,
+        tokens: { input: 10, output: 20, reasoning: 0, cache: { read: 0, write: 0 } },
+      })
+
+      insertMessage(db, 'msg-child-assistant', 'archived-child', 1700000003000, {
+        role: 'assistant',
+        modelID: 'claude-opus-4-6',
+        cost: 0.02,
+        tokens: { input: 30, output: 40, reasoning: 0, cache: { read: 0, write: 0 } },
+      })
+    })
+
+    const calls = await collectCalls(createOpenCodeProvider(tmpDir), dbPath, 'root')
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.deduplicationKey).toBe('opencode:root:msg-root-assistant')
+  })
+
   it('joins multiple text parts in user messages', async () => {
     const dbPath = createTestDb(tmpDir)
     withTestDb(dbPath, (db) => {
