@@ -3,6 +3,10 @@
 ## Unreleased
 
 ### Added (CLI)
+- **Burn guardrails.** New `codeburn guard` command warns when one session or
+  one local hour crosses configurable AI-spend thresholds. It supports
+  period/date/provider/project filters, `--json`, and `--fail-on-alert` for CI
+  or shell automation.
 - **Multiple subscription plans can be tracked at the same time.**
   `codeburn plan set` now stores plans in a provider-keyed `plans` map, so
   setting a Codex custom plan no longer overwrites an existing Claude plan.

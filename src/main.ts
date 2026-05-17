@@ -15,6 +15,7 @@ import { renderDashboard } from './dashboard.js'
 import { formatDateRangeLabel, parseDateRangeFlags, getDateRange, toPeriod, type Period } from './cli-date.js'
 import { runOptimize, scanAndDetect } from './optimize.js'
 import { renderCompare } from './compare.js'
+import { analyzeGuard, DEFAULT_MAX_HOURLY_USD, DEFAULT_MAX_SESSION_USD, renderGuardText } from './guard.js'
 import { getAllProviders } from './providers/index.js'
 import { clearPlan, readConfig, readPlan, readPlans, saveConfig, savePlan, getConfigFilePath, type Plan, type PlanId, type PlanProvider } from './config.js'
 import { clampResetDay, getPlanUsageOrNull, getPlanUsages, type PlanUsage } from './plan-usage.js'
@@ -43,6 +44,13 @@ function collect(val: string, acc: string[]): string[] {
 
 function parseNumber(value: string): number {
   return Number(value)
+}
+
+function validatePositiveNumber(name: string, value: number): boolean {
+  if (Number.isFinite(value) && value > 0) return true
+  console.error(`\n  ${name} must be a positive number.\n`)
+  process.exitCode = 1
+  return false
 }
 
 function parseInteger(value: string): number {
@@ -707,6 +715,64 @@ program
 
     const exportedLabel = customRange ? formatDateRangeLabel(opts.from, opts.to) : 'Today + 7 Days + 30 Days'
     console.log(`\n  Exported (${exportedLabel}) to: ${savedPath}\n`)
+  })
+
+program
+  .command('guard')
+  .description('Warn when AI coding spend crosses session or hourly guardrails')
+  .option('-p, --period <period>', 'Guard period: today, week, 30days, month, all', 'today')
+  .option('--from <date>', 'Start date (YYYY-MM-DD). Overrides --period when set')
+  .option('--to <date>', 'End date (YYYY-MM-DD). Overrides --period when set')
+  .option('--provider <provider>', 'Filter by provider (e.g. claude, gemini, cursor, copilot)', 'all')
+  .option('--project <name>', 'Show only projects matching name (repeatable)', collect, [])
+  .option('--exclude <name>', 'Exclude projects matching name (repeatable)', collect, [])
+  .option('--max-session-usd <amount>', 'Alert when one session is at or above this USD cost', parseNumber, DEFAULT_MAX_SESSION_USD)
+  .option('--max-hourly-usd <amount>', 'Alert when one local hour is at or above this USD cost', parseNumber, DEFAULT_MAX_HOURLY_USD)
+  .option('--json', 'Print machine-readable JSON')
+  .option('--fail-on-alert', 'Exit with status 1 when guard alerts are found')
+  .action(async (opts) => {
+    const sessionThresholdOk = validatePositiveNumber('--max-session-usd', opts.maxSessionUsd)
+    const hourlyThresholdOk = validatePositiveNumber('--max-hourly-usd', opts.maxHourlyUsd)
+    if (!sessionThresholdOk || !hourlyThresholdOk) {
+      return
+    }
+
+    let customRange: DateRange | null = null
+    try {
+      customRange = parseDateRangeFlags(opts.from, opts.to)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      console.error(`\n  Error: ${message}\n`)
+      process.exitCode = 1
+      return
+    }
+
+    await loadPricing()
+
+    const period = toPeriod(opts.period)
+    const { range, label } = customRange
+      ? { range: customRange, label: formatDateRangeLabel(opts.from, opts.to) }
+      : getDateRange(period)
+    const projects = filterProjectsByName(
+      await parseAllSessions(range, opts.provider),
+      opts.project,
+      opts.exclude,
+    )
+    const result = analyzeGuard(projects, {
+      label,
+      maxSessionUSD: opts.maxSessionUsd,
+      maxHourlyUSD: opts.maxHourlyUsd,
+    })
+
+    if (opts.json) {
+      console.log(JSON.stringify(result, null, 2))
+    } else {
+      console.log(renderGuardText(result))
+    }
+
+    if (opts.failOnAlert && result.alerts.length > 0) {
+      process.exitCode = 1
+    }
   })
 
 program
