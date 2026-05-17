@@ -469,6 +469,49 @@ skipUnlessSqlite('opencode provider - session parsing', () => {
     expect(calls).toHaveLength(0)
   })
 
+  it('keeps zero-usage assistant messages when router responses contain text', async () => {
+    const dbPath = createTestDb(tmpDir)
+    withTestDb(dbPath, (db) => {
+      insertSession(db, 'sess-1')
+      insertMessage(db, 'msg-u1', 'sess-1', 1700000000000, { role: 'user' })
+      insertPart(db, 'part-u1', 'msg-u1', 'sess-1', { type: 'text', text: 'use the configured router' })
+      insertMessage(db, 'msg-a1', 'sess-1', 1700000001000, {
+        role: 'assistant', modelID: 'edenai/router-model', cost: 0,
+        tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+      })
+      insertPart(db, 'part-a1', 'msg-a1', 'sess-1', { type: 'text', text: 'router response text' })
+    })
+
+    const calls = await collectCalls(createOpenCodeProvider(tmpDir), dbPath, 'sess-1')
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.model).toBe('edenai/router-model')
+    expect(calls[0]!.inputTokens).toBe(0)
+    expect(calls[0]!.outputTokens).toBe(0)
+    expect(calls[0]!.costUSD).toBe(0)
+    expect(calls[0]!.userMessage).toBe('use the configured router')
+  })
+
+  it('keeps zero-usage assistant messages when router responses contain tool calls', async () => {
+    const dbPath = createTestDb(tmpDir)
+    withTestDb(dbPath, (db) => {
+      insertSession(db, 'sess-1')
+      insertMessage(db, 'msg-a1', 'sess-1', 1700000001000, {
+        role: 'assistant', modelID: 'edenai/router-model', cost: 0,
+        tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+      })
+      insertPart(db, 'part-a1', 'msg-a1', 'sess-1', {
+        type: 'tool', tool: 'bash',
+        state: { status: 'completed', input: { command: 'npm test' } },
+      })
+    })
+
+    const calls = await collectCalls(createOpenCodeProvider(tmpDir), dbPath, 'sess-1')
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.tools).toEqual(['Bash'])
+    expect(calls[0]!.bashCommands).toEqual(['npm'])
+    expect(calls[0]!.costUSD).toBe(0)
+  })
+
   it('deduplicates messages across parses', async () => {
     const dbPath = createTestDb(tmpDir)
     withTestDb(dbPath, (db) => {

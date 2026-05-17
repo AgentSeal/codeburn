@@ -264,16 +264,19 @@ function createParser(
             cacheWrite: data.tokens?.cache?.write ?? 0,
           }
 
+          const msgParts = partsByMsg.get(msg.id) ?? []
+          const toolParts = msgParts.filter((p) => p.type === 'tool' && normalizeToolName(p.tool))
+          const hasTextOutput = msgParts.some((p) => p.type === 'text' && typeof p.text === 'string' && p.text.trim().length > 0)
+          const hasActivity = hasTextOutput || toolParts.length > 0
+
           const allZero =
             tokens.input === 0 &&
             tokens.output === 0 &&
             tokens.reasoning === 0 &&
             tokens.cacheRead === 0 &&
             tokens.cacheWrite === 0
-          if (allZero && (data.cost ?? 0) === 0) continue
+          if (allZero && (data.cost ?? 0) === 0 && !hasActivity) continue
 
-          const msgParts = partsByMsg.get(msg.id) ?? []
-          const toolParts = msgParts.filter((p) => p.type === 'tool')
           const tools = toolParts
             .map((p) => normalizeToolName(p.tool))
             .filter(Boolean)

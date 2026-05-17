@@ -43,6 +43,11 @@
   child and grandchild agent sessions contribute token and tool usage under
   the discovered root session while still excluding child sessions from
   top-level discovery to avoid double counting.
+- **OpenCode router sessions with missing usage are still reported.**
+  Some OpenCode router/provider combinations can persist assistant messages
+  with text or tool activity but zero token and cost fields. The OpenCode
+  parser now keeps those turns as zero-cost calls instead of dropping the
+  session entirely. Closes #341.
 
 ## 0.9.9 - 2026-05-15
 

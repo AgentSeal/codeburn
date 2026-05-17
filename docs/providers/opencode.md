@@ -32,6 +32,9 @@ Per `<sessionId>:<messageId>`.
   token, and tool usage back to the root session.
 - Each message's `parts` are indexed; preserving the order matters for reasoning-token correctness.
 - Tokens are reported across `input`, `output`, `reasoning`, `cache.read`, and `cache.write`. Anthropic semantics.
+- Assistant messages with missing router usage are kept as zero-cost calls
+  when their parts contain non-empty text or tool activity. Empty zero-usage
+  assistant placeholders are still skipped.
 - External MCP tools are stored as `<server>_<tool>` names (for example
   `clickup_clickup_get_task`). The provider normalizes those to CodeBurn's
   canonical `mcp__<server>__<tool>` names before aggregation so shared MCP
