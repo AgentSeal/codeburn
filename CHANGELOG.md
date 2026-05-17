@@ -43,6 +43,13 @@
   child and grandchild agent sessions contribute token and tool usage under
   the discovered root session while still excluding child sessions from
   top-level discovery to avoid double counting.
+- **Cursor agentKv timestamps no longer use database mtime.** Cursor agentKv
+  rows now require an internal timestamp (`createdAt`, `timestamp`, or `time`)
+  before CodeBurn reports usage for that session. Rows without an internal
+  timestamp are skipped instead of being attributed to the mutable SQLite file
+  modification time, preventing historical Cursor usage from appearing under
+  today's date. Cursor result cache version bumped to recompute older cached
+  entries. Closes #325.
 
 ## 0.9.9 - 2026-05-15
 

@@ -5,13 +5,11 @@ import { randomBytes } from 'crypto'
 
 import type { ParsedProviderCall } from './providers/types.js'
 
-// Bumped to 3 for the workspace-aware breakdown change: the cursor parser
-// now derives `sessionId` from the bubble row key (the real composer id)
-// rather than the empty `conversationId` JSON field, and the workspace
-// router relies on those composer ids to bucket calls per project.
-// Version 2 caches contain `sessionId: 'unknown'` for every call and would
-// route everything to the orphan project, so we invalidate them.
-const CURSOR_CACHE_VERSION = 3
+// Bumped to 4 for the Cursor timestamp hardening: agentKv calls now require
+// an internal row timestamp instead of using the mutable SQLite database mtime.
+// Version 3 caches can contain historical agentKv calls bucketed under the
+// database modification day, so they must be invalidated.
+const CURSOR_CACHE_VERSION = 4
 
 type ResultCache = {
   version?: number
@@ -23,7 +21,7 @@ type ResultCache = {
 const CACHE_FILE = 'cursor-results.json'
 
 function getCacheDir(): string {
-  return join(homedir(), '.cache', 'codeburn')
+  return process.env['CODEBURN_CACHE_DIR'] ?? join(homedir(), '.cache', 'codeburn')
 }
 
 function getCachePath(): string {

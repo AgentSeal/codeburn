@@ -1,4 +1,4 @@
-import { existsSync, statSync, readdirSync, readFileSync } from 'fs'
+import { existsSync, readdirSync, readFileSync } from 'fs'
 import { join } from 'path'
 import { homedir } from 'os'
 
@@ -44,6 +44,7 @@ type AgentKvRow = {
   role: string | null
   content: Uint8Array | string | null
   request_id: string | null
+  created_at: string | number | null
   content_length: number
 }
 
@@ -305,6 +306,11 @@ const AGENTKV_QUERY = `
     json_extract(value, '$.role') as role,
     CAST(json_extract(value, '$.content') AS BLOB) as content,
     json_extract(value, '$.providerOptions.cursor.requestId') as request_id,
+    COALESCE(
+      json_extract(value, '$.createdAt'),
+      json_extract(value, '$.timestamp'),
+      json_extract(value, '$.time')
+    ) as created_at,
     length(value) as content_length
   FROM cursorDiskKV
   WHERE key LIKE 'agentKv:blob:%'
@@ -547,20 +553,18 @@ function extractTextLength(content: AgentKvContent[]): number {
   return total
 }
 
-function parseAgentKv(db: SqliteDatabase, seenKeys: Set<string>, dbPath: string): { calls: ParsedProviderCall[] } {
-  const results: ParsedProviderCall[] = []
+function parseCursorTimestamp(raw: string | number | null | undefined): string | null {
+  if (raw === null || raw === undefined || raw === '') return null
+  const numeric = typeof raw === 'string' && /^\d+$/.test(raw.trim()) ? Number(raw) : raw
+  const date = typeof numeric === 'number' && numeric < 1_000_000_000_000
+    ? new Date(numeric * 1000)
+    : new Date(numeric)
+  if (Number.isNaN(date.getTime())) return null
+  return date.toISOString()
+}
 
-  // Cursor's agentKv schema does not record per-message timestamps. Use the
-  // SQLite file's mtime as a bounded "last write" timestamp for all calls;
-  // it's at least honest (no future time, no always-now). Users running
-  // codeburn against an idle Cursor install will see agentKv calls land at
-  // the actual last activity time rather than today's date.
-  let agentKvTimestamp: string
-  try {
-    agentKvTimestamp = new Date(statSync(dbPath).mtimeMs).toISOString()
-  } catch {
-    agentKvTimestamp = new Date().toISOString()
-  }
+function parseAgentKv(db: SqliteDatabase, seenKeys: Set<string>): { calls: ParsedProviderCall[] } {
+  const results: ParsedProviderCall[] = []
 
   let rows: AgentKvRow[]
   try {
@@ -569,9 +573,10 @@ function parseAgentKv(db: SqliteDatabase, seenKeys: Set<string>, dbPath: string)
     return { calls: results }
   }
 
-  const sessions: Map<string, { inputChars: number; outputChars: number; model: string | null; userText: string }> = new Map()
+  const sessions: Map<string, { inputChars: number; outputChars: number; model: string | null; userText: string; timestamp: string | null }> = new Map()
   let currentRequestId = 'unknown'
   let turnIndex = 0
+  let skippedMissingTimestamp = 0
 
   for (const row of rows) {
     if (!row.role || !row.content) continue
@@ -600,10 +605,12 @@ function parseAgentKv(db: SqliteDatabase, seenKeys: Set<string>, dbPath: string)
 
     const textLength = plainTextLength || extractTextLength(content)
     const model = extractModelFromContent(content)
+    const timestamp = parseCursorTimestamp(row.created_at)
 
     if (row.role === 'user') {
-      const existing = sessions.get(requestId) ?? { inputChars: 0, outputChars: 0, model: null, userText: '' }
+      const existing = sessions.get(requestId) ?? { inputChars: 0, outputChars: 0, model: null, userText: '', timestamp: null }
       existing.inputChars += textLength
+      if (!existing.timestamp && timestamp) existing.timestamp = timestamp
       if (!existing.userText) {
         const text = content[0]?.text ?? contentText
         const queryMatch = text.match(/<user_query>([\s\S]*?)<\/user_query>/)
@@ -611,19 +618,25 @@ function parseAgentKv(db: SqliteDatabase, seenKeys: Set<string>, dbPath: string)
       }
       sessions.set(requestId, existing)
     } else if (row.role === 'assistant') {
-      const existing = sessions.get(requestId) ?? { inputChars: 0, outputChars: 0, model: null, userText: '' }
+      const existing = sessions.get(requestId) ?? { inputChars: 0, outputChars: 0, model: null, userText: '', timestamp: null }
       existing.outputChars += textLength
+      if (!existing.timestamp && timestamp) existing.timestamp = timestamp
       if (model) existing.model = model
       sessions.set(requestId, existing)
     } else if (row.role === 'tool' || row.role === 'system') {
-      const existing = sessions.get(requestId) ?? { inputChars: 0, outputChars: 0, model: null, userText: '' }
+      const existing = sessions.get(requestId) ?? { inputChars: 0, outputChars: 0, model: null, userText: '', timestamp: null }
       existing.inputChars += textLength
+      if (!existing.timestamp && timestamp) existing.timestamp = timestamp
       sessions.set(requestId, existing)
     }
   }
 
   for (const [requestId, session] of sessions) {
     if (session.inputChars === 0 && session.outputChars === 0) continue
+    if (!session.timestamp) {
+      skippedMissingTimestamp += 1
+      continue
+    }
 
     const inputTokens = Math.ceil(session.inputChars / CHARS_PER_TOKEN)
     const outputTokens = Math.ceil(session.outputChars / CHARS_PER_TOKEN)
@@ -649,12 +662,16 @@ function parseAgentKv(db: SqliteDatabase, seenKeys: Set<string>, dbPath: string)
       costUSD,
       tools: [],
       bashCommands: [],
-      timestamp: agentKvTimestamp,
+      timestamp: session.timestamp,
       speed: 'standard',
       deduplicationKey: dedupKey,
       userMessage: session.userText,
       sessionId: requestId,
     })
+  }
+
+  if (skippedMissingTimestamp > 0) {
+    process.stderr.write(`codeburn: skipped ${skippedMissingTimestamp} Cursor agentKv sessions without internal timestamps\n`)
   }
 
   return { calls: results }
@@ -720,7 +737,7 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
           // about to drop. Cross-source dedup happens at yield time.
           const localSeen = new Set<string>()
           const { calls: bubbleCalls } = parseBubbles(db, localSeen)
-          const { calls: agentKvCalls } = parseAgentKv(db, localSeen, dbPath)
+          const { calls: agentKvCalls } = parseAgentKv(db, localSeen)
           allCalls = [...bubbleCalls, ...agentKvCalls]
           await writeCachedResults(dbPath, allCalls)
         } finally {
