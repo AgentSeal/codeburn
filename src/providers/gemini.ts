@@ -67,6 +67,8 @@ function parseSession(data: GeminiSession, seenKeys: Set<string>): ParsedProvide
   const results: ParsedProviderCall[] = []
 
   let lastUserMessage = ''
+  let turnOrdinal = 0
+  let currentTurnId = `${data.sessionId}:prelude`
   let geminiOrdinal = 0
 
   for (const msg of data.messages) {
@@ -76,6 +78,7 @@ function parseSession(data: GeminiSession, seenKeys: Set<string>): ParsedProvide
       } else if (typeof msg.content === 'string') {
         lastUserMessage = msg.content.slice(0, 500)
       }
+      currentTurnId = `${data.sessionId}:turn-${turnOrdinal++}`
       continue
     }
 
@@ -136,6 +139,7 @@ function parseSession(data: GeminiSession, seenKeys: Set<string>): ParsedProvide
       timestamp: tsDate.toISOString(),
       speed: 'standard',
       deduplicationKey: dedupKey,
+      turnId: currentTurnId,
       userMessage: lastUserMessage,
       sessionId: data.sessionId,
     })

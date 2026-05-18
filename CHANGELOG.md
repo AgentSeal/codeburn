@@ -38,6 +38,16 @@
   model aliases to priced Kimi K2 entries.
 
 ### Fixed (CLI)
+- **Gemini and Mistral Vibe one-shot rates use provider turn grouping.**
+  Provider calls that belong to the same user turn are cached together, so
+  retry detection can see multi-message `Edit -> Bash -> Edit` flows instead
+  of counting each assistant message as an independent one-shot turn. Mistral
+  Vibe now splits assistant-message tool calls into turn-grouped calls while
+  preserving cumulative session token totals, and it prefers
+  `meta.json.stats.session_cost` over price-derived estimates when available
+  because current Vibe logs do not expose cache token fields. Session cache is
+  bumped to v2 so existing Gemini/Vibe cache entries are re-derived. Closes
+  #351.
 - **OpenCode child sessions are attributed to their root session.** The
   OpenCode parser now walks the unarchived `session.parent_id` subtree so
   child and grandchild agent sessions contribute token and tool usage under

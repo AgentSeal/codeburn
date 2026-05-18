@@ -29,6 +29,7 @@ function metadata(opts: {
   cwd?: string
   input?: number
   output?: number
+  sessionCost?: number
   inputPrice?: number
   outputPrice?: number
   activeModel?: string
@@ -49,6 +50,7 @@ function metadata(opts: {
     stats: {
       session_prompt_tokens: opts.input ?? 2000,
       session_completion_tokens: opts.output ?? 3000,
+      session_cost: opts.sessionCost,
       input_price_per_million: opts.inputPrice ?? 1.5,
       output_price_per_million: opts.outputPrice ?? 7.5,
       tokens_per_second: 42,
@@ -202,7 +204,22 @@ describe('mistral-vibe provider - parsing', () => {
     expect(call.timestamp).toBe('2026-05-11T10:05:00+00:00')
     expect(call.userMessage).toBe('track Mistral Vibe usage')
     expect(call.sessionId).toBe('session-abc123')
-    expect(call.deduplicationKey).toBe('mistral-vibe:session-abc123')
+    expect(call.deduplicationKey).toBe('mistral-vibe:session-abc123:msg-assistant-1')
+  })
+
+  it('prefers Vibe session_cost over price-derived estimates when present', async () => {
+    const sessionDir = await writeSession('session_20260511_100000_sessiona', metadata({
+      input: 364147,
+      output: 1731,
+      sessionCost: 0.381681,
+      inputPrice: 100,
+      outputPrice: 100,
+    }))
+
+    const calls = await collect(sessionDir, createMistralVibeProvider(tmpDir))
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.costUSD).toBe(0.381681)
   })
 
   it('uses configured model prices when stats omit prices', async () => {
