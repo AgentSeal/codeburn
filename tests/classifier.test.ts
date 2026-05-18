@@ -151,3 +151,46 @@ describe('classifyTurn — feature vs debugging precedence (#196)', () => {
     expect(c.category).toBe('debugging')
   })
 })
+
+describe('classifyTurn — retry detection via toolSequence', () => {
+  it('detects retries from multi-call turns (Claude-style)', () => {
+    const turn = makeTurn([
+      makeCall({ tools: ['Edit'] }),
+      makeCall({ tools: ['Bash'] }),
+      makeCall({ tools: ['Edit'] }),
+    ], 'fix the build')
+    const c = classifyTurn(turn)
+    expect(c.retries).toBe(1)
+  })
+
+  it('detects retries from toolSequence on a single call (Kiro/Goose-style)', () => {
+    const call = makeCall({ tools: ['Edit', 'Bash'] })
+    call.toolSequence = [['Edit'], ['Bash'], ['Edit']]
+    const turn = makeTurn([call], 'fix the build')
+    const c = classifyTurn(turn)
+    expect(c.retries).toBe(1)
+  })
+
+  it('returns 0 retries for single call without toolSequence', () => {
+    const call = makeCall({ tools: ['Edit', 'Bash'] })
+    const turn = makeTurn([call], 'fix the build')
+    const c = classifyTurn(turn)
+    expect(c.retries).toBe(0)
+  })
+
+  it('counts multiple retries from toolSequence', () => {
+    const call = makeCall({ tools: ['Edit', 'Bash'] })
+    call.toolSequence = [['Edit'], ['Bash'], ['Edit'], ['Bash'], ['Edit']]
+    const turn = makeTurn([call], 'fix the build')
+    const c = classifyTurn(turn)
+    expect(c.retries).toBe(2)
+  })
+
+  it('ignores toolSequence with only one step', () => {
+    const call = makeCall({ tools: ['Edit', 'Bash'] })
+    call.toolSequence = [['Edit', 'Bash']]
+    const turn = makeTurn([call], 'fix the build')
+    const c = classifyTurn(turn)
+    expect(c.retries).toBe(0)
+  })
+})

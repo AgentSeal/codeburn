@@ -80,14 +80,15 @@ function parseModelConfig(raw: string | null): ModelConfig {
   }
 }
 
-function extractToolsFromMessages(db: SqliteDatabase, sessionId: string): { tools: string[]; bashCommands: string[] } {
+function extractToolsFromMessages(db: SqliteDatabase, sessionId: string): { tools: string[]; bashCommands: string[]; toolSequence: string[][] } {
   const tools: string[] = []
   const bashCommands: string[] = []
   const seen = new Set<string>()
+  const toolSequence: string[][] = []
 
   try {
     const rows = db.query<{ content_json: Uint8Array | string }>(
-      "SELECT CAST(content_json AS BLOB) AS content_json FROM messages WHERE session_id = ? AND role = 'assistant' AND content_json LIKE '%toolRequest%'",
+      "SELECT CAST(content_json AS BLOB) AS content_json FROM messages WHERE session_id = ? AND role = 'assistant' AND content_json LIKE '%toolRequest%' ORDER BY created_timestamp ASC",
       [sessionId],
     )
 
@@ -98,6 +99,7 @@ function extractToolsFromMessages(db: SqliteDatabase, sessionId: string): { tool
       } catch {
         continue
       }
+      const msgTools: string[] = []
       for (const item of items) {
         if (item.type !== 'toolRequest') continue
         const rawName = item.toolCall?.value?.name ?? ''
@@ -107,6 +109,7 @@ function extractToolsFromMessages(db: SqliteDatabase, sessionId: string): { tool
           seen.add(mapped)
           tools.push(mapped)
         }
+        msgTools.push(mapped)
         if (mapped === 'Bash') {
           const cmd = item.toolCall?.value?.arguments?.command
           if (typeof cmd === 'string') {
@@ -116,10 +119,11 @@ function extractToolsFromMessages(db: SqliteDatabase, sessionId: string): { tool
           }
         }
       }
+      if (msgTools.length > 0) toolSequence.push(msgTools)
     }
   } catch { /* best-effort */ }
 
-  return { tools, bashCommands }
+  return { tools, bashCommands, toolSequence }
 }
 
 function getFirstUserMessage(db: SqliteDatabase, sessionId: string): string {
@@ -179,7 +183,7 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
         const model = config.model_name ?? 'unknown'
         const costUSD = calculateCost(model, inputTokens, outputTokens, 0, 0, 0)
 
-        const { tools, bashCommands } = extractToolsFromMessages(db, sessionId)
+        const { tools, bashCommands, toolSequence } = extractToolsFromMessages(db, sessionId)
         const userMessage = getFirstUserMessage(db, sessionId)
 
         const raw = session.updated_at || session.created_at || ''
@@ -200,6 +204,7 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
           costUSD,
           tools,
           bashCommands,
+          toolSequence: toolSequence.length > 1 ? toolSequence : undefined,
           timestamp: ts.toISOString(),
           speed: 'standard',
           deduplicationKey: dedupKey,

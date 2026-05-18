@@ -38,6 +38,7 @@ const toolNameMap: Record<string, string> = {
 type VibeStats = {
   session_prompt_tokens?: number
   session_completion_tokens?: number
+  session_cost?: number
   input_price_per_million?: number
   output_price_per_million?: number
   tokens_per_second?: number
@@ -75,6 +76,8 @@ type VibeToolCall = {
 type VibeMessage = {
   role?: string
   content?: unknown
+  message_id?: string
+  timestamp?: string
   tool_calls?: VibeToolCall[] | null
 }
 
@@ -179,6 +182,9 @@ function safeNumber(value: unknown): number {
 
 function calculateSessionCost(metadata: VibeMetadata, model: string, inputTokens: number, outputTokens: number): number {
   const stats = metadata.stats ?? {}
+  const sessionCost = safeNumber(stats.session_cost)
+  if (sessionCost > 0) return sessionCost
+
   const configured = activeModelConfig(metadata)
   const inputPrice = safeNumber(stats.input_price_per_million) || safeNumber(configured?.input_price)
   const outputPrice = safeNumber(stats.output_price_per_million) || safeNumber(configured?.output_price)
@@ -216,26 +222,41 @@ function parseToolArguments(raw: string | Record<string, unknown> | null | undef
   }
 }
 
+function extractMessageTools(message: VibeMessage): { tools: string[]; bashCommands: string[] } {
+  const tools: string[] = []
+  const bashCommands: string[] = []
+
+  if (message.role !== 'assistant') return { tools, bashCommands }
+
+  for (const toolCall of message.tool_calls ?? []) {
+    const rawName = toolCall.function?.name
+    if (!rawName) continue
+
+    const mappedName = toolNameMap[rawName] ?? rawName
+    tools.push(mappedName)
+
+    if (mappedName !== 'Bash') continue
+    const args = parseToolArguments(toolCall.function?.arguments)
+    const command = args['command']
+    if (typeof command === 'string') {
+      bashCommands.push(...extractBashCommands(command))
+    }
+  }
+
+  return {
+    tools: [...new Set(tools)],
+    bashCommands: [...new Set(bashCommands)],
+  }
+}
+
 function extractTools(messages: VibeMessage[]): { tools: string[]; bashCommands: string[] } {
   const tools: string[] = []
   const bashCommands: string[] = []
 
   for (const message of messages) {
-    if (message.role !== 'assistant') continue
-    for (const toolCall of message.tool_calls ?? []) {
-      const rawName = toolCall.function?.name
-      if (!rawName) continue
-
-      const mappedName = toolNameMap[rawName] ?? rawName
-      tools.push(mappedName)
-
-      if (mappedName !== 'Bash') continue
-      const args = parseToolArguments(toolCall.function?.arguments)
-      const command = args['command']
-      if (typeof command === 'string') {
-        bashCommands.push(...extractBashCommands(command))
-      }
-    }
+    const extracted = extractMessageTools(message)
+    tools.push(...extracted.tools)
+    bashCommands.push(...extracted.bashCommands)
   }
 
   return {
@@ -267,6 +288,17 @@ function firstUserMessage(messages: VibeMessage[], fallback?: string | null): st
   return (fallback ?? '').slice(0, 500)
 }
 
+function allocateInteger(total: number, index: number, count: number): number {
+  if (count <= 1) return total
+  const base = Math.floor(total / count)
+  const remainder = total % count
+  return base + (index < remainder ? 1 : 0)
+}
+
+function allocateCost(total: number, count: number): number {
+  return count <= 1 ? total : total / count
+}
+
 function createParser(source: SessionSource, seenKeys: Set<string>): SessionParser {
   return {
     async *parse(): AsyncGenerator<ParsedProviderCall> {
@@ -281,33 +313,85 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
       if (inputTokens === 0 && outputTokens === 0) return
 
       const sessionId = metadata.session_id || basename(source.path)
-      const deduplicationKey = `mistral-vibe:${sessionId}`
-      if (seenKeys.has(deduplicationKey)) return
-      seenKeys.add(deduplicationKey)
-
       const messages = await readMessages(messagesPath)
       const model = resolveModel(metadata)
-      const { tools, bashCommands } = extractTools(messages)
       const costUSD = calculateSessionCost(metadata, model, inputTokens, outputTokens)
+      const assistantMessages = messages.filter(m => m.role === 'assistant')
+      const fallbackTimestamp = metadata.end_time ?? metadata.start_time ?? ''
 
-      yield {
-        provider: 'mistral-vibe',
-        model,
-        inputTokens,
-        outputTokens,
-        cacheCreationInputTokens: 0,
-        cacheReadInputTokens: 0,
-        cachedInputTokens: 0,
-        reasoningTokens: 0,
-        webSearchRequests: 0,
-        costUSD,
-        tools,
-        bashCommands,
-        timestamp: metadata.end_time ?? metadata.start_time ?? '',
-        speed: 'standard',
-        deduplicationKey,
-        userMessage: firstUserMessage(messages, metadata.title),
-        sessionId,
+      if (assistantMessages.length === 0) {
+        const deduplicationKey = `mistral-vibe:${sessionId}`
+        if (seenKeys.has(deduplicationKey)) return
+        seenKeys.add(deduplicationKey)
+        const { tools, bashCommands } = extractTools(messages)
+
+        yield {
+          provider: 'mistral-vibe',
+          model,
+          inputTokens,
+          outputTokens,
+          cacheCreationInputTokens: 0,
+          cacheReadInputTokens: 0,
+          cachedInputTokens: 0,
+          reasoningTokens: 0,
+          webSearchRequests: 0,
+          costUSD,
+          tools,
+          bashCommands,
+          timestamp: fallbackTimestamp,
+          speed: 'standard',
+          deduplicationKey,
+          userMessage: firstUserMessage(messages, metadata.title),
+          sessionId,
+        }
+        return
+      }
+
+      let currentUserMessage = (metadata.title ?? '').slice(0, 500)
+      let turnOrdinal = 0
+      let currentTurnId = `${sessionId}:prelude`
+      let assistantOrdinal = 0
+
+      for (const message of messages) {
+        if (message.role === 'user') {
+          const text = normalizeContent(message.content).trim()
+          if (text) currentUserMessage = text.slice(0, 500)
+          currentTurnId = `${sessionId}:turn-${turnOrdinal++}`
+          continue
+        }
+
+        if (message.role !== 'assistant') continue
+
+        const messageKey = message.message_id || `idx-${assistantOrdinal}`
+        const deduplicationKey = `mistral-vibe:${sessionId}:${messageKey}`
+        const allocationIndex = assistantOrdinal
+        assistantOrdinal++
+
+        if (seenKeys.has(deduplicationKey)) continue
+        seenKeys.add(deduplicationKey)
+
+        const { tools, bashCommands } = extractMessageTools(message)
+
+        yield {
+          provider: 'mistral-vibe',
+          model,
+          inputTokens: allocateInteger(inputTokens, allocationIndex, assistantMessages.length),
+          outputTokens: allocateInteger(outputTokens, allocationIndex, assistantMessages.length),
+          cacheCreationInputTokens: 0,
+          cacheReadInputTokens: 0,
+          cachedInputTokens: 0,
+          reasoningTokens: 0,
+          webSearchRequests: 0,
+          costUSD: allocateCost(costUSD, assistantMessages.length),
+          tools,
+          bashCommands,
+          timestamp: message.timestamp ?? fallbackTimestamp,
+          speed: 'standard',
+          deduplicationKey,
+          turnId: currentTurnId,
+          userMessage: currentUserMessage,
+          sessionId,
+        }
       }
     },
   }

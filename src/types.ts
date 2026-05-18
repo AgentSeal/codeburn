@@ -84,6 +84,7 @@ export type ParsedApiCall = {
   bashCommands: string[]
   deduplicationKey: string
   cacheCreationOneHourTokens?: number
+  toolSequence?: string[][]
 }
 
 export type TaskCategory =

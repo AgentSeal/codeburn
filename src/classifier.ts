@@ -154,13 +154,22 @@ function classifyConversation(userMessage: string): TaskCategory {
 }
 
 function countRetries(turn: ParsedTurn): number {
+  const steps: string[][] = []
+  for (const call of turn.assistantCalls) {
+    if (call.toolSequence && call.toolSequence.length > 0) {
+      steps.push(...call.toolSequence)
+    } else if (call.tools.length > 0) {
+      steps.push(call.tools)
+    }
+  }
+
   let sawEditBeforeBash = false
   let sawBashAfterEdit = false
   let retries = 0
 
-  for (const call of turn.assistantCalls) {
-    const hasEdit = call.tools.some(t => EDIT_TOOLS.has(t))
-    const hasBash = call.tools.some(t => BASH_TOOLS.has(t))
+  for (const tools of steps) {
+    const hasEdit = tools.some(t => EDIT_TOOLS.has(t))
+    const hasBash = tools.some(t => BASH_TOOLS.has(t))
 
     if (hasEdit) {
       if (sawBashAfterEdit) retries++

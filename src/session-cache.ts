@@ -21,6 +21,7 @@ export type CachedCall = {
   provider: string
   model: string
   usage: CachedUsage
+  costUSD?: number
   speed: 'standard' | 'fast'
   timestamp: string
   tools: string[]
@@ -29,6 +30,7 @@ export type CachedCall = {
   deduplicationKey: string
   project?: string
   projectPath?: string
+  toolSequence?: string[][]
 }
 
 export type CachedTurn = {
@@ -65,7 +67,7 @@ export type SessionCache = {
 
 // ── Constants ──────────────────────────────────────────────────────────
 
-export const CACHE_VERSION = 1
+export const CACHE_VERSION = 2
 
 const CACHE_FILE = 'session-cache.json'
 const TEMP_FILE_MAX_AGE_MS = 5 * 60 * 1000
@@ -147,11 +149,13 @@ function validateCall(c: unknown): c is CachedCall {
     && typeof o['deduplicationKey'] === 'string'
     && typeof o['timestamp'] === 'string'
     && (o['speed'] === 'standard' || o['speed'] === 'fast')
+    && isOptionalNum(o['costUSD'])
     && isStringArray(o['tools'])
     && isStringArray(o['bashCommands'])
     && isStringArray(o['skills'])
     && isOptionalString(o['project'])
     && isOptionalString(o['projectPath'])
+    && (o['toolSequence'] === undefined || (Array.isArray(o['toolSequence']) && (o['toolSequence'] as unknown[]).every(s => isStringArray(s))))
     && validateUsage(o['usage'])
 }
 

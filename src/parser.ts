@@ -1517,6 +1517,33 @@ function providerCallToTurn(call: ParsedProviderCall): ParsedTurn {
 
 // ── Cache Conversion ───────────────────────────────────────────────────
 
+function providerCallToCachedCall(call: ParsedProviderCall): CachedCall {
+  return {
+    provider: call.provider,
+    model: call.model,
+    usage: {
+      inputTokens: call.inputTokens,
+      outputTokens: call.outputTokens,
+      cacheCreationInputTokens: call.cacheCreationInputTokens,
+      cacheReadInputTokens: call.cacheReadInputTokens,
+      cachedInputTokens: call.cachedInputTokens,
+      reasoningTokens: call.reasoningTokens,
+      webSearchRequests: call.webSearchRequests,
+      cacheCreationOneHourTokens: 0,
+    },
+    costUSD: call.provider === 'mistral-vibe' ? call.costUSD : undefined,
+    speed: call.speed,
+    timestamp: call.timestamp,
+    tools: call.tools,
+    bashCommands: call.bashCommands,
+    skills: [],
+    deduplicationKey: call.deduplicationKey,
+    project: call.project,
+    projectPath: call.projectPath,
+    toolSequence: call.toolSequence,
+  }
+}
+
 function apiCallToCachedCall(call: ParsedApiCall): CachedCall {
   return {
     provider: call.provider,
@@ -1545,29 +1572,36 @@ function providerCallToCachedTurn(call: ParsedProviderCall): CachedTurn {
     timestamp: call.timestamp,
     sessionId: call.sessionId,
     userMessage: call.userMessage.slice(0, 2000),
-    calls: [{
-      provider: call.provider,
-      model: call.model,
-      usage: {
-        inputTokens: call.inputTokens,
-        outputTokens: call.outputTokens,
-        cacheCreationInputTokens: call.cacheCreationInputTokens,
-        cacheReadInputTokens: call.cacheReadInputTokens,
-        cachedInputTokens: call.cachedInputTokens,
-        reasoningTokens: call.reasoningTokens,
-        webSearchRequests: call.webSearchRequests,
-        cacheCreationOneHourTokens: 0,
-      },
-      speed: call.speed,
-      timestamp: call.timestamp,
-      tools: call.tools,
-      bashCommands: call.bashCommands,
-      skills: [],
-      deduplicationKey: call.deduplicationKey,
-      project: call.project,
-      projectPath: call.projectPath,
-    }],
+    calls: [providerCallToCachedCall(call)],
   }
+}
+
+function providerCallsToCachedTurns(calls: ParsedProviderCall[]): CachedTurn[] {
+  const turns: CachedTurn[] = []
+  const grouped = new Map<string, CachedTurn>()
+
+  for (const call of calls) {
+    if (!call.turnId) {
+      turns.push(providerCallToCachedTurn(call))
+      continue
+    }
+
+    const key = `${call.sessionId}\0${call.turnId}`
+    let turn = grouped.get(key)
+    if (!turn) {
+      turn = {
+        timestamp: call.timestamp,
+        sessionId: call.sessionId,
+        userMessage: call.userMessage.slice(0, 2000),
+        calls: [],
+      }
+      grouped.set(key, turn)
+      turns.push(turn)
+    }
+    turn.calls.push(providerCallToCachedCall(call))
+  }
+
+  return turns
 }
 
 function cachedCallToApiCall(call: CachedCall): ParsedApiCall {
@@ -1592,7 +1626,7 @@ function cachedCallToApiCall(call: CachedCall): ParsedApiCall {
       reasoningTokens: u.reasoningTokens,
       webSearchRequests: u.webSearchRequests,
     },
-    costUSD,
+    costUSD: call.costUSD ?? costUSD,
     tools: call.tools,
     mcpTools: extractMcpTools(call.tools),
     skills: call.skills,
@@ -1603,6 +1637,7 @@ function cachedCallToApiCall(call: CachedCall): ParsedApiCall {
     bashCommands: call.bashCommands,
     deduplicationKey: call.deduplicationKey,
     cacheCreationOneHourTokens: u.cacheCreationOneHourTokens || undefined,
+    toolSequence: call.toolSequence,
   }
 }
 
@@ -1725,10 +1760,11 @@ async function parseProviderSources(
       )
 
       try {
-        const turns: CachedTurn[] = []
+        const providerCalls: ParsedProviderCall[] = []
         for await (const call of parser.parse()) {
-          turns.push(providerCallToCachedTurn(call))
+          providerCalls.push(call)
         }
+        const turns = providerCallsToCachedTurns(providerCalls)
         section.files[source.path] = { fingerprint: fp, mcpInventory: [], turns }
         didParse = true
         ;(diskCache as { _dirty?: boolean })._dirty = true

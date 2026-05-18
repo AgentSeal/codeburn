@@ -52,6 +52,13 @@
   workspace-based project names from session data. Closes #248.
 
 ### Fixed (CLI)
+- **One-shot rate detection for non-Claude providers.** Gemini and Mistral Vibe
+  now emit per-assistant-message calls grouped by user turn, so retry detection
+  sees multi-message `Edit -> Bash -> Edit` flows instead of counting each
+  message as an independent one-shot turn. Kiro and Goose record per-message
+  tool ordering via `toolSequence` for the same effect on aggregated sessions.
+  Vibe prefers `meta.json.stats.session_cost` over price-derived estimates when
+  available. Session cache bumped to v2. Closes #351.
 - **Reduced Claude parser OOM risk.** Large Claude JSONL sessions retained
   full entry objects (text, thinking blocks, tool results) in memory during
   parsing, causing V8 heap exhaustion on heavy usage months. Entries are now

@@ -86,6 +86,7 @@ function parseChatFile(data: KiroChatFile, sessionId: string, project: string, s
 
   let pendingUserMessage = ''
   const allTools: string[] = []
+  const toolSequence: string[][] = []
 
   for (const msg of chat) {
     if (msg.role === 'human') {
@@ -93,7 +94,9 @@ function parseChatFile(data: KiroChatFile, sessionId: string, project: string, s
       pendingUserMessage = msg.content.slice(0, 500)
     }
     if (msg.role === 'bot') {
-      allTools.push(...extractToolNames(msg.content))
+      const msgTools = extractToolNames(msg.content)
+      allTools.push(...msgTools)
+      if (msgTools.length > 0) toolSequence.push(msgTools)
     }
   }
 
@@ -125,6 +128,7 @@ function parseChatFile(data: KiroChatFile, sessionId: string, project: string, s
     costUSD,
     tools: [...new Set(allTools)],
     bashCommands: [],
+    toolSequence: toolSequence.length > 1 ? toolSequence : undefined,
     timestamp,
     speed: 'standard',
     deduplicationKey: dedupKey,
