@@ -69,8 +69,6 @@ function parseSession(data: GeminiSession, seenKeys: Set<string>): ParsedProvide
   let lastUserMessage = ''
   let turnOrdinal = 0
   let currentTurnId = `${data.sessionId}:prelude`
-  let geminiOrdinal = 0
-
   for (const msg of data.messages) {
     if (msg.type === 'user') {
       if (Array.isArray(msg.content)) {
