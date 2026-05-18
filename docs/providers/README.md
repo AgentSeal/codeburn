@@ -37,6 +37,7 @@ For the architectural picture, see `../architecture.md`.
 | [Cursor Agent](cursor-agent.md) | text / JSONL | `src/providers/cursor-agent.ts` | `tests/providers/cursor-agent.test.ts` |
 | [Goose](goose.md) | SQLite | `src/providers/goose.ts` | none |
 | [OpenCode](opencode.md) | SQLite | `src/providers/opencode.ts` | `tests/providers/opencode.test.ts` |
+| [Warp](warp.md) | SQLite | `src/providers/warp.ts` | `tests/providers/warp.test.ts` |
 
 ### Shared
 

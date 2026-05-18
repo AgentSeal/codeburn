@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { providers, getAllProviders } from '../src/providers/index.js'
+import { providers, getAllProviders, getProvider } from '../src/providers/index.js'
 
 describe('provider registry', () => {
   it('has core providers registered synchronously', () => {
@@ -29,7 +29,16 @@ describe('provider registry', () => {
     const names = all.map(p => p.name)
     expect(names).toContain('claude')
     expect(names).toContain('codex')
+    expect(names).toContain('warp')
     expect(names.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('warp model and tool display names are normalized', async () => {
+    const warp = await getProvider('warp')
+    expect(warp).toBeDefined()
+    expect(warp!.modelDisplayName('warp-auto-efficient')).toBe('Warp Auto (efficient)')
+    expect(warp!.modelDisplayName('gpt-5.3-codex')).toBe('GPT-5.3 Codex')
+    expect(warp!.toolDisplayName('run_command')).toBe('Bash')
   })
 
   it('opencode model display names strip provider prefix', async () => {

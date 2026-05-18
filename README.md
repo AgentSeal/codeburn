@@ -8,12 +8,12 @@
     <a href="https://www.npmjs.com/package/codeburn"><img src="https://img.shields.io/npm/v/codeburn.svg" alt="npm version" /></a>
     <a href="https://www.npmjs.com/package/codeburn"><img src="https://img.shields.io/npm/dt/codeburn.svg" alt="total downloads" /></a>                                                       
     <a href="https://github.com/getagentseal/codeburn/blob/main/LICENSE"><img src="https://img.shields.io/npm/l/codeburn.svg" alt="license" /></a>                                            
-    <a href="https://github.com/getagentseal/codeburn"><img src="https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg" alt="node version" /></a>                                        
+    <a href="https://github.com/getagentseal/codeburn"><img src="https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg" alt="node version" /></a>                                        
     <a href="https://discord.gg/pJ2DMWvtAx"><img src="https://img.shields.io/badge/discord-join-5865F2?logo=discord&logoColor=white" alt="Discord" /></a>                                     
     <a href="https://github.com/sponsors/iamtoruk"><img src="https://img.shields.io/badge/sponsor-♥-ea4aaa?logo=github" alt="Sponsor" /></a>                                                  
   </p> 
 
-CodeBurn tracks token usage, cost, and performance across **19 AI coding tools**. It breaks down spending by task type, model, tool, project, and provider so you can see exactly where your budget goes.
+CodeBurn tracks token usage, cost, and performance across **20 AI coding tools**. It breaks down spending by task type, model, tool, project, and provider so you can see exactly where your budget goes.
 
 Everything runs locally. No wrapper, no proxy, no API keys. CodeBurn reads session data directly from disk and prices every call using [LiteLLM](https://github.com/BerriAI/litellm).
 
@@ -38,9 +38,9 @@ Everything runs locally. No wrapper, no proxy, no API keys. CodeBurn reads sessi
 
 ## Requirements
 
-- Node.js 20+
+- Node.js 22+
 - At least one supported AI coding tool with session data on disk
-- For Cursor and OpenCode support, `better-sqlite3` is installed automatically as an optional dependency
+- SQLite-backed providers (Cursor, OpenCode, Goose, Crush, Warp) require Node's built-in `node:sqlite` module
 
 ## Install
 
@@ -120,6 +120,7 @@ Arrow keys switch between Today, 7 Days, 30 Days, Month, and 6 Months (use `--fr
 | <img src="assets/providers/goose.png" width="28" /> | Goose | Yes | [goose.md](docs/providers/goose.md) |
 | <img src="assets/providers/antigravity.png" width="28" /> | Antigravity | Yes | [antigravity.md](docs/providers/antigravity.md) |
 | <img src="assets/providers/crush.png" width="28" /> | Crush | Yes | [crush.md](docs/providers/crush.md) |
+|  | Warp | Yes | [warp.md](docs/providers/warp.md) |
 
 Each provider doc lists the exact data location, storage format, and known quirks. Linux and Windows paths are detected automatically. If a path has changed or is wrong, please [open an issue](https://github.com/getagentseal/codeburn/issues).
 
@@ -142,6 +143,8 @@ The `--provider` flag filters any command to a single provider: `codeburn report
 **GitHub Copilot** reads from both `~/.copilot/session-state/` (legacy CLI) and VS Code's `workspaceStorage/*/GitHub.copilot-chat/transcripts/`. The VS Code format has no explicit token counts; tokens are estimated from content length and the model is inferred from tool call ID prefixes.
 
 **OpenClaw** reads JSONL agent logs from `~/.openclaw/agents/` and also checks legacy paths (`.clawdbot`, `.moltbot`, `.moldbot`).
+
+**Warp** reads Oz agent sessions from Warp's local `warp.sqlite`. Exchange-level token attribution is estimated from prompt-size weighting normalized to conversation totals, and `run_command` blocks are attached to the nearest preceding exchange by timestamp.
 
 **Roo Code and KiloCode** are Cline-family VS Code extensions. CodeBurn reads `ui_messages.json` from each task directory and extracts token usage from `api_req_started` entries.
 
@@ -375,9 +378,11 @@ These are starting points, not verdicts. A 60% cache hit on a single experimenta
 
 **Codex** stores sessions at `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` with `token_count` events containing per-call and cumulative token usage, and `function_call` entries for tool tracking.
 
-**Cursor** stores session data in a SQLite database at `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb` (macOS), `~/.config/Cursor/User/globalStorage/state.vscdb` (Linux), or `%APPDATA%/Cursor/User/globalStorage/state.vscdb` (Windows). Token counts are in `cursorDiskKV` table entries with `bubbleId:` key prefix. Requires `better-sqlite3` (installed as optional dependency). Parsed results are cached at `~/.cache/codeburn/cursor-results.json` and auto-invalidate when the database changes.
+**Cursor** stores session data in a SQLite database at `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb` (macOS), `~/.config/Cursor/User/globalStorage/state.vscdb` (Linux), or `%APPDATA%/Cursor/User/globalStorage/state.vscdb` (Windows). Token counts are in `cursorDiskKV` table entries with `bubbleId:` key prefix. Parsed results are cached at `~/.cache/codeburn/cursor-results.json` and auto-invalidate when the database changes.
 
 **OpenCode** stores sessions in SQLite databases at `~/.local/share/opencode/opencode*.db`. CodeBurn queries the `session`, `message`, and `part` tables read-only, extracts token counts and tool usage, and recalculates cost using the LiteLLM pricing engine. Falls back to OpenCode's own cost field for models not in our pricing data. Subtask sessions (`parent_id IS NOT NULL`) are excluded to avoid double counting. Supports multiple channel databases and respects `XDG_DATA_HOME`.
+
+**Warp** stores Oz agent data in `~/Library/Group Containers/2BBY89MBSN.dev.warp/Library/Application Support/dev.warp.Warp-Stable/warp.sqlite` (with Preview fallback). CodeBurn reads `agent_conversations`, `ai_queries`, and `blocks`, emits one call per finalized exchange, estimates exchange token share from prompt-size weighting against conversation totals, and attributes `run_command` blocks to the nearest prior exchange.
 
 **Pi / OMP** stores sessions as JSONL at `~/.pi/agent/sessions/<sanitized-cwd>/*.jsonl` (Pi) and `~/.omp/agent/sessions/<sanitized-cwd>/*.jsonl` (OMP). Each assistant message carries token usage (input, output, cacheRead, cacheWrite) plus inline `toolCall` content blocks. CodeBurn extracts token counts, normalizes tool names to the standard set (`bash` to `Bash`, `dispatch_agent` to `Agent`), and pulls bash commands from `toolCall.arguments.command` for the shell breakdown.
 
@@ -410,6 +415,7 @@ CodeBurn deduplicates messages (by API message ID for Claude, by cumulative toke
 | `KIMI_MODEL_NAME` | Override Kimi model name when Kimi sessions do not record the model |
 | `QWEN_DATA_DIR` | Override Qwen data directory (default: `~/.qwen/projects`) |
 | `VIBE_HOME` | Override Mistral Vibe home directory (default: `~/.vibe`) |
+| `WARP_DB_PATH` | Override Warp database path (default: Warp Stable, then Warp Preview) |
 
 ## Sponsoring CodeBurn
 

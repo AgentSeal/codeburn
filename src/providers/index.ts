@@ -18,6 +18,8 @@ import type { Provider, SessionSource } from './types.js'
 
 let antigravityProvider: Provider | null = null
 let antigravityLoadAttempted = false
+let warpProvider: Provider | null = null
+let warpLoadAttempted = false
 
 async function loadAntigravity(): Promise<Provider | null> {
   if (antigravityLoadAttempted) return antigravityProvider
@@ -26,6 +28,18 @@ async function loadAntigravity(): Promise<Provider | null> {
     const { antigravity } = await import('./antigravity.js')
     antigravityProvider = antigravity
     return antigravity
+  } catch {
+    return null
+  }
+}
+
+async function loadWarp(): Promise<Provider | null> {
+  if (warpLoadAttempted) return warpProvider
+  warpLoadAttempted = true
+  try {
+    const { warp } = await import('./warp.js')
+    warpProvider = warp
+    return warp
   } catch {
     return null
   }
@@ -109,7 +123,7 @@ async function loadCrush(): Promise<Provider | null> {
 const coreProviders: Provider[] = [claude, cline, codebuff, codex, copilot, droid, gemini, ibmBob, kiloCode, kiro, kimi, mistralVibe, openclaw, pi, omp, qwen, rooCode]
 
 export async function getAllProviders(): Promise<Provider[]> {
-  const [ag, gs, cursor, opencode, cursorAgent, crush] = await Promise.all([loadAntigravity(), loadGoose(), loadCursor(), loadOpenCode(), loadCursorAgent(), loadCrush()])
+  const [ag, gs, cursor, opencode, cursorAgent, crush, warp] = await Promise.all([loadAntigravity(), loadGoose(), loadCursor(), loadOpenCode(), loadCursorAgent(), loadCrush(), loadWarp()])
   const all = [...coreProviders]
   if (ag) all.push(ag)
   if (gs) all.push(gs)
@@ -117,6 +131,7 @@ export async function getAllProviders(): Promise<Provider[]> {
   if (opencode) all.push(opencode)
   if (cursorAgent) all.push(cursorAgent)
   if (crush) all.push(crush)
+  if (warp) all.push(warp)
   return all
 }
 
@@ -159,6 +174,10 @@ export async function getProvider(name: string): Promise<Provider | undefined> {
   if (name === 'crush') {
     const c = await loadCrush()
     return c ?? undefined
+  }
+  if (name === 'warp') {
+    const w = await loadWarp()
+    return w ?? undefined
   }
   return coreProviders.find(p => p.name === name)
 }

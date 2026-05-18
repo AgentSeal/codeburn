@@ -79,6 +79,7 @@ const PROVIDER_ENV_VARS: Record<string, string[]> = {
   opencode: ['XDG_DATA_HOME'],
   goose: ['XDG_DATA_HOME'],
   crush: ['XDG_DATA_HOME'],
+  warp: ['WARP_DB_PATH'],
   antigravity: ['CODEBURN_CACHE_DIR'],
   qwen: ['QWEN_DATA_DIR'],
   'ibm-bob': ['XDG_CONFIG_HOME'],
