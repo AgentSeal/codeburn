@@ -260,3 +260,60 @@ describe('Cursor model variants resolve to pricing', () => {
     })
   }
 })
+
+// Regression: DeepSeek v4 models were priced at $0 because (a) the snapshot
+// lacked entries and (b) loadPricing() unconditionally replaced pricingCache
+// with the 24-hour runtime cache file, dropping MANUAL_ENTRIES from the
+// bundled snapshot.  The fix merges snapshot entries back after any cache
+// load so manually-added models survive regardless of cache state.
+describe('DeepSeek v4 models resolve to correct pricing', () => {
+  it('deepseek-v4-pro has non-zero pricing', () => {
+    const costs = getModelCosts('deepseek-v4-pro')
+    expect(costs).not.toBeNull()
+    expect(costs!.inputCostPerToken).toBe(1.74e-6)
+    expect(costs!.outputCostPerToken).toBe(3.48e-6)
+    expect(costs!.cacheReadCostPerToken).toBe(1.45e-8)
+    expect(costs!.cacheWriteCostPerToken).toBe(0)
+  })
+
+  it('deepseek-v4-flash has non-zero pricing', () => {
+    const costs = getModelCosts('deepseek-v4-flash')
+    expect(costs).not.toBeNull()
+    expect(costs!.inputCostPerToken).toBe(1.4e-7)
+    expect(costs!.outputCostPerToken).toBe(2.8e-7)
+    expect(costs!.cacheReadCostPerToken).toBe(2.8e-9)
+    expect(costs!.cacheWriteCostPerToken).toBe(0)
+  })
+
+  it('deepseek/deepseek-v4-pro (provider-prefixed) resolves to same pricing', () => {
+    expect(getModelCosts('deepseek/deepseek-v4-pro')).toEqual(getModelCosts('deepseek-v4-pro'))
+  })
+
+  it('deepseek/deepseek-v4-flash (provider-prefixed) resolves to same pricing', () => {
+    expect(getModelCosts('deepseek/deepseek-v4-flash')).toEqual(getModelCosts('deepseek-v4-flash'))
+  })
+
+  it('calculateCost is non-zero for deepseek-v4-pro with observed token counts', () => {
+    // Observed from production: 2.5M input, 763K output, 258M cache-reads
+    const cost = calculateCost('deepseek-v4-pro', 2_477_914, 762_994, 0, 258_556_928, 0)
+    // Expected: ~$4.31 input + ~$2.66 output + ~$3.75 cache-read ≈ $10.72
+    expect(cost).toBeCloseTo(10.72, 0)
+  })
+
+  it('calculateCost is non-zero for deepseek-v4-flash with observed token counts', () => {
+    // Observed from production: 1.6M input, 354K output, 48M cache-reads
+    const cost = calculateCost('deepseek-v4-flash', 1_552_573, 353_914, 0, 48_388_608, 0)
+    // Expected: ~$0.22 input + ~$0.10 output + ~$0.14 cache-read ≈ $0.45
+    expect(cost).toBeCloseTo(0.45, 1)
+  })
+})
+
+describe('DeepSeek v4 display names', () => {
+  it('deepseek-v4-pro -> DeepSeek v4 Pro', () => {
+    expect(getShortModelName('deepseek-v4-pro')).toBe('DeepSeek v4 Pro')
+  })
+
+  it('deepseek-v4-flash -> DeepSeek v4 Flash', () => {
+    expect(getShortModelName('deepseek-v4-flash')).toBe('DeepSeek v4 Flash')
+  })
+})

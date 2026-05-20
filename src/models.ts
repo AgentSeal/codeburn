@@ -132,15 +132,27 @@ async function loadCachedPricing(): Promise<Map<string, ModelCosts> | null> {
 }
 
 export async function loadPricing(): Promise<void> {
+  // The bundled snapshot contains MANUAL_ENTRIES for models not yet in LiteLLM.
+  // These must survive regardless of which code path populates pricingCache below,
+  // so we load the snapshot once here and use it to fill in any gaps afterwards.
+  const snap = loadSnapshot()
+
   const cached = await loadCachedPricing()
   if (cached) {
+    for (const [k, v] of snap) {
+      if (!cached.has(k)) cached.set(k, v)
+    }
     pricingCache = cached
     sortedPricingKeys = null
     return
   }
 
   try {
-    pricingCache = await fetchAndCachePricing()
+    const fetched = await fetchAndCachePricing()
+    for (const [k, v] of snap) {
+      if (!fetched.has(k)) fetched.set(k, v)
+    }
+    pricingCache = fetched
     sortedPricingKeys = null
   } catch {
     // snapshot already loaded at init; nothing more to do
@@ -421,6 +433,8 @@ const SHORT_NAMES: Record<string, string> = {
   'kimi-k2': 'Kimi K2',
   'kimi-latest': 'Kimi Latest',
   'moonshot-v1': 'Moonshot v1',
+  'deepseek-v4-pro': 'DeepSeek v4 Pro',
+  'deepseek-v4-flash': 'DeepSeek v4 Flash',
   'deepseek-coder-max': 'DeepSeek Coder Max',
   'deepseek-coder': 'DeepSeek Coder',
   'deepseek-r1': 'DeepSeek R1',
