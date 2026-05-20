@@ -9,6 +9,9 @@ const outPath = join(__dirname, '..', 'src', 'data', 'litellm-snapshot.json')
 const MANUAL_ENTRIES = {
   'MiniMax-M2.7':           [0.3e-6, 1.2e-6, 0.375e-6, 0.06e-6],
   'MiniMax-M2.7-highspeed': [0.6e-6, 2.4e-6, 0.375e-6, 0.06e-6],
+  // LiteLLM PR #27056 is not merged yet. Source: https://api-docs.deepseek.com/quick_start/pricing
+  'deepseek-v4-flash':      [1.4e-7, 2.8e-7, 0, 2.8e-9],
+  'deepseek-v4-pro':        [4.35e-7, 8.7e-7, 0, 3.625e-9],
 }
 
 const res = await fetch(LITELLM_URL)

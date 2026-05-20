@@ -1,3 +1,6 @@
+import { mkdtemp, mkdir, rm, writeFile } from 'fs/promises'
+import { tmpdir } from 'os'
+import { join } from 'path'
 import { describe, it, expect, beforeAll, afterEach } from 'vitest'
 
 import { getModelCosts, getShortModelName, calculateCost, loadPricing, setModelAliases } from '../src/models.js'
@@ -259,4 +262,79 @@ describe('Cursor model variants resolve to pricing', () => {
       expect(costs!.outputCostPerToken).toBe(expected!.outputCostPerToken)
     })
   }
+})
+
+describe('DeepSeek v4 models resolve to pricing', () => {
+  it('deepseek-v4-pro has current official discounted pricing', () => {
+    const costs = getModelCosts('deepseek-v4-pro')
+    expect(costs).not.toBeNull()
+    expect(costs!.inputCostPerToken).toBe(4.35e-7)
+    expect(costs!.outputCostPerToken).toBe(8.7e-7)
+    expect(costs!.cacheReadCostPerToken).toBe(3.625e-9)
+    expect(costs!.cacheWriteCostPerToken).toBe(0)
+  })
+
+  it('deepseek-v4-flash has current official pricing', () => {
+    const costs = getModelCosts('deepseek-v4-flash')
+    expect(costs).not.toBeNull()
+    expect(costs!.inputCostPerToken).toBe(1.4e-7)
+    expect(costs!.outputCostPerToken).toBe(2.8e-7)
+    expect(costs!.cacheReadCostPerToken).toBe(2.8e-9)
+    expect(costs!.cacheWriteCostPerToken).toBe(0)
+  })
+
+  it('provider-prefixed DeepSeek v4 names resolve to the same pricing', () => {
+    expect(getModelCosts('deepseek/deepseek-v4-pro')).toEqual(getModelCosts('deepseek-v4-pro'))
+    expect(getModelCosts('deepseek/deepseek-v4-flash')).toEqual(getModelCosts('deepseek-v4-flash'))
+  })
+
+  it('calculates non-zero costs for observed DeepSeek v4 Claude usage', () => {
+    const pro = calculateCost('deepseek-v4-pro', 2_477_914, 762_994, 0, 258_556_928, 0)
+    const flash = calculateCost('deepseek-v4-flash', 1_552_573, 353_914, 0, 48_388_608, 0)
+
+    expect(pro).toBeCloseTo(2.68, 2)
+    expect(flash).toBeCloseTo(0.45, 2)
+  })
+
+  it('uses DeepSeek v4 display names', () => {
+    expect(getShortModelName('deepseek-v4-pro')).toBe('DeepSeek v4 Pro')
+    expect(getShortModelName('deepseek-v4-flash')).toBe('DeepSeek v4 Flash')
+  })
+
+  it('keeps bundled DeepSeek v4 fallback entries when runtime pricing cache is stale', async () => {
+    const previousCacheDir = process.env['CODEBURN_CACHE_DIR']
+    const cacheRoot = await mkdtemp(join(tmpdir(), 'codeburn-pricing-cache-'))
+
+    try {
+      process.env['CODEBURN_CACHE_DIR'] = cacheRoot
+      await mkdir(cacheRoot, { recursive: true })
+      await writeFile(join(cacheRoot, 'litellm-pricing.json'), JSON.stringify({
+        timestamp: Date.now(),
+        data: {
+          'gpt-4o-mini': {
+            inputCostPerToken: 9e-7,
+            outputCostPerToken: 1.8e-6,
+            cacheWriteCostPerToken: 0,
+            cacheReadCostPerToken: 9e-8,
+            webSearchCostPerRequest: 0.01,
+            fastMultiplier: 1,
+          },
+        },
+      }), 'utf-8')
+
+      await loadPricing()
+
+      expect(getModelCosts('gpt-4o-mini')!.inputCostPerToken).toBe(9e-7)
+      expect(getModelCosts('deepseek-v4-pro')!.inputCostPerToken).toBe(4.35e-7)
+      expect(getModelCosts('deepseek-v4-flash')!.inputCostPerToken).toBe(1.4e-7)
+    } finally {
+      if (previousCacheDir === undefined) {
+        delete process.env['CODEBURN_CACHE_DIR']
+      } else {
+        process.env['CODEBURN_CACHE_DIR'] = previousCacheDir
+      }
+      await rm(cacheRoot, { recursive: true, force: true })
+      await loadPricing()
+    }
+  })
 })

@@ -17,6 +17,8 @@ const shortNames: Record<string, string> = {
   'claude-3-5-sonnet': 'Sonnet 3.5',
   'claude-haiku-4-5': 'Haiku 4.5',
   'claude-3-5-haiku': 'Haiku 3.5',
+  'deepseek-v4-pro': 'DeepSeek v4 Pro',
+  'deepseek-v4-flash': 'DeepSeek v4 Flash',
 }
 
 function expandHome(p: string): string {

@@ -59,6 +59,7 @@ function getSortedPricingKeys(): string[] {
 }
 
 function getCacheDir(): string {
+  if (process.env['CODEBURN_CACHE_DIR']) return process.env['CODEBURN_CACHE_DIR']
   return join(homedir(), '.cache', 'codeburn')
 }
 
@@ -131,16 +132,23 @@ async function loadCachedPricing(): Promise<Map<string, ModelCosts> | null> {
   }
 }
 
+function mergeSnapshotFallbacks(pricing: Map<string, ModelCosts>): Map<string, ModelCosts> {
+  for (const [name, costs] of loadSnapshot()) {
+    if (!pricing.has(name)) pricing.set(name, costs)
+  }
+  return pricing
+}
+
 export async function loadPricing(): Promise<void> {
   const cached = await loadCachedPricing()
   if (cached) {
-    pricingCache = cached
+    pricingCache = mergeSnapshotFallbacks(cached)
     sortedPricingKeys = null
     return
   }
 
   try {
-    pricingCache = await fetchAndCachePricing()
+    pricingCache = mergeSnapshotFallbacks(await fetchAndCachePricing())
     sortedPricingKeys = null
   } catch {
     // snapshot already loaded at init; nothing more to do
@@ -421,6 +429,8 @@ const SHORT_NAMES: Record<string, string> = {
   'kimi-k2': 'Kimi K2',
   'kimi-latest': 'Kimi Latest',
   'moonshot-v1': 'Moonshot v1',
+  'deepseek-v4-pro': 'DeepSeek v4 Pro',
+  'deepseek-v4-flash': 'DeepSeek v4 Flash',
   'deepseek-coder-max': 'DeepSeek Coder Max',
   'deepseek-coder': 'DeepSeek Coder',
   'deepseek-r1': 'DeepSeek R1',
