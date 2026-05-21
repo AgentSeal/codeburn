@@ -77,6 +77,7 @@ export type ParsedApiCall = {
   tools: string[]
   mcpTools: string[]
   skills: string[]
+  subagentTypes: string[]
   hasAgentSpawn: boolean
   hasPlanMode: boolean
   speed: 'standard' | 'fast'
@@ -127,6 +128,7 @@ export type SessionSummary = {
   bashBreakdown: Record<string, { calls: number }>
   categoryBreakdown: Record<TaskCategory, { turns: number; costUSD: number; retries: number; editTurns: number; oneShotTurns: number }>
   skillBreakdown: Record<string, { turns: number; costUSD: number; editTurns: number; oneShotTurns: number }>
+  subagentBreakdown: Record<string, { calls: number; costUSD: number }>
   // Observed MCP tools available in this session, captured from
   // `attachment.deferred_tools_delta.addedNames` entries. Union across all
   // turns. Each name is a fully-qualified `mcp__<server>__<tool>` identifier.

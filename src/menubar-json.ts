@@ -123,6 +123,10 @@ export type MenubarPayload = {
         savingsUSD: number
       }>
     }
+    tools: Array<{ name: string; calls: number }>
+    skills: Array<{ name: string; turns: number; cost: number }>
+    subagents: Array<{ name: string; calls: number; cost: number }>
+    mcpServers: Array<{ name: string; calls: number }>
   }
   optimize: {
     findingCount: number
@@ -246,6 +250,13 @@ function buildTopSessions(sessions: PeriodData['topSessions']): MenubarPayload['
     .map(s => ({ project: s.project, cost: s.cost, calls: s.calls, date: s.date }))
 }
 
+export type BreakdownArrays = {
+  tools?: MenubarPayload['current']['tools']
+  skills?: MenubarPayload['current']['skills']
+  subagents?: MenubarPayload['current']['subagents']
+  mcpServers?: MenubarPayload['current']['mcpServers']
+}
+
 export function buildMenubarPayload(
   current: PeriodData,
   providers: ProviderCost[],
@@ -253,6 +264,7 @@ export function buildMenubarPayload(
   dailyHistory?: DailyHistoryEntry[],
   retryTax?: MenubarPayload['current']['retryTax'],
   routingWaste?: MenubarPayload['current']['routingWaste'],
+  breakdowns?: BreakdownArrays,
 ): MenubarPayload {
   return {
     generated: new Date().toISOString(),
@@ -273,6 +285,10 @@ export function buildMenubarPayload(
       topSessions: buildTopSessions(current.topSessions ?? []),
       retryTax: retryTax ?? { totalUSD: 0, retries: 0, editTurns: 0, byModel: [] },
       routingWaste: routingWaste ?? { totalSavingsUSD: 0, baselineModel: '', baselineCostPerEdit: 0, byModel: [] },
+      tools: breakdowns?.tools ?? [],
+      skills: breakdowns?.skills ?? [],
+      subagents: breakdowns?.subagents ?? [],
+      mcpServers: breakdowns?.mcpServers ?? [],
     },
     optimize: buildOptimize(optimize),
     history: buildHistory(dailyHistory),

@@ -27,6 +27,7 @@ export type CachedCall = {
   tools: string[]
   bashCommands: string[]
   skills: string[]
+  subagentTypes: string[]
   deduplicationKey: string
   project?: string
   projectPath?: string

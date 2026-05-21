@@ -105,13 +105,18 @@ struct CurrentBlock: Codable, Sendable {
     let topSessions: [TopSessionEntry]
     let retryTax: RetryTax
     let routingWaste: RoutingWaste
+    let tools: [ToolEntry]
+    let skills: [SkillEntry]
+    let subagents: [SubagentEntry]
+    let mcpServers: [McpServerEntry]
 }
 
 extension CurrentBlock {
     enum CodingKeys: String, CodingKey {
         case label, cost, calls, sessions, oneShotRate, inputTokens, outputTokens,
              cacheHitPercent, topActivities, topModels, providers, topProjects,
-             modelEfficiency, topSessions, retryTax, routingWaste
+             modelEfficiency, topSessions, retryTax, routingWaste,
+             tools, skills, subagents, mcpServers
     }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -131,6 +136,10 @@ extension CurrentBlock {
         topSessions = try c.decodeIfPresent([TopSessionEntry].self, forKey: .topSessions) ?? []
         retryTax = try c.decodeIfPresent(RetryTax.self, forKey: .retryTax) ?? RetryTax(totalUSD: 0, retries: 0, editTurns: 0, byModel: [])
         routingWaste = try c.decodeIfPresent(RoutingWaste.self, forKey: .routingWaste) ?? RoutingWaste(totalSavingsUSD: 0, baselineModel: "", baselineCostPerEdit: 0, byModel: [])
+        tools = try c.decodeIfPresent([ToolEntry].self, forKey: .tools) ?? []
+        skills = try c.decodeIfPresent([SkillEntry].self, forKey: .skills) ?? []
+        subagents = try c.decodeIfPresent([SubagentEntry].self, forKey: .subagents) ?? []
+        mcpServers = try c.decodeIfPresent([McpServerEntry].self, forKey: .mcpServers) ?? []
     }
 }
 
@@ -195,6 +204,28 @@ struct TopSessionEntry: Codable, Sendable {
     let date: String
 }
 
+struct ToolEntry: Codable, Sendable {
+    let name: String
+    let calls: Int
+}
+
+struct SkillEntry: Codable, Sendable {
+    let name: String
+    let turns: Int
+    let cost: Double
+}
+
+struct SubagentEntry: Codable, Sendable {
+    let name: String
+    let calls: Int
+    let cost: Double
+}
+
+struct McpServerEntry: Codable, Sendable {
+    let name: String
+    let calls: Int
+}
+
 struct OptimizeBlock: Codable, Sendable {
     let findingCount: Int
     let savingsUSD: Double
@@ -230,7 +261,11 @@ extension MenubarPayload {
             modelEfficiency: [],
             topSessions: [],
             retryTax: RetryTax(totalUSD: 0, retries: 0, editTurns: 0, byModel: []),
-            routingWaste: RoutingWaste(totalSavingsUSD: 0, baselineModel: "", baselineCostPerEdit: 0, byModel: [])
+            routingWaste: RoutingWaste(totalSavingsUSD: 0, baselineModel: "", baselineCostPerEdit: 0, byModel: []),
+            tools: [],
+            skills: [],
+            subagents: [],
+            mcpServers: []
         ),
         optimize: OptimizeBlock(findingCount: 0, savingsUSD: 0, topFindings: []),
         history: HistoryBlock(daily: [])

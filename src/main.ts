@@ -6,7 +6,7 @@ import { loadPricing, setModelAliases } from './models.js'
 import { parseAllSessions, filterProjectsByName, filterProjectsByDateRange, clearSessionCache } from './parser.js'
 import { convertCost } from './currency.js'
 import { renderStatusBar } from './format.js'
-import { type PeriodData, type ProviderCost } from './menubar-json.js'
+import { type PeriodData, type ProviderCost, type BreakdownArrays } from './menubar-json.js'
 import { buildMenubarPayload } from './menubar-json.js'
 import { getDaysInRange, ensureCacheHydrated, loadDailyCache, emptyCache, BACKFILL_DAYS, toDateString, type DailyCache } from './daily-cache.js'
 import { aggregateProjectsIntoDays, buildPeriodDataFromDays, dateKey } from './day-aggregator.js'
@@ -290,6 +290,8 @@ function buildJsonReport(projects: ProjectSummary[], period: string, periodKey: 
   const toolMap: Record<string, number> = {}
   const mcpMap: Record<string, number> = {}
   const bashMap: Record<string, number> = {}
+  const skillMap: Record<string, { turns: number; cost: number }> = {}
+  const subagentMap: Record<string, { calls: number; cost: number }> = {}
   for (const sess of sessions) {
     for (const [tool, d] of Object.entries(sess.toolBreakdown)) {
       toolMap[tool] = (toolMap[tool] ?? 0) + d.calls
@@ -299,6 +301,16 @@ function buildJsonReport(projects: ProjectSummary[], period: string, periodKey: 
     }
     for (const [cmd, d] of Object.entries(sess.bashBreakdown)) {
       bashMap[cmd] = (bashMap[cmd] ?? 0) + d.calls
+    }
+    for (const [skill, d] of Object.entries(sess.skillBreakdown)) {
+      if (!skillMap[skill]) skillMap[skill] = { turns: 0, cost: 0 }
+      skillMap[skill].turns += d.turns
+      skillMap[skill].cost += d.costUSD
+    }
+    for (const [sat, d] of Object.entries(sess.subagentBreakdown)) {
+      if (!subagentMap[sat]) subagentMap[sat] = { calls: 0, cost: 0 }
+      subagentMap[sat].calls += d.calls
+      subagentMap[sat].cost += d.costUSD
     }
   }
 
@@ -334,6 +346,8 @@ function buildJsonReport(projects: ProjectSummary[], period: string, periodKey: 
     tools: sortedMap(toolMap),
     mcpServers: sortedMap(mcpMap),
     shellCommands: sortedMap(bashMap),
+    skills: Object.entries(skillMap).sort(([, a], [, b]) => b.cost - a.cost).map(([name, d]) => ({ name, turns: d.turns, cost: convertCost(d.cost) })),
+    subagents: Object.entries(subagentMap).sort(([, a], [, b]) => b.cost - a.cost).map(([name, d]) => ({ name, calls: d.calls, cost: convertCost(d.cost) })),
     topSessions,
   }
 }
@@ -680,8 +694,27 @@ program
         byModel: routingWasteByModel.slice(0, 5),
       }
 
+      const breakdowns: BreakdownArrays = (() => {
+        const toolMap: Record<string, number> = {}
+        const skillMap: Record<string, { turns: number; cost: number }> = {}
+        const subagentMap: Record<string, { calls: number; cost: number }> = {}
+        const mcpMap: Record<string, number> = {}
+        for (const p of scanProjects) for (const s of p.sessions) {
+          for (const [t, d] of Object.entries(s.toolBreakdown)) { if (!t.startsWith('lang:')) toolMap[t] = (toolMap[t] ?? 0) + d.calls }
+          for (const [sk, d] of Object.entries(s.skillBreakdown)) { const e = skillMap[sk] ?? { turns: 0, cost: 0 }; e.turns += d.turns; e.cost += d.costUSD; skillMap[sk] = e }
+          for (const [sa, d] of Object.entries(s.subagentBreakdown)) { const e = subagentMap[sa] ?? { calls: 0, cost: 0 }; e.calls += d.calls; e.cost += d.costUSD; subagentMap[sa] = e }
+          for (const [m, d] of Object.entries(s.mcpBreakdown)) { mcpMap[m] = (mcpMap[m] ?? 0) + d.calls }
+        }
+        return {
+          tools: Object.entries(toolMap).sort(([, a], [, b]) => b - a).slice(0, 10).map(([name, calls]) => ({ name, calls })),
+          skills: Object.entries(skillMap).sort(([, a], [, b]) => b.cost - a.cost).slice(0, 10).map(([name, d]) => ({ name, ...d })),
+          subagents: Object.entries(subagentMap).sort(([, a], [, b]) => b.cost - a.cost).slice(0, 10).map(([name, d]) => ({ name, ...d })),
+          mcpServers: Object.entries(mcpMap).sort(([, a], [, b]) => b - a).slice(0, 10).map(([name, calls]) => ({ name, calls })),
+        }
+      })()
+
       const optimize = opts.optimize === false ? null : await scanAndDetect(scanProjects, scanRange)
-      console.log(JSON.stringify(buildMenubarPayload(currentData, providers, optimize, dailyHistory, retryTax, routingWaste)))
+      console.log(JSON.stringify(buildMenubarPayload(currentData, providers, optimize, dailyHistory, retryTax, routingWaste, breakdowns)))
       return
     }
 

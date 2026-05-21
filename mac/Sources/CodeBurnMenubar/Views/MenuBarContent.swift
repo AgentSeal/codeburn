@@ -36,6 +36,8 @@ struct MenuBarContent: View {
                             Divider().opacity(0.5)
                             ModelsSection()
                             Divider().opacity(0.5)
+                            ToolingSection()
+                            Divider().opacity(0.5)
                             FindingsSection()
                         }
                     }

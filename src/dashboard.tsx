@@ -40,12 +40,12 @@ const PANEL_COLORS = {
   overview: '#FF8C42',
   daily: '#5B9EF5',
   project: '#5BF5A0',
-  sessions: '#FF6B6B',
   model: '#E05BF5',
   activity: '#F5C85B',
   tools: '#5BF5E0',
   mcp: '#F55BE0',
   bash: '#F5A05B',
+  skills: '#7B68EE',
 }
 
 const PROVIDER_COLORS: Record<string, string> = {
@@ -465,43 +465,6 @@ function ToolBreakdown({ projects, pw, bw, title, filterPrefix }: { projects: Pr
   )
 }
 
-const TOP_SESSIONS_DATE_LEN = 10
-const TOP_SESSIONS_COST_COL = 8
-const TOP_SESSIONS_CALLS_COL = 6
-
-function TopSessions({ projects, pw, bw }: { projects: ProjectSummary[]; pw: number; bw: number }) {
-  const allSessions = projects.flatMap(p =>
-    p.sessions.map(s => ({ ...s, projectPath: p.projectPath }))
-  )
-  const top = [...allSessions].sort((a, b) => b.totalCostUSD - a.totalCostUSD).slice(0, 5)
-
-  if (top.length === 0) {
-    return <Panel title="Top Sessions" color={PANEL_COLORS.sessions} width={pw}><Text dimColor>No sessions</Text></Panel>
-  }
-
-  const maxCost = top[0].totalCostUSD
-  const nw = Math.max(8, pw - bw - TOP_SESSIONS_COST_COL - TOP_SESSIONS_CALLS_COL - 1 - PANEL_CHROME)
-
-  return (
-    <Panel title="Top Sessions" color={PANEL_COLORS.sessions} width={pw}>
-      <Text dimColor wrap="truncate-end">{''.padEnd(bw + 1 + nw)}{'cost'.padStart(TOP_SESSIONS_COST_COL)}{'calls'.padStart(TOP_SESSIONS_CALLS_COL)}</Text>
-      {top.map((session, i) => {
-        const date = session.firstTimestamp
-          ? session.firstTimestamp.slice(0, TOP_SESSIONS_DATE_LEN)
-          : '----------'
-        const label = `${date} ${shortProject(session.projectPath)}`
-        return (
-          <Text key={`${session.sessionId}-${i}`} wrap="truncate-end">
-            <HBar value={session.totalCostUSD} max={maxCost} width={bw} />
-            <Text dimColor> {fit(label, nw - 1)}</Text>
-            <Text color={GOLD}>{formatCost(session.totalCostUSD).padStart(TOP_SESSIONS_COST_COL)}</Text>
-            <Text>{String(session.apiCalls).padStart(TOP_SESSIONS_CALLS_COL)}</Text>
-          </Text>
-        )
-      })}
-    </Panel>
-  )
-}
 
 function McpBreakdown({ projects, pw, bw }: { projects: ProjectSummary[]; pw: number; bw: number }) {
   const mcpTotals: Record<string, number> = {}
@@ -532,6 +495,26 @@ function BashBreakdown({ projects, pw, bw }: { projects: ProjectSummary[]; pw: n
       <Text dimColor wrap="truncate-end">{''.padEnd(bw + 1 + nw)}{'calls'.padStart(7)}</Text>
       {sorted.slice(0, 10).map(([cmd, calls]) => (
         <Text key={cmd} wrap="truncate-end"><HBar value={calls} max={maxCalls} width={bw} /><Text> {fit(cmd, nw)}</Text><Text>{String(calls).padStart(7)}</Text></Text>
+      ))}
+    </Panel>
+  )
+}
+
+function SkillsAndAgents({ projects, pw, bw }: { projects: ProjectSummary[]; pw: number; bw: number }) {
+  const merged: Record<string, { uses: number; cost: number }> = {}
+  for (const project of projects) { for (const session of project.sessions) {
+    for (const [skill, d] of Object.entries(session.skillBreakdown)) { const e = merged[skill] ?? { uses: 0, cost: 0 }; e.uses += d.turns; e.cost += d.costUSD; merged[skill] = e }
+    for (const [agent, d] of Object.entries(session.subagentBreakdown)) { const e = merged[agent] ?? { uses: 0, cost: 0 }; e.uses += d.calls; e.cost += d.costUSD; merged[agent] = e }
+  } }
+  const sorted = Object.entries(merged).sort(([, a], [, b]) => b.cost - a.cost)
+  if (sorted.length === 0) return <Panel title="Skills & Agents" color={PANEL_COLORS.skills} width={pw}><Text dimColor>No skill/agent usage</Text></Panel>
+  const maxCost = sorted[0]?.[1]?.cost ?? 0
+  const nw = Math.max(6, pw - bw - 22)
+  return (
+    <Panel title="Skills & Agents" color={PANEL_COLORS.skills} width={pw}>
+      <Text dimColor wrap="truncate-end">{''.padEnd(bw + 1 + nw)}{'uses'.padStart(6)}{'cost'.padStart(8)}</Text>
+      {sorted.slice(0, 10).map(([name, d]) => (
+        <Text key={name} wrap="truncate-end"><HBar value={d.cost} max={maxCost} width={bw} /><Text> {fit(name, nw)}</Text><Text>{String(d.uses).padStart(6)}</Text><Text color={GOLD}>{formatCost(d.cost).padStart(8)}</Text></Text>
       ))}
     </Panel>
   )
@@ -712,12 +695,11 @@ function DashboardContent({ projects, period, columns, activeProvider, budgets, 
     <Box flexDirection="column" width={dashWidth}>
       <Overview projects={projects} label={PERIOD_LABELS[period]} width={dashWidth} planUsages={planUsages} />
       <Row wide={wide} width={dashWidth}><DailyActivity projects={projects} days={days} pw={pw} bw={barWidth} /><ProjectBreakdown projects={projects} pw={pw} bw={barWidth} budgets={budgets} /></Row>
-      <TopSessions projects={projects} pw={dashWidth} bw={barWidth} />
       <Row wide={wide} width={dashWidth}><ActivityBreakdown projects={projects} pw={pw} bw={barWidth} /><ModelBreakdown projects={projects} pw={pw} bw={barWidth} /></Row>
       {isCursor ? (
         <ToolBreakdown projects={projects} pw={dashWidth} bw={barWidth} title="Languages" filterPrefix="lang:" />
       ) : (
-        <><Row wide={wide} width={dashWidth}><ToolBreakdown projects={projects} pw={pw} bw={barWidth} /><BashBreakdown projects={projects} pw={pw} bw={barWidth} /></Row><McpBreakdown projects={projects} pw={dashWidth} bw={barWidth} /></>
+        <><Row wide={wide} width={dashWidth}><ToolBreakdown projects={projects} pw={pw} bw={barWidth} /><BashBreakdown projects={projects} pw={pw} bw={barWidth} /></Row><Row wide={wide} width={dashWidth}><SkillsAndAgents projects={projects} pw={pw} bw={barWidth} /><McpBreakdown projects={projects} pw={pw} bw={barWidth} /></Row></>
       )}
     </Box>
   )

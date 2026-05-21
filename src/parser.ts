@@ -908,6 +908,17 @@ function extractSkillNames(content: ContentBlock[]): string[] {
     .filter(name => name.length > 0)
 }
 
+function extractSubagentTypes(content: ContentBlock[]): string[] {
+  return content
+    .filter((b): b is ToolUseBlock => b.type === 'tool_use' && (b.name === 'Agent' || b.name === 'Task'))
+    .map(b => {
+      const input = (b.input ?? {}) as Record<string, unknown>
+      const raw = input['subagent_type']
+      return typeof raw === 'string' ? raw.trim() : ''
+    })
+    .filter(name => name.length > 0)
+}
+
 function extractCoreTools(tools: string[]): string[] {
   return tools.filter(t => !t.startsWith('mcp__'))
 }
@@ -981,6 +992,7 @@ function parseApiCall(entry: JournalEntry): ParsedApiCall | null {
 
   const tools = extractToolNames(msg.content ?? [])
   const skills = extractSkillNames(msg.content ?? [])
+  const subagentTypes = extractSubagentTypes(msg.content ?? [])
   const costUSD = calculateCost(
     msg.model,
     tokens.inputTokens,
@@ -1002,6 +1014,7 @@ function parseApiCall(entry: JournalEntry): ParsedApiCall | null {
     tools,
     mcpTools: extractMcpTools(tools),
     skills,
+    subagentTypes,
     hasAgentSpawn: tools.includes('Agent'),
     hasPlanMode: tools.includes('EnterPlanMode'),
     speed: usage.speed ?? 'standard',
@@ -1145,6 +1158,7 @@ function buildSessionSummary(
   const bashBreakdown: SessionSummary['bashBreakdown'] = Object.create(null)
   const categoryBreakdown: SessionSummary['categoryBreakdown'] = Object.create(null)
   const skillBreakdown: SessionSummary['skillBreakdown'] = Object.create(null)
+  const subagentBreakdown: SessionSummary['subagentBreakdown'] = Object.create(null)
 
   let totalCost = 0
   let totalInput = 0
@@ -1218,6 +1232,11 @@ function buildSessionSummary(
         bashBreakdown[cmd] = bashBreakdown[cmd] ?? { calls: 0 }
         bashBreakdown[cmd].calls++
       }
+      for (const sat of call.subagentTypes) {
+        subagentBreakdown[sat] = subagentBreakdown[sat] ?? { calls: 0, costUSD: 0 }
+        subagentBreakdown[sat].calls++
+        subagentBreakdown[sat].costUSD += call.costUSD
+      }
 
       if (!firstTs || call.timestamp < firstTs) firstTs = call.timestamp
       if (!lastTs || call.timestamp > lastTs) lastTs = call.timestamp
@@ -1242,6 +1261,7 @@ function buildSessionSummary(
     bashBreakdown,
     categoryBreakdown,
     skillBreakdown,
+    subagentBreakdown,
     ...(mcpInventory && mcpInventory.length > 0 ? { mcpInventory } : {}),
   }
 }
@@ -1499,6 +1519,7 @@ function providerCallToTurn(call: ParsedProviderCall): ParsedTurn {
     tools,
     mcpTools: extractMcpTools(tools),
     skills: [],
+    subagentTypes: [],
     hasAgentSpawn: tools.includes('Agent'),
     hasPlanMode: tools.includes('EnterPlanMode'),
     speed: call.speed,
@@ -1537,6 +1558,7 @@ function providerCallToCachedCall(call: ParsedProviderCall): CachedCall {
     tools: call.tools,
     bashCommands: call.bashCommands,
     skills: [],
+    subagentTypes: [],
     deduplicationKey: call.deduplicationKey,
     project: call.project,
     projectPath: call.projectPath,
@@ -1554,6 +1576,7 @@ function apiCallToCachedCall(call: ParsedApiCall): CachedCall {
     tools: call.tools,
     bashCommands: call.bashCommands,
     skills: call.skills,
+    subagentTypes: call.subagentTypes,
     deduplicationKey: call.deduplicationKey,
   }
 }
@@ -1630,6 +1653,7 @@ function cachedCallToApiCall(call: CachedCall): ParsedApiCall {
     tools: call.tools,
     mcpTools: extractMcpTools(call.tools),
     skills: call.skills,
+    subagentTypes: call.subagentTypes ?? [],
     hasAgentSpawn: call.tools.includes('Agent'),
     hasPlanMode: call.tools.includes('EnterPlanMode'),
     speed: call.speed,
