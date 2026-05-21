@@ -1531,7 +1531,7 @@ function providerCallToCachedCall(call: ParsedProviderCall): CachedCall {
       webSearchRequests: call.webSearchRequests,
       cacheCreationOneHourTokens: 0,
     },
-    costUSD: call.provider === 'mistral-vibe' ? call.costUSD : undefined,
+    costUSD: call.provider === 'mistral-vibe' || call.preserveCostUSD ? call.costUSD : undefined,
     speed: call.speed,
     timestamp: call.timestamp,
     tools: call.tools,
