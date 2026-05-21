@@ -20,6 +20,7 @@ export type ParsedProviderCall = {
   webSearchRequests: number
   costUSD: number
   costIsEstimated?: boolean
+  preserveCostUSD?: boolean
   tools: string[]
   bashCommands: string[]
   timestamp: string

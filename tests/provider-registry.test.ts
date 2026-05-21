@@ -30,7 +30,16 @@ describe('provider registry', () => {
     expect(names).toContain('claude')
     expect(names).toContain('codex')
     expect(names).toContain('warp')
+    expect(names).toContain('hermes')
     expect(names.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('hermes model and tool display names are normalized', async () => {
+    const hermes = await getProvider('hermes')
+    expect(hermes).toBeDefined()
+    expect(hermes!.modelDisplayName('anthropic/claude-sonnet-4.6')).toBe('Sonnet 4.6')
+    expect(hermes!.toolDisplayName('terminal')).toBe('Bash')
+    expect(hermes!.toolDisplayName('mcp_github_search_code')).toBe('mcp__github__search_code')
   })
 
   it('warp model and tool display names are normalized', async () => {

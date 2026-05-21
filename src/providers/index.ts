@@ -20,6 +20,8 @@ let antigravityProvider: Provider | null = null
 let antigravityLoadAttempted = false
 let warpProvider: Provider | null = null
 let warpLoadAttempted = false
+let hermesProvider: Provider | null = null
+let hermesLoadAttempted = false
 
 async function loadAntigravity(): Promise<Provider | null> {
   if (antigravityLoadAttempted) return antigravityProvider
@@ -40,6 +42,18 @@ async function loadWarp(): Promise<Provider | null> {
     const { warp } = await import('./warp.js')
     warpProvider = warp
     return warp
+  } catch {
+    return null
+  }
+}
+
+async function loadHermes(): Promise<Provider | null> {
+  if (hermesLoadAttempted) return hermesProvider
+  hermesLoadAttempted = true
+  try {
+    const { hermes } = await import('./hermes.js')
+    hermesProvider = hermes
+    return hermes
   } catch {
     return null
   }
@@ -123,7 +137,7 @@ async function loadCrush(): Promise<Provider | null> {
 const coreProviders: Provider[] = [claude, cline, codebuff, codex, copilot, droid, gemini, ibmBob, kiloCode, kiro, kimi, mistralVibe, openclaw, pi, omp, qwen, rooCode]
 
 export async function getAllProviders(): Promise<Provider[]> {
-  const [ag, gs, cursor, opencode, cursorAgent, crush, warp] = await Promise.all([loadAntigravity(), loadGoose(), loadCursor(), loadOpenCode(), loadCursorAgent(), loadCrush(), loadWarp()])
+  const [ag, gs, cursor, opencode, cursorAgent, crush, warp, hermes] = await Promise.all([loadAntigravity(), loadGoose(), loadCursor(), loadOpenCode(), loadCursorAgent(), loadCrush(), loadWarp(), loadHermes()])
   const all = [...coreProviders]
   if (ag) all.push(ag)
   if (gs) all.push(gs)
@@ -132,6 +146,7 @@ export async function getAllProviders(): Promise<Provider[]> {
   if (cursorAgent) all.push(cursorAgent)
   if (crush) all.push(crush)
   if (warp) all.push(warp)
+  if (hermes) all.push(hermes)
   return all
 }
 
@@ -178,6 +193,10 @@ export async function getProvider(name: string): Promise<Provider | undefined> {
   if (name === 'warp') {
     const w = await loadWarp()
     return w ?? undefined
+  }
+  if (name === 'hermes') {
+    const h = await loadHermes()
+    return h ?? undefined
   }
   return coreProviders.find(p => p.name === name)
 }
