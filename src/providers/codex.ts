@@ -371,12 +371,14 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
           const mapped = toolNameMap[rawName] ?? rawName
           pendingTools.push(mapped)
           const call: ToolCall = { tool: mapped }
-          const p = entry.payload as Record<string, unknown>
-          const args = p['arguments']
-          if (typeof args === 'object' && args) {
-            const fp = (args as Record<string, unknown>)['file_path']
+          const rawArgs = (entry.payload as Record<string, unknown>)['arguments']
+          const args = typeof rawArgs === 'string'
+            ? (() => { try { return JSON.parse(rawArgs) as Record<string, unknown> } catch { return null } })()
+            : typeof rawArgs === 'object' && rawArgs ? rawArgs as Record<string, unknown> : null
+          if (args) {
+            const fp = args['file_path'] ?? args['path']
             if (typeof fp === 'string') call.file = fp
-            const cmd = (args as Record<string, unknown>)['command']
+            const cmd = args['command'] ?? args['cmd']
             if (typeof cmd === 'string') call.command = cmd
           }
           pendingToolSequence.push([call])
@@ -385,11 +387,16 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
 
         if (entry.type === 'event_msg' && entry.payload?.type === 'patch_apply_end') {
           pendingTools.push('Edit')
-          const call: ToolCall = { tool: 'Edit' }
           const p = entry.payload as Record<string, unknown>
-          const fp = p['file_path'] ?? p['filePath']
-          if (typeof fp === 'string') call.file = fp
-          pendingToolSequence.push([call])
+          const changes = p['changes']
+          const filePaths = typeof changes === 'object' && changes ? Object.keys(changes as object) : []
+          if (filePaths.length > 0) {
+            for (const fp of filePaths) {
+              pendingToolSequence.push([{ tool: 'Edit', file: fp }])
+            }
+          } else {
+            pendingToolSequence.push([{ tool: 'Edit' }])
+          }
           continue
         }
 
