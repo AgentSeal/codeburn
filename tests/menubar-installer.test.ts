@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildPersistentCodeburnLookupPath,
   resolveLatestMenubarReleaseAssets,
   resolveMenubarReleaseAssets,
+  resolvePersistentCodeburnPathFromWhichOutput,
   type ReleaseResponse,
 } from '../src/menubar-installer.js'
 
@@ -71,5 +73,27 @@ describe('resolveMenubarReleaseAssets', () => {
 
     expect(resolved.release.tag_name).toBe('mac-v0.9.8')
     expect(resolved.zip.name).toBe('CodeBurnMenubar-v0.9.8.zip')
+  })
+
+  it('preserves the caller PATH when building the persistent CLI lookup PATH', () => {
+    const lookupPath = buildPersistentCodeburnLookupPath('/Users/me/.nvm/versions/node/v22.13.0/bin:/usr/bin')
+
+    expect(lookupPath.split(':')).toContain('/Users/me/.nvm/versions/node/v22.13.0/bin')
+    expect(lookupPath.split(':')).toContain('/opt/homebrew/bin')
+  })
+
+  it('selects a persistent codeburn binary when npx is first in which output', () => {
+    const resolved = resolvePersistentCodeburnPathFromWhichOutput([
+      '/Users/me/.npm/_npx/abcd/node_modules/.bin/codeburn',
+      '/Users/me/.nvm/versions/node/v22.13.0/bin/codeburn',
+    ].join('\n'))
+
+    expect(resolved).toBe('/Users/me/.nvm/versions/node/v22.13.0/bin/codeburn')
+  })
+
+  it('shows the install guidance instead of a raw env failure when only npx is available', () => {
+    expect(() => resolvePersistentCodeburnPathFromWhichOutput(
+      '/Users/me/.npm/_npx/abcd/node_modules/.bin/codeburn'
+    )).toThrow(/Install CodeBurn globally first/)
   })
 })

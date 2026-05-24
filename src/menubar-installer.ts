@@ -18,6 +18,9 @@ const APP_PROCESS_NAME = 'CodeBurnMenubar'
 const SUPPORTED_OS = 'darwin'
 const MIN_MACOS_MAJOR = 14
 const PERSISTED_CLI_PATH = join(homedir(), 'Library', 'Application Support', 'CodeBurn', 'codeburn-cli-path.v1')
+const PERSISTENT_CLI_REQUIRED_MESSAGE =
+  'The menubar app needs a persistent codeburn command. Install CodeBurn globally first: npm install -g codeburn'
+const DEFAULT_CLI_LOOKUP_PATHS = ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin']
 
 export type InstallResult = { installedPath: string; launched: boolean }
 
@@ -50,6 +53,30 @@ export function resolveLatestMenubarReleaseAssets(releases: ReleaseResponse[]): 
     }
   }
   throw new Error('No mac-v* release with a CodeBurnMenubar-v*.zip and checksum was found.')
+}
+
+export function buildPersistentCodeburnLookupPath(existingPath = process.env.PATH ?? ''): string {
+  const parts = existingPath.split(':').filter(Boolean)
+  for (const fallback of DEFAULT_CLI_LOOKUP_PATHS) {
+    if (!parts.includes(fallback)) parts.push(fallback)
+  }
+  return parts.join(':')
+}
+
+function isTransientNpxPath(path: string): boolean {
+  return path.includes('/_npx/') || path.includes('/.npm/_npx/')
+}
+
+export function resolvePersistentCodeburnPathFromWhichOutput(output: string): string {
+  const paths = output
+    .split(/\r?\n/)
+    .map(path => path.trim())
+    .filter(Boolean)
+
+  const persistentPath = paths.find(path => path.startsWith('/') && !isTransientNpxPath(path))
+  if (persistentPath) return persistentPath
+
+  throw new Error(PERSISTENT_CLI_REQUIRED_MESSAGE)
 }
 
 function userApplicationsDir(): string {
@@ -177,18 +204,24 @@ async function verifyBundleIdentity(appPath: string): Promise<void> {
 }
 
 async function resolvePersistentCodeburnPath(): Promise<string> {
-  const path = await captureCommand('/usr/bin/env', [
-    'PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin',
-    'which',
-    'codeburn',
-  ])
+  let output = ''
+  try {
+    output = await captureCommand('/usr/bin/env', [
+      `PATH=${buildPersistentCodeburnLookupPath()}`,
+      'which',
+      '-a',
+      'codeburn',
+    ])
+  } catch {
+    throw new Error(PERSISTENT_CLI_REQUIRED_MESSAGE)
+  }
+
+  const path = resolvePersistentCodeburnPathFromWhichOutput(output)
   if (!path.startsWith('/')) {
     throw new Error('Resolved codeburn path is not absolute.')
   }
-  if (path.includes('/_npx/') || path.includes('/.npm/_npx/')) {
-    throw new Error(
-      'The menubar app needs a persistent codeburn command. Install CodeBurn globally first: npm install -g codeburn'
-    )
+  if (isTransientNpxPath(path)) {
+    throw new Error(PERSISTENT_CLI_REQUIRED_MESSAGE)
   }
   return path
 }
