@@ -1,4 +1,4 @@
-import { appendFile, readdir, readFile, mkdir, stat, open, rename, unlink } from 'fs/promises'
+import { readdir, readFile, mkdir, stat, open, rename, unlink } from 'fs/promises'
 import { execFile } from 'child_process'
 import { randomBytes } from 'crypto'
 import { basename, join } from 'path'
@@ -622,8 +622,13 @@ export async function recordAntigravityStatusLinePayload(input: unknown): Promis
   if (!event) return false
 
   const path = getAntigravityStatusLineEventsPath()
-  await mkdir(getCacheDir(), { recursive: true })
-  await appendFile(path, `${JSON.stringify(event)}\n`, { encoding: 'utf-8', mode: 0o600 })
+  await mkdir(getCacheDir(), { recursive: true, mode: 0o700 })
+  const fd = await open(path, 'a', 0o600)
+  try {
+    await fd.appendFile(`${JSON.stringify(event)}\n`, { encoding: 'utf-8' })
+  } finally {
+    await fd.close()
+  }
   return true
 }
 

@@ -140,11 +140,18 @@ export async function uninstallAntigravityStatusLineHook(): Promise<'removed' | 
   return previous ? 'restored' : 'removed'
 }
 
+const MAX_STDIN_BYTES = 1024 * 1024
+
 function readStdin(): Promise<string> {
   return new Promise((resolve, reject) => {
     let input = ''
+    let bytes = 0
     process.stdin.setEncoding('utf8')
-    process.stdin.on('data', chunk => { input += chunk })
+    process.stdin.on('data', chunk => {
+      bytes += Buffer.byteLength(chunk, 'utf8')
+      if (bytes > MAX_STDIN_BYTES) { process.stdin.destroy(); reject(new Error('stdin too large')); return }
+      input += chunk
+    })
     process.stdin.on('end', () => resolve(input))
     process.stdin.on('error', reject)
   })
