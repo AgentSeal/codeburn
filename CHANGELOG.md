@@ -3,6 +3,10 @@
 ## Unreleased
 
 ### Added (CLI)
+- **Hermes Agent provider.** Track token usage, cost, and tool breakdowns
+  for Hermes Agent sessions. Reads from `~/.hermes/state.db` and per-profile
+  databases. Supports session-level accounting with actual/estimated costs
+  from Hermes, falling back to CodeBurn's model pricing table.
 - **Tooling breakdowns in dashboard and menubar.** New panels showing core
   tools, MCP servers, and shell command usage per session and across periods.
 - **File-aware retry detection with typed ToolCall.** One-shot rate now tracks
@@ -13,6 +17,10 @@
   tool-name-based detection.
 
 ### Fixed (CLI)
+- **Hermes profile and Windows project parsing.** Hermes Agent state databases
+  now only treat exact `profiles/<name>/state.db` paths as named profiles,
+  avoiding sibling-directory prefix collisions, and `Current working directory:`
+  inference recognizes Windows drive paths.
 - **Codex 100% one-shot rate.** Codex function_call arguments are JSON strings,
   not objects, and `patch_apply_end` stores file paths in `changes` object keys.
   Both are now parsed correctly.
