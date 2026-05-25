@@ -3,120 +3,285 @@
 <head>
 <meta charset="UTF-8">
 <style>
+:root {
+  --bg:     #111118;
+  --bg2:    #18181b;
+  --border: #27272a;
+  --accent: #e94560;
+  --text:   #d4d4d8;
+  --dim:    #a1a1aa;
+  --muted:  #52525b;
+  --sub:    #71717a;
+}
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
   font-family: 'Segoe UI', system-ui, sans-serif;
   font-size: 12px;
-  background: #111118;
-  color: #d4d4d8;
+  background: var(--bg);
+  color: var(--text);
   user-select: none;
   overflow: hidden;
-  border: 1px solid #2a2a3e;
+  border: 1px solid var(--border);
   border-radius: 10px;
-  height: 500px;
+  height: 100vh;
   display: flex;
   flex-direction: column;
+  position: relative;
 }
 
 /* ── Titlebar ─────────────────────────────── */
 .titlebar {
-  background: #18181b;
-  padding: 10px 14px 9px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+  background: var(--bg2);
+  padding: 8px 10px 7px 14px;
+  display: flex; justify-content: space-between; align-items: center;
   -webkit-app-region: drag;
-  border-bottom: 1px solid #27272a;
+  border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
-.title { font-weight: 700; font-size: 13px; color: #e94560; letter-spacing: 0.3px; }
-.close-btn {
-  -webkit-app-region: no-drag;
-  cursor: pointer; color: #52525b; font-size: 14px;
-  border: none; background: none; padding: 0 4px; line-height: 1;
+.title { font-weight: 700; font-size: 13px; color: var(--accent); letter-spacing: 0.3px; }
+.tb-btns { display: flex; align-items: center; gap: 1px; -webkit-app-region: no-drag; }
+.tb-btn {
+  background: none; border: none; cursor: pointer; color: var(--muted);
+  font-size: 13px; width: 24px; height: 24px; border-radius: 5px;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .1s, color .1s; line-height: 1;
 }
-.close-btn:hover { color: #e94560; }
+.tb-btn:hover         { background: var(--border); color: var(--text); }
+.tb-btn.active        { color: var(--accent); background: color-mix(in srgb,var(--accent) 15%,transparent); }
+.tb-btn.close:hover   { background: #7f1d1d; color: #fca5a5; }
+
+/* ── Float panels ─────────────────────────── */
+.float-panel {
+  position: absolute; top: 40px; right: 10px;
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 12px; z-index: 100;
+  box-shadow: 0 8px 24px rgba(0,0,0,.55);
+  min-width: 210px;
+}
+.float-panel.hidden { display: none; }
+.panel-label {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px;
+  color: var(--muted); margin-bottom: 8px; display: block;
+}
+
+.color-row {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 10px;
+}
+.color-row:last-child { margin-bottom: 0; }
+.color-row label { font-size: 12px; color: var(--dim); }
+.color-row input[type="color"] {
+  -webkit-appearance: none;
+  width: 44px; height: 26px;
+  border: 1px solid var(--border); border-radius: 5px;
+  cursor: pointer; background: none; padding: 2px; outline: none;
+}
+.color-row input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+.color-row input[type="color"]::-webkit-color-swatch { border: none; border-radius: 3px; }
+
+.lang-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.lang-btn {
+  background: none; border: 1px solid var(--border); border-radius: 5px;
+  color: var(--dim); cursor: pointer; padding: 5px 8px; font-size: 11px; text-align: left;
+  transition: background .1s, color .1s;
+}
+.lang-btn:hover  { background: var(--border); color: var(--text); }
+.lang-btn.active { border-color: var(--accent); color: var(--accent); }
+
+.rate-badge {
+  font-size: 10px; color: var(--muted); margin-top: 8px; padding-top: 8px;
+  border-top: 1px solid var(--border);
+  display: flex; align-items: center; gap: 5px;
+}
+.rate-dot { width: 6px; height: 6px; border-radius: 50%; background: #10b981; flex-shrink: 0; }
+.rate-dot.loading { background: var(--sub); animation: pulse .8s ease-in-out infinite; }
+.rate-dot.error   { background: #ef4444; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+/* ── View nav ─────────────────────────────── */
+.view-nav {
+  display: flex; justify-content: center; padding: 0 6px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0; -webkit-app-region: no-drag;
+  overflow-x: auto;
+}
+.view-nav::-webkit-scrollbar { display: none; }
+.view-btn {
+  background: none; border: none; border-bottom: 2px solid transparent;
+  color: var(--sub); cursor: pointer; padding: 6px 8px; font-size: 11px;
+  margin-bottom: -1px; transition: color .1s, border-color .1s; white-space: nowrap;
+}
+.view-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+.view-btn:hover:not(.active) { color: var(--dim); }
 
 /* ── Period tabs ──────────────────────────── */
 .periods {
-  display: flex;
-  gap: 4px;
-  padding: 8px 14px 0;
-  flex-shrink: 0;
-  -webkit-app-region: no-drag;
+  display: flex; gap: 4px; padding: 6px 14px 0;
+  flex-shrink: 0; -webkit-app-region: no-drag;
 }
 .period-btn {
-  background: none; border: none; color: #71717a;
-  cursor: pointer; padding: 4px 10px; font-size: 11px; border-radius: 5px;
-  transition: background 0.1s, color 0.1s;
+  background: none; border: none; color: var(--sub);
+  cursor: pointer; padding: 3px 9px; font-size: 11px; border-radius: 5px;
+  transition: background .1s, color .1s;
 }
-.period-btn.active { background: #27272a; color: #e4e4e7; }
-.period-btn:hover:not(.active) { color: #a1a1aa; }
+.period-btn.active { background: var(--border); color: var(--text); }
+.period-btn:hover:not(.active) { color: var(--dim); }
 
-/* ── Scrollable content ───────────────────── */
+/* ── Content ──────────────────────────────── */
 .content {
-  padding: 12px 14px 14px;
-  overflow-y: auto;
-  flex: 1;
+  padding: 10px 14px 10px; overflow-y: auto; flex: 1;
   -webkit-app-region: no-drag;
 }
 .content::-webkit-scrollbar { width: 4px; }
-.content::-webkit-scrollbar-track { background: transparent; }
-.content::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 2px; }
+.content::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
 /* ── Cost hero ────────────────────────────── */
-.cost-main { font-size: 30px; font-weight: 700; color: #e94560; letter-spacing: -0.5px; }
-.cost-sub { color: #71717a; font-size: 11px; margin-top: 3px; }
+.cost-hero { margin-bottom: 1px; }
+.cost-main { font-size: 28px; font-weight: 700; color: var(--accent); letter-spacing: -0.5px; display: inline; }
+.cost-usd  { font-size: 13px; color: var(--sub); margin-left: 6px; font-weight: 400; }
+.cost-sub  { color: var(--sub); font-size: 11px; margin-top: 3px; }
 
-/* ── Stat row ─────────────────────────────── */
-.stats-row { display: flex; gap: 8px; margin-top: 12px; }
-.stat-box {
-  flex: 1; background: #18181b; border: 1px solid #27272a;
-  border-radius: 6px; padding: 7px 10px;
-}
-.stat-value { font-size: 15px; font-weight: 600; color: #d4d4d8; }
-.stat-label { font-size: 10px; color: #52525b; margin-top: 2px; }
+/* ── Stats ────────────────────────────────── */
+.stats-row { display: flex; gap: 8px; margin-top: 11px; }
+.stat-box { flex: 1; background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; }
+.stat-value { font-size: 15px; font-weight: 600; color: var(--text); }
+.stat-label { font-size: 10px; color: var(--muted); margin-top: 2px; }
 
 /* ── Sections ─────────────────────────────── */
-.section { margin-top: 14px; }
-.section-title {
-  font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px;
-  color: #52525b; margin-bottom: 7px;
-}
+.section { margin-top: 12px; }
+.section-title { font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); margin-bottom: 6px; }
+.empty { color: var(--muted); font-size: 11px; padding: 4px 0; }
 
-/* Provider bars */
 .provider-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
-.provider-name { width: 90px; color: #a1a1aa; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.provider-bar-wrap { flex: 1; background: #27272a; border-radius: 2px; height: 4px; }
-.provider-bar { height: 4px; border-radius: 2px; background: #e94560; transition: width 0.3s; }
-.provider-cost { width: 58px; text-align: right; color: #d4d4d8; font-variant-numeric: tabular-nums; }
+.provider-name { width: 90px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.provider-bar-wrap { flex: 1; background: var(--border); border-radius: 2px; height: 4px; }
+.provider-bar { height: 4px; border-radius: 2px; background: var(--accent); transition: width .3s; }
+.provider-cost { width: 68px; text-align: right; color: var(--text); font-variant-numeric: tabular-nums; }
 
-/* Projects */
-.project-row {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 5px 0; border-bottom: 1px solid #1c1c26;
-}
+.project-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; border-bottom: 1px solid var(--border); }
 .project-row:last-child { border-bottom: none; }
-.project-name { color: #a1a1aa; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 195px; }
-.project-cost { color: #d4d4d8; font-variant-numeric: tabular-nums; flex-shrink: 0; margin-left: 8px; }
+.project-name { color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 185px; }
+.project-cost { color: var(--text); font-variant-numeric: tabular-nums; flex-shrink: 0; margin-left: 8px; }
 
-/* Optimize callout */
-.optimize-box {
-  margin-top: 12px; background: #1a160a; border: 1px solid #3d2f08;
-  border-radius: 6px; padding: 8px 10px;
-  display: flex; align-items: flex-start; gap: 8px;
-}
-.optimize-icon { color: #f59e0b; flex-shrink: 0; }
-.optimize-text { color: #ca9208; font-size: 11px; line-height: 1.4; }
+/* Activity / session rows */
+.act-row { display: flex; align-items: center; gap: 6px; padding: 4px 0; border-bottom: 1px solid var(--border); }
+.act-row:last-child { border-bottom: none; }
+.act-name  { flex: 1; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+.act-turns { font-size: 10px; color: var(--sub); white-space: nowrap; flex-shrink: 0; }
+.act-cost  { color: var(--text); font-variant-numeric: tabular-nums; flex-shrink: 0; min-width: 52px; text-align: right; font-size: 11px; }
 
-/* Loading / error */
-.loading { text-align: center; color: #52525b; padding: 40px 20px; }
-.spinner {
-  width: 20px; height: 20px; border: 2px solid #27272a;
-  border-top-color: #e94560; border-radius: 50%;
-  animation: spin 0.8s linear infinite; margin: 0 auto 10px;
+/* ── Optimize ─────────────────────────────── */
+.savings-banner {
+  background: color-mix(in srgb,#10b981 10%,var(--bg2));
+  border: 1px solid color-mix(in srgb,#10b981 28%,var(--border));
+  border-radius: 7px; padding: 9px 12px; margin-bottom: 10px;
+  display: flex; justify-content: space-between; align-items: center;
 }
+.savings-total { font-size: 18px; font-weight: 700; color: #10b981; }
+.savings-label { font-size: 10px; color: var(--muted); margin-top: 1px; }
+.finding-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 7px; padding: 9px 11px; margin-bottom: 7px; }
+.finding-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+.finding-title { color: var(--text); font-size: 12px; font-weight: 500; flex: 1; }
+.finding-save  { color: #10b981; font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.finding-impact { display: inline-block; margin-top: 5px; font-size: 10px; padding: 2px 6px; border-radius: 3px; font-weight: 600; }
+.impact-high   { background: #3f0f17; color: #f87171; }
+.impact-medium { background: #3f2a00; color: #fbbf24; }
+.impact-low    { background: #0f2a1f; color: #34d399; }
+
+/* ── Compare ──────────────────────────────── */
+.compare-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.compare-table th { color: var(--muted); font-weight: 400; text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--border); font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px; }
+.compare-table td { padding: 6px 6px; border-bottom: 1px solid var(--border); color: var(--text); vertical-align: middle; }
+.compare-table tr:last-child td { border-bottom: none; }
+.model-name { color: var(--dim); max-width: 95px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bar-wrap { width: 40px; background: var(--border); border-radius: 2px; height: 4px; display: inline-block; vertical-align: middle; margin-left: 4px; }
+.bar-fill { height: 4px; border-radius: 2px; background: var(--accent); }
+.kpi-box { background: var(--bg2); border: 1px solid var(--border); border-radius: 7px; padding: 9px 12px; margin-top: 8px; }
+.kpi-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+.kpi-title { font-size: 10px; text-transform: uppercase; letter-spacing: 0.7px; color: var(--muted); }
+.kpi-value { font-size: 14px; font-weight: 600; }
+.kpi-red   { color: #f87171; }
+.kpi-green { color: #34d399; }
+.kpi-detail { color: var(--sub); font-size: 11px; line-height: 1.5; }
+
+/* ── History chart ────────────────────────── */
+.history-chart {
+  display: flex; align-items: flex-end; gap: 2px;
+  height: 90px; overflow-x: auto; padding: 0 0 2px; margin-top: 10px;
+}
+.history-chart::-webkit-scrollbar { height: 3px; }
+.history-chart::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+.hist-col { display: flex; flex-direction: column; align-items: center; flex: 0 0 auto; min-width: 16px; }
+.hist-bar-wrap { width: 12px; height: 76px; display: flex; align-items: flex-end; }
+.hist-bar { width: 100%; background: var(--accent); border-radius: 2px 2px 0 0; min-height: 2px; opacity: .85; cursor: default; }
+.hist-bar:hover { opacity: 1; }
+.hist-label { font-size: 7px; color: var(--muted); margin-top: 2px; text-align: center; }
+
+/* ── Compact ──────────────────────────────── */
+.compact-view { display: none; -webkit-app-region: no-drag; }
+body.compact .compact-view { display: flex; align-items: center; flex: 1; }
+
+.compact-body { display: flex; gap: 10px; align-items: center; padding: 0 10px; width: 100%; }
+.compact-left { display: flex; flex-direction: column; gap: 4px; flex: 0 0 auto; min-width: 90px; }
+.compact-cost { font-size: 18px; font-weight: 700; color: var(--accent); line-height: 1; }
+.compact-periods { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; }
+.compact-periods .period-btn { font-size: 8px; padding: 2px 4px; text-align: center; }
+
+.compact-right { flex: 1; display: flex; flex-direction: column; gap: 3px; overflow-y: auto; max-height: 64px; }
+.compact-right::-webkit-scrollbar { width: 2px; }
+.compact-right::-webkit-scrollbar-thumb { background: var(--border); border-radius: 1px; }
+
+.cp-row { display: flex; align-items: center; gap: 4px; }
+.cp-badge {
+  width: 15px; height: 13px; border-radius: 3px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 7px; font-weight: 800; color: #fff; letter-spacing: -0.3px; line-height: 1;
+}
+.cp-bar-wrap { flex: 1; background: var(--border); border-radius: 1.5px; height: 3px; min-width: 16px; }
+.cp-bar { height: 3px; border-radius: 1.5px; }
+.cp-cost { font-size: 9px; color: var(--dim); font-variant-numeric: tabular-nums; text-align: right; width: 36px; flex-shrink: 0; }
+
+body.compact .view-nav,
+body.compact .periods,
+body.compact .content,
+body.compact .footer,
+body.compact .float-panel { display: none !important; }
+body.compact .titlebar { display: none !important; height: 0 !important; padding: 0 !important; overflow: hidden !important; }
+
+/* ── Alpha sliders ────────────────────────── */
+.alpha-block { margin-top: 6px; }
+.alpha-row { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+.alpha-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); flex-shrink: 0; width: 14px; }
+input[type="range"] {
+  -webkit-appearance: none; flex: 1; height: 4px;
+  border-radius: 2px; outline: none; cursor: pointer;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 12px; height: 12px;
+  border-radius: 50%; background: var(--accent); cursor: pointer;
+  border: 1px solid rgba(255,255,255,.3);
+}
+.alpha-val { font-size: 9px; color: var(--dim); width: 26px; text-align: right; flex-shrink: 0; }
+#bgAlphaSlider     { background: repeating-conic-gradient(#555 0% 25%,#888 0% 50%) 0/8px 4px; }
+#accentAlphaSlider { background: repeating-conic-gradient(#555 0% 25%,#888 0% 50%) 0/8px 4px; }
+
+/* ── Footer ───────────────────────────────── */
+.footer {
+  padding: 5px 10px; border-top: 1px solid var(--border);
+  background: var(--bg2); display: flex; gap: 4px; flex-shrink: 0;
+  -webkit-app-region: no-drag;
+}
+.footer-btn {
+  background: none; border: 1px solid var(--border); border-radius: 4px;
+  color: var(--muted); cursor: pointer; font-size: 10px;
+  padding: 3px 0; flex: 1; transition: background .1s, color .1s;
+}
+.footer-btn:hover { background: var(--border); color: var(--text); }
+
+/* ── Loading / error ──────────────────────── */
+.loading { text-align: center; color: var(--muted); padding: 30px 20px; }
+.spinner { width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; margin: 0 auto 10px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .error-box { color: #f87171; padding: 14px; font-size: 11px; line-height: 1.5; }
 </style>
@@ -125,130 +290,837 @@ body {
 
 <div class="titlebar">
   <span class="title">&#x1F525; CodeBurn</span>
-  <button class="close-btn" id="closeBtn">&#x2715;</button>
+  <div class="tb-btns">
+    <button class="tb-btn" id="themeBtn">&#x1F3A8;</button>
+    <button class="tb-btn" id="pinBtn">&#x1F4CC;</button>
+    <button class="tb-btn" id="langBtn">&#x1F310;</button>
+    <button class="tb-btn" id="compactBtn">&#x25A1;</button>
+    <button class="tb-btn close" id="closeBtn">&#x2715;</button>
+  </div>
 </div>
 
-<div id="periods" class="periods"></div>
-<div id="content" class="content">
-  <div class="loading"><div class="spinner"></div>Loading…</div>
+<!-- Float: palette -->
+<div class="float-panel hidden" id="themePanel">
+  <div class="color-row">
+    <label id="lbl-bg">Background</label>
+    <input type="color" id="bgPicker">
+  </div>
+  <div class="alpha-block">
+    <div class="alpha-row">
+      <span class="alpha-label">A</span>
+      <input type="range" id="bgAlphaSlider" min="0" max="100" step="1">
+      <span class="alpha-val" id="bgAlphaVal">100%</span>
+    </div>
+  </div>
+  <div class="color-row" style="margin-top:10px">
+    <label id="lbl-accent">Accent</label>
+    <input type="color" id="accentPicker">
+  </div>
+  <div class="alpha-block">
+    <div class="alpha-row">
+      <span class="alpha-label">A</span>
+      <input type="range" id="accentAlphaSlider" min="0" max="100" step="1">
+      <span class="alpha-val" id="accentAlphaVal">100%</span>
+    </div>
+  </div>
+</div>
+
+<!-- Float: language -->
+<div class="float-panel hidden" id="langPanel">
+  <span class="panel-label" id="lbl-lang">Language</span>
+  <div class="lang-grid" id="langGrid"></div>
+  <div class="rate-badge" id="rateBadge">
+    <div class="rate-dot loading" id="rateDot"></div>
+    <span id="rateText">—</span>
+  </div>
+</div>
+
+<!-- Compact view -->
+<div class="compact-view" id="compactView">
+  <div class="compact-body">
+    <div class="compact-left">
+      <div class="compact-cost" id="cCost">—</div>
+      <div class="compact-periods" id="cPeriods"></div>
+    </div>
+    <div class="compact-right" id="cProviders"></div>
+  </div>
+</div>
+
+<div class="view-nav" id="viewNav"></div>
+<div class="periods"  id="periods"></div>
+<div class="content"  id="content"><div class="loading"><div class="spinner"></div>Loading…</div></div>
+<div class="footer">
+  <button class="footer-btn" id="refreshBtn">&#x21BB; Refresh</button>
+  <button class="footer-btn" id="exportCsvBtn">CSV</button>
+  <button class="footer-btn" id="exportJsonBtn">JSON</button>
+  <button class="footer-btn" id="reportBtn">Report</button>
 </div>
 
 <script>
 const { ipcRenderer } = require('electron');
 
-const PERIODS = [
-  { key: 'today', label: 'Today' },
-  { key: 'week',  label: 'Week'  },
-  { key: 'month', label: 'Month' },
-  { key: 'all',   label: 'All'   },
+/* ─── Currency ───────────────────────────── */
+const LANG_CURRENCY = {
+  en: { code:'USD', symbol:'$',  decimals:2 },
+  ru: { code:'RUB', symbol:'₽',  decimals:0 },
+  de: { code:'EUR', symbol:'€',  decimals:2 },
+  fr: { code:'EUR', symbol:'€',  decimals:2 },
+  es: { code:'EUR', symbol:'€',  decimals:2 },
+  zh: { code:'CNY', symbol:'¥',  decimals:2 },
+  ja: { code:'JPY', symbol:'¥',  decimals:0 },
+};
+
+let currentRate   = 1.0;
+let currentSymbol = '$';
+let currentDec    = 2;
+
+async function fetchRate(langCode) {
+  const c = LANG_CURRENCY[langCode] || LANG_CURRENCY.en;
+  currentSymbol = c.symbol; currentDec = c.decimals;
+  const dot  = document.getElementById('rateDot');
+  const text = document.getElementById('rateText');
+
+  if (c.code === 'USD') {
+    currentRate = 1.0; dot.className = 'rate-dot';
+    text.textContent = '1 USD = $1.00';
+    refreshCompact(); if (lastData) renderContent(lastData); return;
+  }
+  dot.className = 'rate-dot loading'; text.textContent = 'Fetching rate…';
+  try {
+    const res  = await fetch('https://open.er-api.com/v6/latest/USD');
+    const data = await res.json();
+    if (data.result === 'success' && data.rates[c.code]) {
+      currentRate = data.rates[c.code]; dot.className = 'rate-dot';
+      text.textContent = `1 USD = ${c.symbol}${currentRate.toFixed(currentDec===0?2:currentDec)}`;
+    } else { throw new Error('no rate'); }
+  } catch {
+    try {
+      const r2 = await fetch(`https://api.frankfurter.app/latest?from=USD&to=${c.code}`);
+      const d2 = await r2.json();
+      currentRate = d2.rates?.[c.code] || 1.0; dot.className = 'rate-dot';
+      text.textContent = `1 USD = ${c.symbol}${currentRate.toFixed(2)}`;
+    } catch {
+      currentRate = 1.0; dot.className = 'rate-dot error';
+      text.textContent = 'Rate unavailable — showing USD';
+    }
+  }
+  refreshCompact(); if (lastData) renderContent(lastData);
+}
+
+function fmt(usd) {
+  const v = (usd || 0) * currentRate;
+  return currentDec === 0
+    ? currentSymbol + Math.round(v).toLocaleString()
+    : currentSymbol + v.toFixed(currentDec);
+}
+
+/* ─── Translations ───────────────────────── */
+const T = {
+  en: {
+    views: { dashboard:'Dashboard', history:'History', optimize:'Optimize', compare:'Compare', yield:'Yield' },
+    periods: { today:'Today', week:'Week', month:'Month', all:'All' },
+    stats: ['Cache hit','Sessions','One-shot'],
+    providers:'Providers', projects:'Top Projects', activities:'Activities', models:'Models', sessions:'Sessions',
+    noData:'No data', loading:'Loading…',
+    bgLbl:'Background', accentLbl:'Accent color', langLbl:'Language',
+    pinTip:'Pin to desktop', themeTip:'Color palette', langTip:'Language', compactTip:'Compact mode',
+    findings:'finding', findingsPlural:'findings', totalSavings:'Total savings available',
+    modelComp:'Model efficiency', retryTax:'Retry tax', routingWaste:'Routing waste',
+    costPerEdit:'Cost/edit', oneShot:'One-shot', retries:'retries', vsBaseline:'savings vs baseline',
+    histAvg:'Avg/day', histPeak:'Peak day', histMin:'Min day',
+    yieldTitle:'Yield Analysis', productive:'Productive', reverted:'Reverted', abandoned:'Abandoned',
+    noYield:'No yield data — run git operations first', breakdown:'Breakdown',
+    refreshTip:'Refresh data', csvTip:'Export CSV', jsonTip:'Export JSON', reportTip:'Open full report',
+  },
+  ru: {
+    views: { dashboard:'Дашборд', history:'История', optimize:'Оптимизация', compare:'Сравнение', yield:'Эффект' },
+    periods: { today:'Сегодня', week:'Неделя', month:'Месяц', all:'Всё' },
+    stats: ['Кэш','Сессии','С 1 раза'],
+    providers:'Провайдеры', projects:'Проекты', activities:'Активности', models:'Модели', sessions:'Сессии',
+    noData:'Нет данных', loading:'Загрузка…',
+    bgLbl:'Фон', accentLbl:'Цвет заполнения', langLbl:'Язык',
+    pinTip:'Закрепить', themeTip:'Цветовая палитра', langTip:'Язык', compactTip:'Компактный режим',
+    findings:'совет', findingsPlural:'советов', totalSavings:'Общая экономия',
+    modelComp:'Эффективность моделей', retryTax:'Налог на повторы', routingWaste:'Потери маршрутизации',
+    costPerEdit:'Стоим./правка', oneShot:'С 1 раза', retries:'повторов', vsBaseline:'vs базовая',
+    histAvg:'Ср/день', histPeak:'Пик', histMin:'Мин',
+    yieldTitle:'Анализ эффективности', productive:'Продуктивно', reverted:'Откаты', abandoned:'Брошено',
+    noYield:'Нет данных — выполните git-операции', breakdown:'Детализация',
+    refreshTip:'Обновить', csvTip:'CSV', jsonTip:'JSON', reportTip:'Отчёт',
+  },
+  de: {
+    views: { dashboard:'Dashboard', history:'Verlauf', optimize:'Optimieren', compare:'Vergleich', yield:'Ertrag' },
+    periods: { today:'Heute', week:'Woche', month:'Monat', all:'Alle' },
+    stats: ['Cache','Sessions','Direkt'],
+    providers:'Anbieter', projects:'Top-Projekte', activities:'Aktivitäten', models:'Modelle', sessions:'Sessions',
+    noData:'Keine Daten', loading:'Laden…',
+    bgLbl:'Hintergrund', accentLbl:'Akzentfarbe', langLbl:'Sprache',
+    pinTip:'Anheften', themeTip:'Farbpalette', langTip:'Sprache', compactTip:'Kompaktmodus',
+    findings:'Tipp', findingsPlural:'Tipps', totalSavings:'Mögliche Ersparnis',
+    modelComp:'Modell-Effizienz', retryTax:'Retry-Kosten', routingWaste:'Routing-Verlust',
+    costPerEdit:'Kosten/Edit', oneShot:'Direkt', retries:'Retries', vsBaseline:'vs. Baseline',
+    histAvg:'∅/Tag', histPeak:'Spitze', histMin:'Min',
+    yieldTitle:'Ertragsanalyse', productive:'Produktiv', reverted:'Rückgängig', abandoned:'Abgebrochen',
+    noYield:'Keine Daten — git-Operationen ausführen', breakdown:'Aufschlüsselung',
+    refreshTip:'Aktualisieren', csvTip:'CSV', jsonTip:'JSON', reportTip:'Bericht',
+  },
+  fr: {
+    views: { dashboard:'Tableau', history:'Historique', optimize:'Optimiser', compare:'Comparer', yield:'Rendement' },
+    periods: { today:"Auj.", week:'Semaine', month:'Mois', all:'Tout' },
+    stats: ['Cache','Sessions','Direct'],
+    providers:'Fournisseurs', projects:'Projets', activities:'Activités', models:'Modèles', sessions:'Sessions',
+    noData:'Aucune donnée', loading:'Chargement…',
+    bgLbl:'Fond', accentLbl:'Couleur accent', langLbl:'Langue',
+    pinTip:'Épingler', themeTip:'Palette', langTip:'Langue', compactTip:'Mode compact',
+    findings:'conseil', findingsPlural:'conseils', totalSavings:'Économies possibles',
+    modelComp:'Efficacité modèle', retryTax:'Coût retries', routingWaste:'Perte routage',
+    costPerEdit:'Coût/edit', oneShot:'Direct', retries:'retries', vsBaseline:'vs. baseline',
+    histAvg:'Moy/j', histPeak:'Pic', histMin:'Min',
+    yieldTitle:'Analyse rendement', productive:'Productif', reverted:'Annulé', abandoned:'Abandonné',
+    noYield:'Pas de données — effectuer des opérations git', breakdown:'Détail',
+    refreshTip:'Actualiser', csvTip:'CSV', jsonTip:'JSON', reportTip:'Rapport',
+  },
+  es: {
+    views: { dashboard:'Panel', history:'Historial', optimize:'Optimizar', compare:'Comparar', yield:'Rendimiento' },
+    periods: { today:'Hoy', week:'Semana', month:'Mes', all:'Todo' },
+    stats: ['Caché','Sesiones','Directo'],
+    providers:'Proveedores', projects:'Proyectos', activities:'Actividades', models:'Modelos', sessions:'Sesiones',
+    noData:'Sin datos', loading:'Cargando…',
+    bgLbl:'Fondo', accentLbl:'Color acento', langLbl:'Idioma',
+    pinTip:'Anclar', themeTip:'Paleta', langTip:'Idioma', compactTip:'Modo compacto',
+    findings:'consejo', findingsPlural:'consejos', totalSavings:'Ahorro posible',
+    modelComp:'Eficiencia modelo', retryTax:'Coste reintentos', routingWaste:'Pérdida enrutamiento',
+    costPerEdit:'Coste/edición', oneShot:'Directo', retries:'reintentos', vsBaseline:'vs. base',
+    histAvg:'Med/día', histPeak:'Pico', histMin:'Mín',
+    yieldTitle:'Análisis de rendimiento', productive:'Productivo', reverted:'Revertido', abandoned:'Abandonado',
+    noYield:'Sin datos — realizar operaciones git', breakdown:'Desglose',
+    refreshTip:'Actualizar', csvTip:'CSV', jsonTip:'JSON', reportTip:'Informe',
+  },
+  zh: {
+    views: { dashboard:'概览', history:'历史', optimize:'优化', compare:'对比', yield:'效益' },
+    periods: { today:'今天', week:'本周', month:'本月', all:'全部' },
+    stats: ['缓存命中','会话数','一次成功'],
+    providers:'提供商', projects:'热门项目', activities:'活动', models:'模型', sessions:'会话',
+    noData:'暂无数据', loading:'加载中…',
+    bgLbl:'背景', accentLbl:'强调色', langLbl:'语言',
+    pinTip:'固定到桌面', themeTip:'调色板', langTip:'语言', compactTip:'紧凑模式',
+    findings:'建议', findingsPlural:'建议', totalSavings:'总可节省金额',
+    modelComp:'模型效率', retryTax:'重试损耗', routingWaste:'路由浪费',
+    costPerEdit:'每次费用', oneShot:'一次成功', retries:'重试', vsBaseline:'vs基准',
+    histAvg:'均/天', histPeak:'峰值', histMin:'最低',
+    yieldTitle:'效益分析', productive:'有效', reverted:'已撤回', abandoned:'已放弃',
+    noYield:'无数据 — 请先执行git操作', breakdown:'明细',
+    refreshTip:'刷新', csvTip:'CSV', jsonTip:'JSON', reportTip:'报告',
+  },
+  ja: {
+    views: { dashboard:'概要', history:'履歴', optimize:'最適化', compare:'比較', yield:'成果' },
+    periods: { today:'今日', week:'今週', month:'今月', all:'全期間' },
+    stats: ['キャッシュ','セッション','一発成功'],
+    providers:'プロバイダ', projects:'プロジェクト', activities:'アクティビティ', models:'モデル', sessions:'セッション',
+    noData:'データなし', loading:'読み込み中…',
+    bgLbl:'背景', accentLbl:'アクセント', langLbl:'言語',
+    pinTip:'固定', themeTip:'カラー', langTip:'言語', compactTip:'コンパクト',
+    findings:'提案', findingsPlural:'提案', totalSavings:'節約可能合計',
+    modelComp:'モデル効率', retryTax:'リトライ損失', routingWaste:'ルーティング無駄',
+    costPerEdit:'編集あたり', oneShot:'一発', retries:'リトライ', vsBaseline:'vs基準',
+    histAvg:'平均/日', histPeak:'ピーク', histMin:'最低',
+    yieldTitle:'成果分析', productive:'生産的', reverted:'リバート', abandoned:'中断',
+    noYield:'データなし — git操作を実行してください', breakdown:'内訳',
+    refreshTip:'更新', csvTip:'CSV', jsonTip:'JSON', reportTip:'レポート',
+  },
+};
+
+const LANG_LIST = [
+  {code:'en',label:'English'},{code:'ru',label:'Русский'},
+  {code:'de',label:'Deutsch'},{code:'fr',label:'Français'},
+  {code:'es',label:'Español'},{code:'zh',label:'中文'},
+  {code:'ja',label:'日本語'},
 ];
 
+/* ─── State ──────────────────────────────── */
 let activePeriod = 'today';
+let activeView   = 'dashboard';
+let isPinned     = false;
+let isCompact    = false;
+let activeLang    = localStorage.getItem('lang')         || 'en';
+let customBg      = localStorage.getItem('customBg')     || '#111118';
+let customAccent  = localStorage.getItem('customAccent') || '#e94560';
+let bgAlpha       = parseInt(localStorage.getItem('bgAlpha')     ?? '100');
+let accentAlpha   = parseInt(localStorage.getItem('accentAlpha') ?? '100');
+let lastData      = null;
 
-document.getElementById('closeBtn').onclick = () => ipcRenderer.send('close');
+/* ─── Theme ──────────────────────────────── */
+function isLight(hex) {
+  const r=parseInt(hex.slice(1,3),16), g=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16);
+  return (r*299+g*587+b*114)/1000 > 140;
+}
+function shift(hex, amt) {
+  const r=parseInt(hex.slice(1,3),16), g=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16);
+  const c = v => Math.max(0,Math.min(255,v+amt));
+  const h = v => v.toString(16).padStart(2,'0');
+  return '#'+h(c(r))+h(c(g))+h(c(b));
+}
+function hexToRgba(hex, pct) {
+  const r=parseInt(hex.slice(1,3),16), g=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16);
+  return `rgba(${r},${g},${b},${(pct/100).toFixed(2)})`;
+}
+function applyTheme() {
+  const light = isLight(customBg);
+  const d = document.documentElement;
+  d.style.setProperty('--bg',     hexToRgba(customBg, bgAlpha));
+  d.style.setProperty('--bg2',    hexToRgba(shift(customBg, light ? -12 : 10), bgAlpha));
+  d.style.setProperty('--border', hexToRgba(shift(customBg, light ? -30 : 25), Math.min(100, bgAlpha + 20)));
+  d.style.setProperty('--accent', hexToRgba(customAccent, accentAlpha));
+  d.style.setProperty('--text',   light ? '#111111' : '#d4d4d8');
+  d.style.setProperty('--dim',    light ? '#333333' : '#a1a1aa');
+  d.style.setProperty('--muted',  light ? '#666666' : '#52525b');
+  d.style.setProperty('--sub',    light ? '#888888' : '#71717a');
+}
 
-function fmt(n) { return '$' + (n || 0).toFixed(2); }
+/* ─── Panels ─────────────────────────────── */
+const closeAllPanels = () => {
+  document.getElementById('themePanel').classList.add('hidden');
+  document.getElementById('langPanel').classList.add('hidden');
+};
 
-function renderPeriods() {
-  document.getElementById('periods').innerHTML = PERIODS.map(p =>
-    `<button class="period-btn ${p.key === activePeriod ? 'active' : ''}" data-p="${p.key}">${p.label}</button>`
-  ).join('');
-  document.querySelectorAll('.period-btn').forEach(btn => {
-    btn.onclick = () => {
-      activePeriod = btn.dataset.p;
-      renderPeriods();
-      document.getElementById('content').innerHTML =
-        '<div class="loading"><div class="spinner"></div>Loading…</div>';
-      ipcRenderer.send('set-period', activePeriod);
+/* ─── View nav ───────────────────────────── */
+function renderViewNav() {
+  const tr = T[activeLang]||T.en;
+  document.getElementById('viewNav').innerHTML =
+    Object.entries(tr.views).map(([k,l])=>
+      `<button class="view-btn ${k===activeView?'active':''}" data-v="${k}">${l}</button>`
+    ).join('');
+  document.querySelectorAll('.view-btn').forEach(b=>{
+    b.onclick=()=>{
+      activeView=b.dataset.v;
+      renderViewNav();
+      if (activeView==='yield') renderYield();
+      else if (lastData) renderContent(lastData);
     };
   });
 }
 
-function render({ data }) {
-  const c = data.current;
-
-  const providers = Object.entries(c.providers || {})
-    .filter(([, v]) => v > 0)
-    .sort(([, a], [, b]) => b - a);
-  const maxCost = providers.reduce((m, [, v]) => Math.max(m, v), 0.01);
-
-  const providersHTML = providers.length
-    ? providers.map(([name, cost]) => `
-        <div class="provider-row">
-          <div class="provider-name">${name.charAt(0).toUpperCase() + name.slice(1)}</div>
-          <div class="provider-bar-wrap">
-            <div class="provider-bar" style="width:${Math.round(cost / maxCost * 100)}%"></div>
-          </div>
-          <div class="provider-cost">${fmt(cost)}</div>
-        </div>`).join('')
-    : '<div style="color:#52525b;font-size:11px">No provider data</div>';
-
-  const projectsHTML = (c.topProjects || []).slice(0, 5).map(p => {
-    const name = p.name.split(/[\\/]/).pop() || p.name;
-    return `<div class="project-row">
-      <div class="project-name" title="${p.name}">${name}</div>
-      <div class="project-cost">${fmt(p.cost)}</div>
-    </div>`;
-  }).join('') || '<div style="color:#52525b;font-size:11px">No project data</div>';
-
-  const opt = c.optimize;
-  const optimizeHTML = opt && opt.findingCount > 0 ? `
-    <div class="optimize-box">
-      <span class="optimize-icon">&#x26A1;</span>
-      <span class="optimize-text">
-        <strong>${opt.findingCount} finding${opt.findingCount > 1 ? 's' : ''}</strong> —
-        potential savings ${fmt(opt.savingsUSD)}/period<br>
-        ${(opt.topFindings || []).slice(0, 2).map(f =>
-          `<span style="opacity:0.8">&#x2022; ${f.title}</span>`
-        ).join('<br>')}
-      </span>
-    </div>` : '';
-
-  document.getElementById('content').innerHTML = `
-    <div class="cost-main">${fmt(c.cost)}</div>
-    <div class="cost-sub">${c.calls} calls &nbsp;·&nbsp; ${c.label}</div>
-
-    <div class="stats-row">
-      <div class="stat-box">
-        <div class="stat-value">${c.cacheHitPercent != null ? c.cacheHitPercent.toFixed(0) + '%' : '—'}</div>
-        <div class="stat-label">Cache hit</div>
-      </div>
-      <div class="stat-box">
-        <div class="stat-value">${c.sessions ?? '—'}</div>
-        <div class="stat-label">Sessions</div>
-      </div>
-      <div class="stat-box">
-        <div class="stat-value">${c.oneShotRate != null ? (c.oneShotRate * 100).toFixed(0) + '%' : '—'}</div>
-        <div class="stat-label">One-shot</div>
-      </div>
-    </div>
-
-    <div class="section">
-      <div class="section-title">Providers</div>
-      ${providersHTML}
-    </div>
-
-    <div class="section">
-      <div class="section-title">Top Projects</div>
-      ${projectsHTML}
-    </div>
-
-    ${optimizeHTML}
-  `;
+/* ─── Period tabs ────────────────────────── */
+function renderPeriods(id) {
+  const tr = T[activeLang]||T.en;
+  document.getElementById(id).innerHTML =
+    Object.entries(tr.periods).map(([k,l])=>
+      `<button class="period-btn ${k===activePeriod?'active':''}" data-p="${k}">${l}</button>`
+    ).join('');
+  document.querySelectorAll(`#${id} .period-btn`).forEach(b=>{
+    b.onclick=()=>{
+      activePeriod=b.dataset.p;
+      renderPeriods('periods'); renderPeriods('cPeriods');
+      document.getElementById('content').innerHTML=
+        `<div class="loading"><div class="spinner"></div>${(T[activeLang]||T.en).loading}</div>`;
+      ipcRenderer.send('set-period',activePeriod);
+    };
+  });
 }
 
-ipcRenderer.on('data', (_, payload) => {
-  activePeriod = payload.period;
-  renderPeriods();
-  render(payload);
+/* ─── Dashboard ──────────────────────────── */
+function renderActivities(c, tr) {
+  const acts = (c.topActivities||[]).slice(0,6);
+  if (!acts.length) return '';
+  return `<div class="section">
+    <div class="section-title">${tr.activities}</div>
+    ${acts.map(a=>`<div class="act-row">
+      <div class="act-name">${a.name||'—'}</div>
+      <div class="act-turns">${a.turns||0}t · ${((a.oneShotRate||0)*100).toFixed(0)}%</div>
+      <div class="act-cost">${fmt(a.cost)}</div>
+    </div>`).join('')}
+  </div>`;
+}
+
+function renderModels(c, tr) {
+  const models = (c.topModels||[]).slice(0,5);
+  if (!models.length) return '';
+  const max = Math.max(...models.map(m=>m.cost||0), 0.01);
+  return `<div class="section">
+    <div class="section-title">${tr.models}</div>
+    ${models.map(m=>`<div class="provider-row">
+      <div class="provider-name">${m.name||'—'}</div>
+      <div class="provider-bar-wrap"><div class="provider-bar" style="width:${Math.round((m.cost||0)/max*100)}%"></div></div>
+      <div class="provider-cost">${fmt(m.cost)}</div>
+    </div>`).join('')}
+  </div>`;
+}
+
+function renderSessions(c, tr) {
+  const sess = (c.topSessions||[]).slice(0,4);
+  if (!sess.length) return '';
+  return `<div class="section">
+    <div class="section-title">${tr.sessions}</div>
+    ${sess.map(s=>`<div class="act-row">
+      <div class="act-name" title="${s.project||''}">${(s.project||'—').split(/[\\/]/).pop()}</div>
+      <div class="act-turns">${s.calls||0}c</div>
+      <div class="act-cost">${fmt(s.cost)}</div>
+    </div>`).join('')}
+  </div>`;
+}
+
+function renderDashboard(c) {
+  const tr = T[activeLang]||T.en;
+  const providers = Object.entries(c.providers||{}).filter(([,v])=>v>0).sort(([,a],[,b])=>b-a);
+  const maxCost   = providers.reduce((m,[,v])=>Math.max(m,v), 0.01);
+
+  const providersHTML = providers.length
+    ? providers.map(([n,cost])=>`
+        <div class="provider-row">
+          <div class="provider-name">${n[0].toUpperCase()+n.slice(1)}</div>
+          <div class="provider-bar-wrap"><div class="provider-bar" style="width:${Math.round(cost/maxCost*100)}%"></div></div>
+          <div class="provider-cost">${fmt(cost)}</div>
+        </div>`).join('')
+    : `<div class="empty">${tr.noData}</div>`;
+
+  const projectsHTML = (c.topProjects||[]).slice(0,5).map(p=>{
+    const n=p.name.split(/[\\/]/).pop()||p.name;
+    return `<div class="project-row">
+      <div class="project-name" title="${p.name}">${n}</div>
+      <div class="project-cost">${fmt(p.cost)}</div>
+    </div>`;
+  }).join('')||`<div class="empty">${tr.noData}</div>`;
+
+  const usdNote = currentRate!==1 ? `<span class="cost-usd">$${(c.cost||0).toFixed(2)}</span>` : '';
+
+  return `
+    <div class="cost-hero">
+      <span class="cost-main">${fmt(c.cost)}</span>${usdNote}
+    </div>
+    <div class="cost-sub">${c.calls||0} calls &nbsp;·&nbsp; ${c.label||''}</div>
+    <div class="stats-row">
+      <div class="stat-box"><div class="stat-value">${c.cacheHitPercent!=null?c.cacheHitPercent.toFixed(0)+'%':'—'}</div><div class="stat-label">${tr.stats[0]}</div></div>
+      <div class="stat-box"><div class="stat-value">${c.sessions??'—'}</div><div class="stat-label">${tr.stats[1]}</div></div>
+      <div class="stat-box"><div class="stat-value">${c.oneShotRate!=null?(c.oneShotRate*100).toFixed(0)+'%':'—'}</div><div class="stat-label">${tr.stats[2]}</div></div>
+    </div>
+    <div class="section"><div class="section-title">${tr.providers}</div>${providersHTML}</div>
+    <div class="section"><div class="section-title">${tr.projects}</div>${projectsHTML}</div>
+    ${renderActivities(c, tr)}
+    ${renderModels(c, tr)}
+    ${renderSessions(c, tr)}`;
+}
+
+/* ─── History ────────────────────────────── */
+const MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+function buildHistoryBars(data) {
+  const hist  = data.history || {};
+  const daily = hist.daily  || [];
+
+  if (activePeriod === 'week') {
+    return {
+      bars: daily.slice(-7).map(d => ({
+        cost: d.cost||0, label: (d.date||'').slice(-2), title: `${d.date}: ${fmt(d.cost)}`,
+      })),
+      unit: 'day',
+    };
+  }
+  if (activePeriod === 'month') {
+    const bars = [];
+    for (let i = 0; i < daily.length; i += 7) {
+      const chunk = daily.slice(i, i + 7);
+      const cost  = chunk.reduce((s,d) => s+(d.cost||0), 0);
+      bars.push({ cost, label:`W${bars.length+1}`, title:`${(chunk[0]?.date||'').slice(-5)}: ${fmt(cost)}` });
+    }
+    return { bars, unit: 'wk' };
+  }
+  // all → monthly
+  const months = {}, order = [];
+  daily.forEach(d => {
+    const key = (d.date||'').slice(0,7);
+    if (!months[key]) { months[key]=0; order.push(key); }
+    months[key] += (d.cost||0);
+  });
+  return {
+    bars: order.map(k => ({
+      cost: months[k], label: MONTH_ABBR[parseInt(k.slice(5,7))-1]||k.slice(5,7), title:`${k}: ${fmt(months[k])}`,
+    })),
+    unit: 'mo',
+  };
+}
+
+function historyHTML(bars, unit, tr) {
+  if (!bars.length) return `<div class="empty" style="padding:30px;text-align:center">${tr.noData}</div>`;
+  const costs = bars.map(b=>b.cost);
+  const max   = Math.max(...costs, 0.01);
+  const total = costs.reduce((s,v)=>s+v, 0);
+  const avg   = total/bars.length;
+  const peak  = Math.max(...costs);
+  const nz    = costs.filter(v=>v>0);
+  const minV  = nz.length ? Math.min(...nz) : 0;
+  const avgLbl = unit==='hr'?'Avg/hr':unit==='wk'?'Avg/wk':unit==='mo'?'Avg/mo':tr.histAvg;
+  const cols  = bars.map(b => {
+    const pct = Math.max(2, Math.round(b.cost/max*100));
+    return `<div class="hist-col">
+      <div class="hist-bar-wrap"><div class="hist-bar" style="height:${pct}%" title="${b.title}"></div></div>
+      <div class="hist-label">${b.label}</div>
+    </div>`;
+  }).join('');
+  return `
+    <div class="cost-hero">
+      <span class="cost-main">${fmt(total)}</span>
+      <span class="cost-usd">${bars.length} ${unit}</span>
+    </div>
+    <div class="stats-row" style="margin-top:11px">
+      <div class="stat-box"><div class="stat-value">${fmt(avg)}</div><div class="stat-label">${avgLbl}</div></div>
+      <div class="stat-box"><div class="stat-value">${fmt(peak)}</div><div class="stat-label">${tr.histPeak}</div></div>
+      <div class="stat-box"><div class="stat-value">${fmt(minV)}</div><div class="stat-label">${tr.histMin}</div></div>
+    </div>
+    <div class="history-chart">${cols}</div>`;
+}
+
+async function renderHistory(data) {
+  const tr = T[activeLang]||T.en;
+  const el = document.getElementById('content');
+
+  if (activePeriod === 'today') {
+    el.innerHTML = `<div class="loading"><div class="spinner"></div>${tr.loading}</div>`;
+    try {
+      const hourly = await ipcRenderer.invoke('fetch-hourly');
+      if (hourly && hourly.length) {
+        const bars = hourly.map(h => ({
+          cost:  h.cost||0,
+          label: String(h.hour).padStart(2,'0'),
+          title: `${String(h.hour).padStart(2,'0')}:00 — ${fmt(h.cost)}`,
+        }));
+        el.innerHTML = historyHTML(bars, 'hr', tr);
+      } else {
+        // CLI data не даёт почасовых — показываем 24 пустых + сегодняшний total в текущем часу
+        const now = new Date().getHours();
+        const bars = Array.from({length:24}, (_,i) => ({
+          cost:  i===now ? (data.current.cost||0) : 0,
+          label: String(i).padStart(2,'0'),
+          title: `${String(i).padStart(2,'0')}:00`,
+        }));
+        el.innerHTML = historyHTML(bars, 'hr', tr);
+      }
+    } catch(e) {
+      el.innerHTML = `<div class="error-box">&#x26A0; ${e.message}</div>`;
+    }
+    return;
+  }
+
+  const { bars, unit } = buildHistoryBars(data);
+  el.innerHTML = historyHTML(bars, unit, tr);
+}
+
+/* ─── Optimize ───────────────────────────── */
+function renderOptimize(c) {
+  const tr = T[activeLang]||T.en;
+
+  // Normalize: field names vary across codeburn versions
+  const opt      = c.optimize || c.optimizations || c.suggestions || null;
+  const findings = opt?.topFindings || opt?.findings || c.topFindings || c.findings || [];
+  const count    = opt?.findingCount ?? opt?.count ?? findings.length;
+  const savings  = opt?.savingsUSD ?? opt?.totalSavings ?? opt?.savings
+                ?? findings.reduce((s,f)=>s+(f.savingsUSD||f.savings||0),0);
+
+  if (!count && !findings.length) {
+    // Show debug info so we can see what fields are actually present
+    const keys = Object.keys(c).join(', ');
+    return `<div class="empty" style="padding:20px;text-align:center">
+      &#x2705; ${tr.noData}
+      <div style="margin-top:10px;font-size:9px;color:var(--muted);line-height:1.6;text-align:left;word-break:break-all">
+        <b>current keys:</b> ${keys}<br>
+        <b>optimize:</b> ${JSON.stringify(c.optimize??null).slice(0,200)}
+      </div>
+    </div>`;
+  }
+
+  const banner = `<div class="savings-banner">
+    <div>
+      <div class="savings-total">${fmt(savings)}</div>
+      <div class="savings-label">${tr.totalSavings}</div>
+    </div>
+    <div style="color:var(--muted);font-size:11px">${count} ${count===1?tr.findings:tr.findingsPlural}</div>
+  </div>`;
+
+  const cards = findings.map(f => {
+    const title   = f.title || f.name || f.description || '—';
+    const save    = f.savingsUSD ?? f.savings ?? 0;
+    const impact  = (f.impact || f.severity || 'low').toLowerCase();
+    return `<div class="finding-card">
+      <div class="finding-header">
+        <div class="finding-title">${title}</div>
+        <div class="finding-save">${fmt(save)}</div>
+      </div>
+      <span class="finding-impact impact-${impact}">${impact}</span>
+    </div>`;
+  }).join('');
+
+  return banner + cards;
+}
+
+/* ─── Compare ────────────────────────────── */
+function renderCompare(c) {
+  const tr=T[activeLang]||T.en;
+  const models=c.modelEfficiency||[];
+  const tableRows=models.map(m=>{
+    const os=m.oneShotRate!=null?m.oneShotRate.toFixed(0)+'%':'—';
+    const bw=m.oneShotRate!=null?Math.round(m.oneShotRate):0;
+    return `<tr>
+      <td><div class="model-name" title="${m.name}">${m.name}</div></td>
+      <td>${m.costPerEdit!=null?fmt(m.costPerEdit):'—'}</td>
+      <td>${os}<div class="bar-wrap"><div class="bar-fill" style="width:${bw}%"></div></div></td>
+    </tr>`;
+  }).join('');
+
+  const tableHTML=models.length
+    ?`<table class="compare-table"><thead><tr><th>Model</th><th>${tr.costPerEdit}</th><th>${tr.oneShot}</th></tr></thead><tbody>${tableRows}</tbody></table>`
+    :`<div class="empty">${tr.noData}</div>`;
+
+  const rt=c.retryTax;
+  const retryHTML=rt?`<div class="kpi-box"><div class="kpi-header"><div class="kpi-title">${tr.retryTax}</div><div class="kpi-value kpi-red">${fmt(rt.totalUSD)}</div></div><div class="kpi-detail">${rt.retries} ${tr.retries} · ${rt.editTurns} edit turns${(rt.byModel||[]).map(m=>`<br>${m.name}: ${fmt(m.taxUSD)} (${(m.retriesPerEdit||0).toFixed(1)} r/edit)`).join('')}</div></div>`:'';
+
+  const rw=c.routingWaste;
+  const wasteHTML=rw&&rw.totalSavingsUSD>0?`<div class="kpi-box"><div class="kpi-header"><div class="kpi-title">${tr.routingWaste}</div><div class="kpi-value kpi-green">${fmt(rw.totalSavingsUSD)}</div></div><div class="kpi-detail">${tr.vsBaseline}: ${rw.baselineModel}</div></div>`:'';
+
+  return `<div class="section"><div class="section-title">${tr.modelComp}</div>${tableHTML}</div>${retryHTML}${wasteHTML}`;
+}
+
+/* ─── Yield (async) ──────────────────────── */
+let _yieldGen = 0;
+
+async function renderYield() {
+  const tr  = T[activeLang]||T.en;
+  const gen = ++_yieldGen;           // invalidate any in-flight render
+  const el  = document.getElementById('content');
+  el.innerHTML = `<div class="loading"><div class="spinner"></div>${tr.loading}</div>`;
+  try {
+    const result = await ipcRenderer.invoke('fetch-yield');
+    if (gen !== _yieldGen) return;   // stale — a newer call already started
+
+    if (!result || result.error) {
+      el.innerHTML = `<div class="empty" style="padding:30px;text-align:center">${tr.noYield}</div>`;
+      return;
+    }
+    if (result.raw) {
+      el.innerHTML = `<div class="section">
+        <div class="section-title">${tr.yieldTitle}</div>
+        <pre style="color:var(--dim);font-size:10px;white-space:pre-wrap;line-height:1.5">${result.raw.slice(0,900)}</pre>
+      </div>`;
+      return;
+    }
+    const productive = +(result.productive || result.committed || 0);
+    const reverted   = +(result.reverted   || 0);
+    const abandoned  = +(result.abandoned  || 0);
+    const total = productive + reverted + abandoned || 1;
+    const pct   = Math.round(productive / total * 100);
+    const rows  = (result.breakdown||[]).map(b => `<div class="act-row">
+      <div class="act-name">${b.project||b.name||'—'}</div>
+      <div class="act-cost">${Math.round((b.rate||0)*100)}%</div>
+    </div>`).join('');
+    el.innerHTML = `
+      <div class="cost-hero">
+        <span class="cost-main">${pct}%</span>
+        <span class="cost-usd">${tr.productive.toLowerCase()}</span>
+      </div>
+      <div class="stats-row" style="margin-top:11px">
+        <div class="stat-box"><div class="stat-value" style="color:#10b981">${productive}</div><div class="stat-label">${tr.productive}</div></div>
+        <div class="stat-box"><div class="stat-value" style="color:#f87171">${reverted}</div><div class="stat-label">${tr.reverted}</div></div>
+        <div class="stat-box"><div class="stat-value" style="color:#f59e0b">${abandoned}</div><div class="stat-label">${tr.abandoned}</div></div>
+      </div>
+      ${rows ? `<div class="section"><div class="section-title">${tr.breakdown}</div>${rows}</div>` : ''}`;
+  } catch(e) {
+    if (gen !== _yieldGen) return;
+    el.innerHTML = `<div class="error-box">&#x26A0; ${e.message}</div>`;
+  }
+}
+
+/* ─── Render dispatcher ──────────────────── */
+function renderContent(data) {
+  if (activeView === 'yield')   { renderYield();        return; }
+  if (activeView === 'history') { renderHistory(data);  return; } // async
+  const c = data.current;
+  let html = '';
+  if      (activeView === 'dashboard') html = renderDashboard(c);
+  else if (activeView === 'optimize')  html = renderOptimize(c);
+  else if (activeView === 'compare')   html = renderCompare(c);
+  document.getElementById('content').innerHTML = html;
+}
+
+/* ─── Lang panel ─────────────────────────── */
+function buildLangPanel() {
+  const tr=T[activeLang]||T.en;
+  document.getElementById('lbl-lang').textContent=tr.langLbl;
+  document.getElementById('langGrid').innerHTML=LANG_LIST.map(l=>
+    `<button class="lang-btn ${l.code===activeLang?'active':''}" data-l="${l.code}">${l.label}</button>`
+  ).join('');
+  document.querySelectorAll('.lang-btn').forEach(b=>{
+    b.onclick=()=>{
+      activeLang=b.dataset.l;
+      localStorage.setItem('lang',activeLang);
+      const c=LANG_CURRENCY[activeLang]||LANG_CURRENCY.en;
+      currentSymbol=c.symbol; currentDec=c.decimals;
+      fetchRate(activeLang);
+      updateUI(); buildLangPanel();
+    };
+  });
+}
+
+/* ─── Footer ─────────────────────────────── */
+function toCsv(data) {
+  const c = data.current;
+  const rows = [
+    ['Period','Cost USD','Calls','Cache%','Sessions','OneShot%'],
+    [activePeriod, (c.cost||0).toFixed(4), c.calls||0, (c.cacheHitPercent||0).toFixed(1), c.sessions||0, ((c.oneShotRate||0)*100).toFixed(1)],
+    [], ['Provider','Cost USD'],
+    ...Object.entries(c.providers||{}).map(([n,v])=>[n, (+v).toFixed(4)]),
+    [], ['Project','Cost USD'],
+    ...(c.topProjects||[]).map(p=>[p.name, (p.cost||0).toFixed(4)]),
+  ];
+  return rows.map(r=>r.map(v=>`"${String(v||'').replace(/"/g,'""')}"`).join(',')).join('\r\n');
+}
+
+document.getElementById('refreshBtn').onclick = () => {
+  document.getElementById('content').innerHTML=
+    `<div class="loading"><div class="spinner"></div>${(T[activeLang]||T.en).loading}</div>`;
+  ipcRenderer.send('set-period', activePeriod);
+};
+document.getElementById('exportCsvBtn').onclick  = () => {
+  if (!lastData) return;
+  ipcRenderer.send('export-data', { format:'csv',  data:toCsv(lastData), period:activePeriod });
+};
+document.getElementById('exportJsonBtn').onclick = () => {
+  if (!lastData) return;
+  ipcRenderer.send('export-data', { format:'json', data:JSON.stringify(lastData,null,2), period:activePeriod });
+};
+document.getElementById('reportBtn').onclick = () => { ipcRenderer.send('open-report'); };
+
+/* ─── Full UI refresh ────────────────────── */
+function updateUI() {
+  const tr=T[activeLang]||T.en;
+  document.getElementById('themeBtn').title   = tr.themeTip;
+  document.getElementById('pinBtn').title     = tr.pinTip;
+  document.getElementById('langBtn').title    = tr.langTip;
+  document.getElementById('compactBtn').title = tr.compactTip;
+  document.getElementById('lbl-bg').textContent     = tr.bgLbl;
+  document.getElementById('lbl-accent').textContent = tr.accentLbl;
+  document.getElementById('refreshBtn').title    = tr.refreshTip;
+  document.getElementById('exportCsvBtn').title  = tr.csvTip;
+  document.getElementById('exportJsonBtn').title = tr.jsonTip;
+  document.getElementById('reportBtn').title     = tr.reportTip;
+  renderViewNav();
+  renderPeriods('periods');
+  renderPeriods('cPeriods');
+  if (lastData) renderContent(lastData);
+}
+
+/* ─── Titlebar buttons ───────────────────── */
+document.getElementById('closeBtn').onclick = () => { closeAllPanels(); ipcRenderer.send('close'); };
+
+document.getElementById('themeBtn').onclick = e => {
+  e.stopPropagation();
+  const p=document.getElementById('themePanel'); const was=p.classList.contains('hidden');
+  closeAllPanels(); if (was) p.classList.remove('hidden');
+};
+document.getElementById('langBtn').onclick = e => {
+  e.stopPropagation();
+  const p=document.getElementById('langPanel'); const was=p.classList.contains('hidden');
+  closeAllPanels(); if (was) { buildLangPanel(); p.classList.remove('hidden'); }
+};
+document.getElementById('pinBtn').onclick = () => {
+  closeAllPanels(); isPinned=!isPinned;
+  document.getElementById('pinBtn').classList.toggle('active',isPinned);
+  ipcRenderer.send('set-pinned',isPinned);
+};
+document.getElementById('compactBtn').onclick = () => {
+  closeAllPanels(); isCompact=!isCompact;
+  document.body.classList.toggle('compact',isCompact);
+  document.getElementById('compactBtn').classList.toggle('active',isCompact);
+  ipcRenderer.send('set-compact',isCompact);
+};
+
+/* ─── Color pickers & alpha ──────────────── */
+const bgPicker      = document.getElementById('bgPicker');
+const accentPicker  = document.getElementById('accentPicker');
+const bgAlphaSlider = document.getElementById('bgAlphaSlider');
+const bgAlphaVal    = document.getElementById('bgAlphaVal');
+const acAlphaSlider = document.getElementById('accentAlphaSlider');
+const acAlphaVal    = document.getElementById('accentAlphaVal');
+
+bgPicker.value = customBg; accentPicker.value = customAccent;
+bgAlphaSlider.value = bgAlpha; bgAlphaVal.textContent = bgAlpha+'%';
+acAlphaSlider.value = accentAlpha; acAlphaVal.textContent = accentAlpha+'%';
+
+bgPicker.addEventListener('input',     e=>{ customBg=e.target.value;     localStorage.setItem('customBg',customBg);         applyTheme(); });
+accentPicker.addEventListener('input', e=>{ customAccent=e.target.value; localStorage.setItem('customAccent',customAccent); applyTheme(); });
+bgAlphaSlider.addEventListener('input', e=>{
+  bgAlpha=parseInt(e.target.value); bgAlphaVal.textContent=bgAlpha+'%';
+  localStorage.setItem('bgAlpha',bgAlpha); applyTheme();
+});
+acAlphaSlider.addEventListener('input', e=>{
+  accentAlpha=parseInt(e.target.value); acAlphaVal.textContent=accentAlpha+'%';
+  localStorage.setItem('accentAlpha',accentAlpha); applyTheme();
 });
 
+document.addEventListener('click', closeAllPanels);
+document.getElementById('themePanel').addEventListener('click', e=>e.stopPropagation());
+document.getElementById('langPanel').addEventListener('click',  e=>e.stopPropagation());
+
+/* ─── IPC ────────────────────────────────── */
+ipcRenderer.on('data', (_, {data,period}) => {
+  lastData=data; activePeriod=period;
+  console.log('[codeburn] raw data:', JSON.stringify(data, null, 2));
+  document.getElementById('cCost').textContent=fmt(data.current.cost);
+  renderCompactProviders(data.current);
+  renderPeriods('periods'); renderPeriods('cPeriods');
+  renderContent(data);
+});
 ipcRenderer.on('error', (_, msg) => {
-  document.getElementById('content').innerHTML =
-    `<div class="error-box">&#x26A0; ${msg}</div>`;
+  document.getElementById('content').innerHTML=`<div class="error-box">&#x26A0; ${msg}</div>`;
+});
+ipcRenderer.on('exit-compact', () => {
+  isCompact=false;
+  document.body.classList.remove('compact');
+  document.getElementById('compactBtn').classList.remove('active');
 });
 
-renderPeriods();
+/* ─── Provider colors ────────────────────── */
+const PROVIDER_COLORS = [
+  '#e94560','#3b82f6','#10b981','#f59e0b','#8b5cf6',
+  '#06b6d4','#f97316','#ec4899','#14b8a6','#84cc16',
+  '#6366f1','#ef4444','#a855f7','#22d3ee','#fb923c',
+];
+function providerColor(name) {
+  let h=0; for (const c of name) h=(h*31+c.charCodeAt(0))>>>0;
+  return PROVIDER_COLORS[h%PROVIDER_COLORS.length];
+}
+function providerBadge(name) {
+  const parts=name.replace(/-/g,' ').split(' ');
+  return parts.length>=2?(parts[0][0]+parts[1][0]).toUpperCase():name.slice(0,2).toUpperCase();
+}
+
+function renderCompactProviders(c) {
+  const el=document.getElementById('cProviders');
+  if (!el) return;
+  const providers=Object.entries(c.providers||{}).filter(([,v])=>v>0).sort(([,a],[,b])=>b-a);
+  if (!providers.length) { el.innerHTML=''; return; }
+  const max=providers[0][1];
+  el.innerHTML=providers.map(([name,cost])=>{
+    const col=providerColor(name), badge=providerBadge(name);
+    const pct=Math.max(4,Math.round(cost/max*100));
+    return `<div class="cp-row" title="${name}: ${fmt(cost)}">
+      <div class="cp-badge" style="background:${col}">${badge}</div>
+      <div class="cp-bar-wrap"><div class="cp-bar" style="width:${pct}%;background:${col}"></div></div>
+      <div class="cp-cost">${fmt(cost)}</div>
+    </div>`;
+  }).join('');
+}
+
+function refreshCompact() {
+  if (!lastData) return;
+  const el=document.getElementById('cCost');
+  if (el) el.textContent=fmt(lastData.current.cost);
+  renderCompactProviders(lastData.current);
+}
+
+/* ─── Init ───────────────────────────────── */
+applyTheme();
+const initC=LANG_CURRENCY[activeLang]||LANG_CURRENCY.en;
+currentSymbol=initC.symbol; currentDec=initC.decimals;
+fetchRate(activeLang);
+updateUI();
 </script>
 </body>
 </html>
