@@ -1,4 +1,4 @@
-import { readdir, stat } from 'fs/promises'
+import { readFile, readdir, stat } from 'fs/promises'
 import { basename, delimiter as pathDelimiter, join, resolve } from 'path'
 import { homedir } from 'os'
 
@@ -60,6 +60,8 @@ function getClaudeConfigDirs(): string[] {
 }
 
 function getDesktopSessionsDir(): string {
+  const override = process.env['CODEBURN_DESKTOP_SESSIONS_DIR']
+  if (override) return override
   if (process.platform === 'darwin') return join(homedir(), 'Library', 'Application Support', 'Claude', 'local-agent-mode-sessions')
   if (process.platform === 'win32') return join(homedir(), 'AppData', 'Roaming', 'Claude', 'local-agent-mode-sessions')
   return join(homedir(), '.config', 'Claude', 'local-agent-mode-sessions')
@@ -89,6 +91,71 @@ async function findDesktopProjectDirs(base: string): Promise<string[]> {
   }
   await walk(base, 0)
   return results
+}
+
+// ── Cowork space resolution ────────────────────────────────────────────
+// Claude Desktop's local-agent-mode creates one directory per session under
+//   <desktopSessionsDir>/<appId>/<workspaceId>/local_<sessionId>/
+// Inside each session directory Claude Code stores its own config at
+//   .claude/projects/<sanitized-cwd>/
+// which is what findDesktopProjectDirs picks up. The actual project name
+// lives in the sibling <workspaceId>/local_<sessionId>.json (spaceId field)
+// and <workspaceId>/spaces.json (id → name mapping).
+
+interface CoworkSpace { id: string; name: string }
+interface CoworkSpacesFile { spaces: CoworkSpace[] }
+
+// Cache spaces.json per workspace directory to avoid redundant reads.
+const spacesJsonCache = new Map<string, CoworkSpacesFile | null>()
+
+async function loadSpacesJson(workspaceDir: string): Promise<CoworkSpacesFile | null> {
+  if (spacesJsonCache.has(workspaceDir)) return spacesJsonCache.get(workspaceDir) ?? null
+  try {
+    const raw = await readFile(join(workspaceDir, 'spaces.json'), 'utf-8')
+    const parsed: unknown = JSON.parse(raw)
+    if (
+      parsed !== null &&
+      typeof parsed === 'object' &&
+      'spaces' in parsed &&
+      Array.isArray((parsed as { spaces: unknown }).spaces)
+    ) {
+      const result = parsed as CoworkSpacesFile
+      spacesJsonCache.set(workspaceDir, result)
+      return result
+    }
+  } catch {
+    // unreadable or malformed — treat as no spaces
+  }
+  spacesJsonCache.set(workspaceDir, null)
+  return null
+}
+
+async function resolveCoworkSpaceName(workspaceDir: string, sessionId: string): Promise<string | null> {
+  const [spacesFile, sessionMetaRaw] = await Promise.all([
+    loadSpacesJson(workspaceDir),
+    readFile(join(workspaceDir, `${sessionId}.json`), 'utf-8').catch(() => null),
+  ])
+  if (!sessionMetaRaw) return null
+  let sessionMeta: unknown
+  try { sessionMeta = JSON.parse(sessionMetaRaw) } catch { return null }
+  if (sessionMeta === null || typeof sessionMeta !== 'object') return null
+  const meta = sessionMeta as Record<string, unknown>
+
+  const spaceId = meta['spaceId']
+  if (typeof spaceId === 'string' && spacesFile) {
+    const spaceName = spacesFile.spaces.find(s => s.id === spaceId)?.name
+    if (spaceName) return spaceName
+  }
+
+  // No spaceId (standalone session): fall back to selected folder then title.
+  const folders = meta['userSelectedFolders']
+  if (Array.isArray(folders) && folders.length > 0 && typeof folders[0] === 'string') {
+    return basename(folders[0])
+  }
+  const title = meta['title']
+  if (typeof title === 'string' && title.trim().length > 0) return title.trim()
+
+  return null
 }
 
 export const claude: Provider = {
@@ -155,12 +222,38 @@ export const claude: Provider = {
       )
     }
 
-    const desktopDirs = await findDesktopProjectDirs(getDesktopSessionsDir())
+    const desktopBase = getDesktopSessionsDir()
+    const desktopDirs = await findDesktopProjectDirs(desktopBase)
+    const sep = desktopBase.includes('\\') ? '\\' : '/'
     for (const dirPath of desktopDirs) {
       const resolved = resolve(dirPath)
       if (seenProjectDirs.has(resolved)) continue
       seenProjectDirs.add(resolved)
-      sources.push({ path: dirPath, project: basename(dirPath), provider: 'claude' })
+
+      // For Claude Desktop local-agent-mode (Cowork) sessions, the project dir
+      // lives inside local_<sessionId>/.claude/projects/. We resolve the space
+      // name from the sibling .json and spaces.json so it groups correctly.
+      // Path structure: <desktopBase>/<appId>/<workspaceId>/local_<id>/.claude/projects/<slug>
+      let projectName = basename(dirPath)
+      const resolvedBase = resolve(desktopBase)
+      if (resolved.startsWith(resolvedBase + sep) || resolved.startsWith(resolvedBase + '/')) {
+        const rel = resolved.slice(resolvedBase.length + 1)
+        const parts = rel.split(/[/\\]/)
+        // parts = [appId, workspaceId, local_sessionId, .claude, projects, slug]
+        if (
+          parts.length >= 6 &&
+          parts[2]?.startsWith('local_') &&
+          parts[3] === '.claude' &&
+          parts[4] === 'projects'
+        ) {
+          const workspaceDir = join(resolvedBase, parts[0]!, parts[1]!)
+          const sessionId = parts[2]!
+          const spaceName = await resolveCoworkSpaceName(workspaceDir, sessionId)
+          if (spaceName) projectName = spaceName
+        }
+      }
+
+      sources.push({ path: dirPath, project: projectName, provider: 'claude' })
     }
 
     return sources

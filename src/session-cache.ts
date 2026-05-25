@@ -92,7 +92,7 @@ const PROVIDER_ENV_VARS: Record<string, string[]> = {
 }
 
 const PROVIDER_PARSE_VERSIONS: Record<string, string> = {
-  claude: 'worktree-project-grouping-v1',
+  claude: 'cowork-space-grouping-v1',
   cline: 'worktree-project-grouping-v1',
   copilot: 'mcp-tool-normalization-v1',
   'ibm-bob': 'worktree-project-grouping-v1',

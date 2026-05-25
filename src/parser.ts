@@ -1,5 +1,6 @@
 import { lstat, readFile, readdir, stat } from 'fs/promises'
-import { basename, join, resolve } from 'path'
+import { basename, join, resolve, sep } from 'path'
+import { homedir } from 'os'
 import { readSessionLines } from './fs-utils.js'
 import { calculateCost, getShortModelName } from './models.js'
 import { discoverAllSessions, getProvider } from './providers/index.js'
@@ -49,6 +50,26 @@ function normalizeProjectPathKey(projectPath: string): string {
 function projectNameFromPath(projectPath: string, fallback: string): string {
   const normalized = projectPath.trim().replace(/\\/g, '/').replace(/\/+$/, '')
   return normalized.split('/').filter(Boolean).pop() ?? fallback
+}
+
+// Returns the Claude Desktop local-agent-mode sessions directory, respecting the
+// test/override env var so the same override used in claude.ts applies here too.
+function getDesktopSessionsDir(): string {
+  const override = process.env['CODEBURN_DESKTOP_SESSIONS_DIR']
+  if (override) return override
+  if (process.platform === 'darwin') return join(homedir(), 'Library', 'Application Support', 'Claude', 'local-agent-mode-sessions')
+  if (process.platform === 'win32') return join(homedir(), 'AppData', 'Roaming', 'Claude', 'local-agent-mode-sessions')
+  return join(homedir(), '.config', 'Claude', 'local-agent-mode-sessions')
+}
+
+// Returns true when a session cwd is inside the desktop local-agent-mode
+// sessions directory. Those paths are ephemeral per-session output directories;
+// the canonical project grouping comes from the Cowork space name (set on the
+// SessionSource in claude.ts), so we must not use the cwd as the project key.
+function isCoworkOutputPath(cwd: string): boolean {
+  const base = resolve(getDesktopSessionsDir())
+  const normalized = resolve(cwd)
+  return normalized.startsWith(base + sep) || normalized.startsWith(base + '/')
 }
 
 async function resolveCanonicalProjectPath(cwd: string): Promise<{ path: string; isWorktree: boolean }> {
@@ -1450,7 +1471,11 @@ async function scanProjectDirs(
 
     const turns = groupIntoTurns(dedupeStreamingMessageIds(entries), seenMsgIds)
     const cwd = extractCanonicalCwd(entries)
-    const canonical = cwd ? await resolveCanonicalProjectPath(cwd) : undefined
+    // Cowork sessions use an ephemeral per-session outputs dir as the cwd. If we
+    // stored that as canonicalCwd it would give every session a unique project
+    // key and prevent them from grouping under the shared space name. Skip the
+    // canonical resolution for these paths so the slug-based key is used instead.
+    const canonical = (cwd && !isCoworkOutputPath(cwd)) ? await resolveCanonicalProjectPath(cwd) : undefined
     section.files[filePath] = {
       fingerprint: info.fp,
       lastCompleteLineOffset: tracker.lastCompleteLineOffset,

@@ -1,18 +1,23 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mkdtemp, mkdir, writeFile, rm, utimes } from 'fs/promises'
 import { join, relative } from 'path'
-import { tmpdir } from 'os'
+import { tmpdir, homedir } from 'os'
 
 import { parseAllSessions } from '../src/parser.js'
 import type { DateRange } from '../src/types.js'
 
 let tmpDir: string
 let originalConfigDir: string | undefined
+let originalDesktopSessionsDir: string | undefined
 
 beforeEach(async () => {
   tmpDir = await mkdtemp(join(tmpdir(), 'claude-cwd-test-'))
   originalConfigDir = process.env['CLAUDE_CONFIG_DIR']
+  originalDesktopSessionsDir = process.env['CODEBURN_DESKTOP_SESSIONS_DIR']
   process.env['CLAUDE_CONFIG_DIR'] = tmpDir
+  // Point desktop sessions at an empty subdir by default so real sessions
+  // on the developer's machine do not bleed into the unit tests.
+  process.env['CODEBURN_DESKTOP_SESSIONS_DIR'] = join(tmpDir, 'desktop-sessions')
 })
 
 afterEach(async () => {
@@ -20,6 +25,11 @@ afterEach(async () => {
     delete process.env['CLAUDE_CONFIG_DIR']
   } else {
     process.env['CLAUDE_CONFIG_DIR'] = originalConfigDir
+  }
+  if (originalDesktopSessionsDir === undefined) {
+    delete process.env['CODEBURN_DESKTOP_SESSIONS_DIR']
+  } else {
+    process.env['CODEBURN_DESKTOP_SESSIONS_DIR'] = originalDesktopSessionsDir
   }
   await rm(tmpDir, { recursive: true, force: true })
 })
@@ -266,5 +276,218 @@ describe('Claude cache creation pricing', () => {
     expect(projects).toHaveLength(1)
     expect(projects[0]!.sessions[0]!.totalCacheWriteTokens).toBe(60_120)
     expect(projects[0]!.totalCostUSD).toBeCloseTo(0.37575, 6)
+  })
+})
+
+// ── Helpers for Cowork local-agent-mode session fixtures ────────────────
+
+async function writeCoworkSession(opts: {
+  desktopSessionsDir: string
+  appId: string
+  workspaceId: string
+  sessionId: string
+  spaceName?: string
+  spaceId?: string
+  userSelectedFolders?: string[]
+  title?: string
+  claudeSessionId: string
+  timestamp: string
+  usage?: Record<string, unknown>
+  model?: string
+}): Promise<void> {
+  const {
+    desktopSessionsDir, appId, workspaceId, sessionId,
+    spaceName, spaceId, userSelectedFolders, title,
+    claudeSessionId, timestamp,
+    usage = { input_tokens: 100, output_tokens: 50 },
+    model = 'claude-sonnet-4-5',
+  } = opts
+
+  const workspaceDir = join(desktopSessionsDir, appId, workspaceId)
+
+  // spaces.json — written only when a space is defined
+  await mkdir(workspaceDir, { recursive: true })
+  if (spaceId && spaceName) {
+    await writeFile(join(workspaceDir, 'spaces.json'), JSON.stringify({
+      spaces: [{ id: spaceId, name: spaceName, folders: [], projects: [] }],
+    }))
+  }
+
+  // local_<sessionId>.json — session metadata
+  const outputsDir = join(workspaceDir, sessionId, 'outputs')
+  const sessionMeta: Record<string, unknown> = {
+    sessionId,
+    cwd: outputsDir,
+    title: title ?? (spaceName ? `Test session for ${spaceName}` : 'Untitled session'),
+  }
+  if (spaceId) sessionMeta['spaceId'] = spaceId
+  if (userSelectedFolders) sessionMeta['userSelectedFolders'] = userSelectedFolders
+  await writeFile(join(workspaceDir, `${sessionId}.json`), JSON.stringify(sessionMeta))
+
+  // .claude/projects/<slug>/session.jsonl — the actual token-bearing session
+  const projectSlug = outputsDir.replace(/[/\\]/g, '-').replace(/^-/, '')
+  const projectDir = join(workspaceDir, sessionId, '.claude', 'projects', projectSlug)
+  await mkdir(projectDir, { recursive: true })
+  const filePath = join(projectDir, `${claudeSessionId}.jsonl`)
+  await writeFile(filePath, JSON.stringify({
+    type: 'assistant',
+    sessionId: claudeSessionId,
+    timestamp,
+    cwd: outputsDir,
+    message: {
+      id: `msg-${claudeSessionId}`,
+      type: 'message',
+      role: 'assistant',
+      model,
+      content: [],
+      usage,
+    },
+  }) + '\n')
+  const mtime = new Date(timestamp)
+  await utimes(filePath, mtime, mtime)
+}
+
+describe('Claude Cowork local-agent-mode session grouping', () => {
+  it('groups multiple Cowork sessions from the same space under the space name', async () => {
+    const desktopSessionsDir = join(tmpDir, 'desktop-sessions')
+    const spaceId = 'space-phd-001'
+    const spaceName = 'PhD_Thesis'
+
+    await writeCoworkSession({
+      desktopSessionsDir,
+      appId: 'app-abc',
+      workspaceId: 'ws-001',
+      sessionId: 'local_aaaa',
+      spaceName,
+      spaceId,
+      claudeSessionId: 'chapter-2-session',
+      timestamp: '2099-06-01T10:00:00.000Z',
+    })
+
+    await writeCoworkSession({
+      desktopSessionsDir,
+      appId: 'app-abc',
+      workspaceId: 'ws-001',
+      sessionId: 'local_bbbb',
+      spaceName,
+      spaceId,
+      claudeSessionId: 'chapter-4-session',
+      timestamp: '2099-06-01T11:00:00.000Z',
+    })
+
+    const projects = await parseAllSessions(dayRange('2099-06-01'), 'claude')
+
+    expect(projects).toHaveLength(1)
+    expect(projects[0]!.project).toBe(spaceName)
+    expect(projects[0]!.sessions).toHaveLength(2)
+    expect(projects[0]!.sessions.map(s => s.sessionId).sort()).toEqual([
+      'chapter-2-session',
+      'chapter-4-session',
+    ])
+  })
+
+  it('keeps sessions from different spaces in separate projects', async () => {
+    const desktopSessionsDir = join(tmpDir, 'desktop-sessions')
+
+    // Each space gets its own workspace so their spaces.json files don't overwrite each other.
+    await writeCoworkSession({
+      desktopSessionsDir,
+      appId: 'app-abc',
+      workspaceId: 'ws-phd',
+      sessionId: 'local_cccc',
+      spaceName: 'PhD_Thesis',
+      spaceId: 'space-phd-001',
+      claudeSessionId: 'thesis-session',
+      timestamp: '2099-06-02T10:00:00.000Z',
+    })
+
+    await writeCoworkSession({
+      desktopSessionsDir,
+      appId: 'app-abc',
+      workspaceId: 'ws-lib',
+      sessionId: 'local_dddd',
+      spaceName: 'LibricicloAgain',
+      spaceId: 'space-lib-002',
+      claudeSessionId: 'libriciclo-session',
+      timestamp: '2099-06-02T11:00:00.000Z',
+    })
+
+    const projects = await parseAllSessions(dayRange('2099-06-02'), 'claude')
+
+    expect(projects).toHaveLength(2)
+    const names = projects.map(p => p.project).sort()
+    expect(names).toEqual(['LibricicloAgain', 'PhD_Thesis'])
+  })
+
+  it('falls back to userSelectedFolders[0] basename when no spaceId is set', async () => {
+    const desktopSessionsDir = join(tmpDir, 'desktop-sessions')
+
+    await writeCoworkSession({
+      desktopSessionsDir,
+      appId: 'app-abc',
+      workspaceId: 'ws-003',
+      sessionId: 'local_eeee',
+      userSelectedFolders: ['/Users/carlo/Desktop/Projects/FDMChapter/FDMPapers'],
+      title: 'Fetch BibTeX from InspireHEP',
+      claudeSessionId: 'fdm-session',
+      timestamp: '2099-06-03T10:00:00.000Z',
+    })
+
+    const projects = await parseAllSessions(dayRange('2099-06-03'), 'claude')
+
+    expect(projects).toHaveLength(1)
+    expect(projects[0]!.project).toBe('FDMPapers')
+    expect(projects[0]!.sessions).toHaveLength(1)
+  })
+
+  it('falls back to title when no spaceId and no userSelectedFolders', async () => {
+    const desktopSessionsDir = join(tmpDir, 'desktop-sessions')
+
+    await writeCoworkSession({
+      desktopSessionsDir,
+      appId: 'app-abc',
+      workspaceId: 'ws-004',
+      sessionId: 'local_ffff',
+      title: 'Learn COMSOL software basics',
+      claudeSessionId: 'comsol-session',
+      timestamp: '2099-06-04T10:00:00.000Z',
+    })
+
+    const projects = await parseAllSessions(dayRange('2099-06-04'), 'claude')
+
+    expect(projects).toHaveLength(1)
+    expect(projects[0]!.project).toBe('Learn COMSOL software basics')
+    expect(projects[0]!.sessions).toHaveLength(1)
+  })
+
+  it('falls back to sanitized directory slug when no session metadata exists', async () => {
+    const desktopSessionsDir = join(tmpDir, 'desktop-sessions')
+    const workspaceDir = join(desktopSessionsDir, 'app-abc', 'ws-005')
+    const sessionId = 'local_gggg'
+    const outputsDir = join(workspaceDir, sessionId, 'outputs')
+    const projectSlug = outputsDir.replace(/[/\\]/g, '-').replace(/^-/, '')
+    const projectDir = join(workspaceDir, sessionId, '.claude', 'projects', projectSlug)
+    await mkdir(projectDir, { recursive: true })
+
+    // No spaces.json or session .json at all
+    const filePath = join(projectDir, 'no-meta-session.jsonl')
+    await writeFile(filePath, JSON.stringify({
+      type: 'assistant',
+      sessionId: 'no-meta-session',
+      timestamp: '2099-06-05T10:00:00.000Z',
+      cwd: outputsDir,
+      message: {
+        id: 'msg-no-meta', type: 'message', role: 'assistant',
+        model: 'claude-sonnet-4-5', content: [],
+        usage: { input_tokens: 100, output_tokens: 50 },
+      },
+    }) + '\n')
+    await utimes(filePath, new Date('2099-06-05T10:00:00.000Z'), new Date('2099-06-05T10:00:00.000Z'))
+
+    const projects = await parseAllSessions(dayRange('2099-06-05'), 'claude')
+
+    expect(projects).toHaveLength(1)
+    expect(projects[0]!.project).toBe(projectSlug)
+    expect(projects[0]!.sessions).toHaveLength(1)
   })
 })
