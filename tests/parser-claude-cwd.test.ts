@@ -350,8 +350,8 @@ async function writeCoworkSession(opts: {
 describe('Claude Cowork local-agent-mode session grouping', () => {
   it('groups multiple Cowork sessions from the same space under the space name', async () => {
     const desktopSessionsDir = join(tmpDir, 'desktop-sessions')
-    const spaceId = 'space-phd-001'
-    const spaceName = 'PhD_Thesis'
+    const spaceId = 'space-001'
+    const spaceName = 'Project1'
 
     await writeCoworkSession({
       desktopSessionsDir,
@@ -360,7 +360,7 @@ describe('Claude Cowork local-agent-mode session grouping', () => {
       sessionId: 'local_aaaa',
       spaceName,
       spaceId,
-      claudeSessionId: 'chapter-2-session',
+      claudeSessionId: 'session-a',
       timestamp: '2099-06-01T10:00:00.000Z',
     })
 
@@ -371,7 +371,7 @@ describe('Claude Cowork local-agent-mode session grouping', () => {
       sessionId: 'local_bbbb',
       spaceName,
       spaceId,
-      claudeSessionId: 'chapter-4-session',
+      claudeSessionId: 'session-b',
       timestamp: '2099-06-01T11:00:00.000Z',
     })
 
@@ -381,8 +381,8 @@ describe('Claude Cowork local-agent-mode session grouping', () => {
     expect(projects[0]!.project).toBe(spaceName)
     expect(projects[0]!.sessions).toHaveLength(2)
     expect(projects[0]!.sessions.map(s => s.sessionId).sort()).toEqual([
-      'chapter-2-session',
-      'chapter-4-session',
+      'session-a',
+      'session-b',
     ])
   })
 
@@ -393,22 +393,22 @@ describe('Claude Cowork local-agent-mode session grouping', () => {
     await writeCoworkSession({
       desktopSessionsDir,
       appId: 'app-abc',
-      workspaceId: 'ws-phd',
+      workspaceId: 'ws-001',
       sessionId: 'local_cccc',
-      spaceName: 'PhD_Thesis',
-      spaceId: 'space-phd-001',
-      claudeSessionId: 'thesis-session',
+      spaceName: 'Project1',
+      spaceId: 'space-001',
+      claudeSessionId: 'session-c',
       timestamp: '2099-06-02T10:00:00.000Z',
     })
 
     await writeCoworkSession({
       desktopSessionsDir,
       appId: 'app-abc',
-      workspaceId: 'ws-lib',
+      workspaceId: 'ws-002',
       sessionId: 'local_dddd',
-      spaceName: 'LibricicloAgain',
-      spaceId: 'space-lib-002',
-      claudeSessionId: 'libriciclo-session',
+      spaceName: 'Project2',
+      spaceId: 'space-002',
+      claudeSessionId: 'session-d',
       timestamp: '2099-06-02T11:00:00.000Z',
     })
 
@@ -416,7 +416,7 @@ describe('Claude Cowork local-agent-mode session grouping', () => {
 
     expect(projects).toHaveLength(2)
     const names = projects.map(p => p.project).sort()
-    expect(names).toEqual(['LibricicloAgain', 'PhD_Thesis'])
+    expect(names).toEqual(['Project1', 'Project2'])
   })
 
   it('falls back to userSelectedFolders[0] basename when no spaceId is set', async () => {
@@ -427,16 +427,16 @@ describe('Claude Cowork local-agent-mode session grouping', () => {
       appId: 'app-abc',
       workspaceId: 'ws-003',
       sessionId: 'local_eeee',
-      userSelectedFolders: ['/Users/carlo/Desktop/Projects/FDMChapter/FDMPapers'],
-      title: 'Fetch BibTeX from InspireHEP',
-      claudeSessionId: 'fdm-session',
+      userSelectedFolders: ['/home/user/projects/ParentFolder/SubFolder'],
+      title: 'Some session title',
+      claudeSessionId: 'session-e',
       timestamp: '2099-06-03T10:00:00.000Z',
     })
 
     const projects = await parseAllSessions(dayRange('2099-06-03'), 'claude')
 
     expect(projects).toHaveLength(1)
-    expect(projects[0]!.project).toBe('FDMPapers')
+    expect(projects[0]!.project).toBe('SubFolder')
     expect(projects[0]!.sessions).toHaveLength(1)
   })
 
@@ -448,15 +448,15 @@ describe('Claude Cowork local-agent-mode session grouping', () => {
       appId: 'app-abc',
       workspaceId: 'ws-004',
       sessionId: 'local_ffff',
-      title: 'Learn COMSOL software basics',
-      claudeSessionId: 'comsol-session',
+      title: 'A standalone session task',
+      claudeSessionId: 'session-f',
       timestamp: '2099-06-04T10:00:00.000Z',
     })
 
     const projects = await parseAllSessions(dayRange('2099-06-04'), 'claude')
 
     expect(projects).toHaveLength(1)
-    expect(projects[0]!.project).toBe('Learn COMSOL software basics')
+    expect(projects[0]!.project).toBe('A standalone session task')
     expect(projects[0]!.sessions).toHaveLength(1)
   })
 
