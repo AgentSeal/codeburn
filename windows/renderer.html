@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 12px;
+  background: #111118;
+  color: #d4d4d8;
+  user-select: none;
+  overflow: hidden;
+  border: 1px solid #2a2a3e;
+  border-radius: 10px;
+  height: 500px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Titlebar ─────────────────────────────── */
+.titlebar {
+  background: #18181b;
+  padding: 10px 14px 9px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  -webkit-app-region: drag;
+  border-bottom: 1px solid #27272a;
+  flex-shrink: 0;
+}
+.title { font-weight: 700; font-size: 13px; color: #e94560; letter-spacing: 0.3px; }
+.close-btn {
+  -webkit-app-region: no-drag;
+  cursor: pointer; color: #52525b; font-size: 14px;
+  border: none; background: none; padding: 0 4px; line-height: 1;
+}
+.close-btn:hover { color: #e94560; }
+
+/* ── Period tabs ──────────────────────────── */
+.periods {
+  display: flex;
+  gap: 4px;
+  padding: 8px 14px 0;
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
+}
+.period-btn {
+  background: none; border: none; color: #71717a;
+  cursor: pointer; padding: 4px 10px; font-size: 11px; border-radius: 5px;
+  transition: background 0.1s, color 0.1s;
+}
+.period-btn.active { background: #27272a; color: #e4e4e7; }
+.period-btn:hover:not(.active) { color: #a1a1aa; }
+
+/* ── Scrollable content ───────────────────── */
+.content {
+  padding: 12px 14px 14px;
+  overflow-y: auto;
+  flex: 1;
+  -webkit-app-region: no-drag;
+}
+.content::-webkit-scrollbar { width: 4px; }
+.content::-webkit-scrollbar-track { background: transparent; }
+.content::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 2px; }
+
+/* ── Cost hero ────────────────────────────── */
+.cost-main { font-size: 30px; font-weight: 700; color: #e94560; letter-spacing: -0.5px; }
+.cost-sub { color: #71717a; font-size: 11px; margin-top: 3px; }
+
+/* ── Stat row ─────────────────────────────── */
+.stats-row { display: flex; gap: 8px; margin-top: 12px; }
+.stat-box {
+  flex: 1; background: #18181b; border: 1px solid #27272a;
+  border-radius: 6px; padding: 7px 10px;
+}
+.stat-value { font-size: 15px; font-weight: 600; color: #d4d4d8; }
+.stat-label { font-size: 10px; color: #52525b; margin-top: 2px; }
+
+/* ── Sections ─────────────────────────────── */
+.section { margin-top: 14px; }
+.section-title {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px;
+  color: #52525b; margin-bottom: 7px;
+}
+
+/* Provider bars */
+.provider-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.provider-name { width: 90px; color: #a1a1aa; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.provider-bar-wrap { flex: 1; background: #27272a; border-radius: 2px; height: 4px; }
+.provider-bar { height: 4px; border-radius: 2px; background: #e94560; transition: width 0.3s; }
+.provider-cost { width: 58px; text-align: right; color: #d4d4d8; font-variant-numeric: tabular-nums; }
+
+/* Projects */
+.project-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 5px 0; border-bottom: 1px solid #1c1c26;
+}
+.project-row:last-child { border-bottom: none; }
+.project-name { color: #a1a1aa; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 195px; }
+.project-cost { color: #d4d4d8; font-variant-numeric: tabular-nums; flex-shrink: 0; margin-left: 8px; }
+
+/* Optimize callout */
+.optimize-box {
+  margin-top: 12px; background: #1a160a; border: 1px solid #3d2f08;
+  border-radius: 6px; padding: 8px 10px;
+  display: flex; align-items: flex-start; gap: 8px;
+}
+.optimize-icon { color: #f59e0b; flex-shrink: 0; }
+.optimize-text { color: #ca9208; font-size: 11px; line-height: 1.4; }
+
+/* Loading / error */
+.loading { text-align: center; color: #52525b; padding: 40px 20px; }
+.spinner {
+  width: 20px; height: 20px; border: 2px solid #27272a;
+  border-top-color: #e94560; border-radius: 50%;
+  animation: spin 0.8s linear infinite; margin: 0 auto 10px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.error-box { color: #f87171; padding: 14px; font-size: 11px; line-height: 1.5; }
+</style>
+</head>
+<body>
+
+<div class="titlebar">
+  <span class="title">&#x1F525; CodeBurn</span>
+  <button class="close-btn" id="closeBtn">&#x2715;</button>
+</div>
+
+<div id="periods" class="periods"></div>
+<div id="content" class="content">
+  <div class="loading"><div class="spinner"></div>Loading…</div>
+</div>
+
+<script>
+const { ipcRenderer } = require('electron');
+
+const PERIODS = [
+  { key: 'today', label: 'Today' },
+  { key: 'week',  label: 'Week'  },
+  { key: 'month', label: 'Month' },
+  { key: 'all',   label: 'All'   },
+];
+
+let activePeriod = 'today';
+
+document.getElementById('closeBtn').onclick = () => ipcRenderer.send('close');
+
+function fmt(n) { return '$' + (n || 0).toFixed(2); }
+
+function renderPeriods() {
+  document.getElementById('periods').innerHTML = PERIODS.map(p =>
+    `<button class="period-btn ${p.key === activePeriod ? 'active' : ''}" data-p="${p.key}">${p.label}</button>`
+  ).join('');
+  document.querySelectorAll('.period-btn').forEach(btn => {
+    btn.onclick = () => {
+      activePeriod = btn.dataset.p;
+      renderPeriods();
+      document.getElementById('content').innerHTML =
+        '<div class="loading"><div class="spinner"></div>Loading…</div>';
+      ipcRenderer.send('set-period', activePeriod);
+    };
+  });
+}
+
+function render({ data }) {
+  const c = data.current;
+
+  const providers = Object.entries(c.providers || {})
+    .filter(([, v]) => v > 0)
+    .sort(([, a], [, b]) => b - a);
+  const maxCost = providers.reduce((m, [, v]) => Math.max(m, v), 0.01);
+
+  const providersHTML = providers.length
+    ? providers.map(([name, cost]) => `
+        <div class="provider-row">
+          <div class="provider-name">${name.charAt(0).toUpperCase() + name.slice(1)}</div>
+          <div class="provider-bar-wrap">
+            <div class="provider-bar" style="width:${Math.round(cost / maxCost * 100)}%"></div>
+          </div>
+          <div class="provider-cost">${fmt(cost)}</div>
+        </div>`).join('')
+    : '<div style="color:#52525b;font-size:11px">No provider data</div>';
+
+  const projectsHTML = (c.topProjects || []).slice(0, 5).map(p => {
+    const name = p.name.split(/[\\/]/).pop() || p.name;
+    return `<div class="project-row">
+      <div class="project-name" title="${p.name}">${name}</div>
+      <div class="project-cost">${fmt(p.cost)}</div>
+    </div>`;
+  }).join('') || '<div style="color:#52525b;font-size:11px">No project data</div>';
+
+  const opt = c.optimize;
+  const optimizeHTML = opt && opt.findingCount > 0 ? `
+    <div class="optimize-box">
+      <span class="optimize-icon">&#x26A1;</span>
+      <span class="optimize-text">
+        <strong>${opt.findingCount} finding${opt.findingCount > 1 ? 's' : ''}</strong> —
+        potential savings ${fmt(opt.savingsUSD)}/period<br>
+        ${(opt.topFindings || []).slice(0, 2).map(f =>
+          `<span style="opacity:0.8">&#x2022; ${f.title}</span>`
+        ).join('<br>')}
+      </span>
+    </div>` : '';
+
+  document.getElementById('content').innerHTML = `
+    <div class="cost-main">${fmt(c.cost)}</div>
+    <div class="cost-sub">${c.calls} calls &nbsp;·&nbsp; ${c.label}</div>
+
+    <div class="stats-row">
+      <div class="stat-box">
+        <div class="stat-value">${c.cacheHitPercent != null ? c.cacheHitPercent.toFixed(0) + '%' : '—'}</div>
+        <div class="stat-label">Cache hit</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-value">${c.sessions ?? '—'}</div>
+        <div class="stat-label">Sessions</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-value">${c.oneShotRate != null ? (c.oneShotRate * 100).toFixed(0) + '%' : '—'}</div>
+        <div class="stat-label">One-shot</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Providers</div>
+      ${providersHTML}
+    </div>
+
+    <div class="section">
+      <div class="section-title">Top Projects</div>
+      ${projectsHTML}
+    </div>
+
+    ${optimizeHTML}
+  `;
+}
+
+ipcRenderer.on('data', (_, payload) => {
+  activePeriod = payload.period;
+  renderPeriods();
+  render(payload);
+});
+
+ipcRenderer.on('error', (_, msg) => {
+  document.getElementById('content').innerHTML =
+    `<div class="error-box">&#x26A0; ${msg}</div>`;
+});
+
+renderPeriods();
+</script>
+</body>
+</html>

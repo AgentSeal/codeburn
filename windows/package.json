@@ -1,0 +1,12 @@
+{
+  "name": "codeburn-win-menubar",
+  "version": "1.0.0",
+  "description": "CodeBurn system tray for Windows",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "dependencies": {
+    "electron": "^35.0.0"
+  }
+}
