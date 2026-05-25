@@ -59,7 +59,7 @@ function getClaudeConfigDirs(): string[] {
   return [join(homedir(), '.claude')]
 }
 
-function getDesktopSessionsDir(): string {
+export function getDesktopSessionsDir(): string {
   const override = process.env['CODEBURN_DESKTOP_SESSIONS_DIR']
   if (override) return override
   if (process.platform === 'darwin') return join(homedir(), 'Library', 'Application Support', 'Claude', 'local-agent-mode-sessions')

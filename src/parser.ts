@@ -1,11 +1,11 @@
 import { lstat, readFile, readdir, stat } from 'fs/promises'
 import { basename, dirname, join, resolve, sep } from 'path'
-import { homedir } from 'os'
 import { readSessionLines } from './fs-utils.js'
 import { calculateCost, getShortModelName } from './models.js'
 import { discoverAllSessions, getProvider } from './providers/index.js'
 import { flushCodexCache } from './codex-cache.js'
 import { antigravityCascadeIdFromPath, flushAntigravityCache, shouldReparseAntigravitySource } from './providers/antigravity.js'
+import { getDesktopSessionsDir } from './providers/claude.js'
 import { isSqliteBusyError } from './sqlite.js'
 import {
   type CachedCall,
@@ -52,15 +52,6 @@ function projectNameFromPath(projectPath: string, fallback: string): string {
   return normalized.split('/').filter(Boolean).pop() ?? fallback
 }
 
-// Returns the Claude Desktop local-agent-mode sessions directory, respecting the
-// test/override env var so the same override used in claude.ts applies here too.
-function getDesktopSessionsDir(): string {
-  const override = process.env['CODEBURN_DESKTOP_SESSIONS_DIR']
-  if (override) return override
-  if (process.platform === 'darwin') return join(homedir(), 'Library', 'Application Support', 'Claude', 'local-agent-mode-sessions')
-  if (process.platform === 'win32') return join(homedir(), 'AppData', 'Roaming', 'Claude', 'local-agent-mode-sessions')
-  return join(homedir(), '.config', 'Claude', 'local-agent-mode-sessions')
-}
 
 // Returns true for sessions whose canonical project key must NOT be derived
 // from the cwd. Cowork sessions come in two flavours:

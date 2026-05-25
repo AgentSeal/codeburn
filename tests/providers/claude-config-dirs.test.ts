@@ -229,15 +229,13 @@ describe('claude parser — multi-dir aggregation (issue #208 option 1)', () => 
     expect((matches[0]! as Record<string, unknown>)['accountPath']).toBeUndefined()
   })
 
-  // Documents the option-1 behavior at the project-merge layer: the final
-  // mergedMap in parseAllSessions keys by the sanitized project slug. If two
-  // dirs both contain a slug `-Users-you-app/` whose underlying canonical
-  // cwds differ, the slug-level merge collapses them into one row. In real
-  // Claude usage this is unreachable because Claude derives the slug from
-  // the cwd, so different cwds always produce different slugs. The test
-  // pins the behavior so a future refactor cannot quietly swap to cwd-aware
-  // merging without explicitly opting in.
-  it('merges by sanitized slug even when sessions carry different canonical cwds', async () => {
+  // Documents the path-aware merge behavior: the mergedMap in parseAllSessions
+  // now keys by normalized cwd path (crossProviderKey), not by slug. Two dirs
+  // can share the same slug but have different underlying cwds — those stay
+  // separate because they represent genuinely different repositories. In real
+  // Claude usage different cwds always produce different slugs anyway, so this
+  // scenario is contrived, but the test pins the new behavior explicitly.
+  it('keeps sessions with the same slug but different cwds as separate projects', async () => {
     const work = await makeConfigDir('claude-work', [])
     const personal = await makeConfigDir('claude-personal', [])
     process.env['CLAUDE_CONFIG_DIRS'] = [work, personal].join(pathDelimiter)
@@ -256,7 +254,8 @@ describe('claude parser — multi-dir aggregation (issue #208 option 1)', () => 
 
     const projects = await parseAllSessions(undefined, 'claude')
     const matches = projects.filter(p => p.project === slug)
-    expect(matches).toHaveLength(1)
-    expect(matches[0]!.totalApiCalls).toBe(2)
+    // Different cwds → different crossProviderKey → two separate project rows.
+    expect(matches).toHaveLength(2)
+    expect(matches.every(m => m.totalApiCalls === 1)).toBe(true)
   })
 })
