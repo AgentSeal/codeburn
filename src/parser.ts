@@ -2131,15 +2131,26 @@ export async function parseAllSessions(dateRange?: DateRange, providerFilter?: s
     try { await saveCache(diskCache) } catch {}
   }
 
+  // Merge across providers by normalised project path so the same repository
+  // is not double-counted when it was worked on with more than one tool
+  // (e.g. both Claude Code and Codex). Codex's sanitizeProject strips the
+  // leading '/' from cwds, so "Users/carlo/foo" and "/Users/carlo/foo" must
+  // compare equal. Strip leading slashes and lowercase before keying; fall
+  // back to the project name for non-path identifiers like Cowork space names.
+  const crossProviderKey = (p: ProjectSummary): string => {
+    const path = p.projectPath.replace(/\\/g, '/').replace(/^\/+/, '').toLowerCase()
+    return path.includes('/') ? path : p.project.toLowerCase()
+  }
   const mergedMap = new Map<string, ProjectSummary>()
   for (const p of [...claudeProjects, ...otherProjects]) {
-    const existing = mergedMap.get(p.project)
+    const key = crossProviderKey(p)
+    const existing = mergedMap.get(key)
     if (existing) {
       existing.sessions.push(...p.sessions)
       existing.totalCostUSD += p.totalCostUSD
       existing.totalApiCalls += p.totalApiCalls
     } else {
-      mergedMap.set(p.project, { ...p })
+      mergedMap.set(key, { ...p })
     }
   }
 
