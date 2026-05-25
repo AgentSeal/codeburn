@@ -298,7 +298,7 @@ const PROJECT_COL_AVG = 7
 const PROJECT_COL_BASE_WIDTH = 30
 const PROJECT_COL_WITH_OVERHEAD_WIDTH = 40
 
-function ProjectBreakdown({ projects, pw, bw, budgets }: { projects: ProjectSummary[]; pw: number; bw: number; budgets?: Map<string, ContextBudget> }) {
+function ProjectBreakdown({ projects, pw, bw, budgets, rows = 14 }: { projects: ProjectSummary[]; pw: number; bw: number; budgets?: Map<string, ContextBudget>; rows?: number }) {
   const maxCost = Math.max(...projects.map(p => p.totalCostUSD))
   const hasBudgets = budgets && budgets.size > 0
   const nw = Math.max(8, pw - bw - (hasBudgets ? PROJECT_COL_WITH_OVERHEAD_WIDTH : PROJECT_COL_BASE_WIDTH))
@@ -307,7 +307,7 @@ function ProjectBreakdown({ projects, pw, bw, budgets }: { projects: ProjectSumm
       <Text dimColor wrap="truncate-end">
         {''.padEnd(bw + 1 + nw)}{'cost'.padStart(8)}{'avg/s'.padStart(PROJECT_COL_AVG)}{'sess'.padStart(6)}{hasBudgets ? 'overhead'.padStart(10) : ''}
       </Text>
-      {projects.slice(0, 8).map((project, i) => {
+      {projects.slice(0, rows).map((project, i) => {
         const budget = budgets?.get(project.project)
         const avgCost = project.sessions.length > 0
           ? formatCost(project.totalCostUSD / project.sessions.length)
@@ -706,7 +706,7 @@ function DashboardContent({ projects, period, columns, activeProvider, budgets, 
   return (
     <Box flexDirection="column" width={dashWidth}>
       <Overview projects={projects} label={activeLabel} width={dashWidth} planUsages={planUsages} />
-      <Row wide={wide} width={dashWidth}><DailyActivity projects={projects} days={days} pw={pw} bw={barWidth} /><ProjectBreakdown projects={projects} pw={pw} bw={barWidth} budgets={budgets} /></Row>
+      <Row wide={wide} width={dashWidth}><DailyActivity projects={projects} days={days} pw={pw} bw={barWidth} /><ProjectBreakdown projects={projects} pw={pw} bw={barWidth} budgets={budgets} rows={dayMode ? 8 : period === 'all' ? 14 : period === 'month' || period === '30days' ? 14 : 8} /></Row>
       <Row wide={wide} width={dashWidth}><ActivityBreakdown projects={projects} pw={pw} bw={barWidth} /><ModelBreakdown projects={projects} pw={pw} bw={barWidth} /></Row>
       {isCursor ? (
         <ToolBreakdown projects={projects} pw={dashWidth} bw={barWidth} title="Languages" filterPrefix="lang:" />
