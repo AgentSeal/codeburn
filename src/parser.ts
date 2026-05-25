@@ -1,5 +1,5 @@
 import { lstat, readFile, readdir, stat } from 'fs/promises'
-import { basename, join, resolve, sep } from 'path'
+import { basename, dirname, join, resolve, sep } from 'path'
 import { homedir } from 'os'
 import { readSessionLines } from './fs-utils.js'
 import { calculateCost, getShortModelName } from './models.js'
@@ -83,25 +83,42 @@ async function resolveCanonicalProjectPath(cwd: string): Promise<{ path: string;
   const trimmed = cwd.trim()
   if (!trimmed) return { path: cwd, isWorktree: false }
 
-  const gitEntry = join(trimmed, '.git')
-  const entryStat = await lstat(gitEntry).catch(() => null)
-  if (!entryStat) return { path: cwd, isWorktree: false }
-  if (entryStat.isDirectory()) return { path: cwd, isWorktree: false }
-  if (!entryStat.isFile()) return { path: cwd, isWorktree: false }
+  // Walk up the directory tree to find the nearest .git entry. This handles
+  // three cases: (1) cwd IS the repo root (.git is a directory), (2) cwd is a
+  // git worktree (.git is a file pointing back to the main repo), (3) cwd is a
+  // subdirectory of a repo — we resolve up to the repo root so subdirectory
+  // sessions group with the rest of the project even when the subdir no longer
+  // exists on disk.
+  // Guard against foreign paths (e.g. a Windows path recorded on a machine
+  // that now runs macOS): only walk paths that look like absolute paths on the
+  // current platform. A relative or foreign-format path cannot be walked on
+  // the current filesystem without risking false positives.
+  const isAbsoluteOnCurrentPlatform = process.platform === 'win32'
+    ? /^[a-zA-Z]:[/\\]/.test(trimmed)
+    : trimmed.startsWith('/')
+  if (!isAbsoluteOnCurrentPlatform) return { path: cwd, isWorktree: false }
 
-  const gitFile = await readFile(gitEntry, 'utf-8').catch(() => null)
-  if (gitFile === null) return { path: cwd, isWorktree: false }
-
-  const match = gitFile.match(/^gitdir:\s*(.+?)\s*$/m)
-  if (!match?.[1]) return { path: cwd, isWorktree: false }
-
-  const gitDir = resolve(trimmed, match[1])
-  const normalizedGitDir = gitDir.replace(/\\/g, '/')
-  const worktreeMarker = '/.git/worktrees/'
-  const markerIndex = normalizedGitDir.lastIndexOf(worktreeMarker)
-  if (markerIndex === -1) return { path: cwd, isWorktree: false }
-
-  return { path: normalizedGitDir.slice(0, markerIndex), isWorktree: true }
+  let dir = trimmed
+  while (true) {
+    const gitEntry = join(dir, '.git')
+    const entryStat = await lstat(gitEntry).catch(() => null)
+    if (entryStat?.isDirectory()) return { path: dir, isWorktree: false }
+    if (entryStat?.isFile()) {
+      const gitFile = await readFile(gitEntry, 'utf-8').catch(() => null)
+      if (gitFile === null) return { path: dir, isWorktree: false }
+      const match = gitFile.match(/^gitdir:\s*(.+?)\s*$/m)
+      if (!match?.[1]) return { path: dir, isWorktree: false }
+      const gitDir = resolve(dir, match[1])
+      const normalizedGitDir = gitDir.replace(/\\/g, '/')
+      const worktreeMarker = '/.git/worktrees/'
+      const markerIndex = normalizedGitDir.lastIndexOf(worktreeMarker)
+      if (markerIndex === -1) return { path: dir, isWorktree: false }
+      return { path: normalizedGitDir.slice(0, markerIndex), isWorktree: true }
+    }
+    const parent = dirname(dir)
+    if (parent === dir) return { path: cwd, isWorktree: false }
+    dir = parent
+  }
 }
 
 const LARGE_JSONL_LINE_BYTES = 32 * 1024
@@ -2149,7 +2166,8 @@ export async function parseAllSessions(dateRange?: DateRange, providerFilter?: s
       ? p.projectPath
       : '/' + p.projectPath
     const canonical = await resolveCanonicalProjectPath(absPath)
-    if (!canonical.isWorktree) return p
+    // Skip if path is unchanged: same location, not a worktree, not a subdir
+    if (!canonical.isWorktree && canonical.path === absPath.replace(/[/\\]+$/, '')) return p
     return { ...p, project: projectNameFromPath(canonical.path, p.project), projectPath: canonical.path }
   }))
 
