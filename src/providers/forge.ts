@@ -16,6 +16,12 @@ type ConversationRow = {
   updated_at: string | null
 }
 
+type DiscoveryRow = {
+  conversation_id: string
+  title: string | null
+  workspace_id: string
+}
+
 type ContextMessage = {
   message?: {
     text?: {
@@ -234,8 +240,8 @@ async function discoverFromDb(dbPath: string): Promise<SessionSource[]> {
 
   try {
     if (!validateSchema(db)) return []
-    const rows = db.query<ConversationRow>(
-      `SELECT conversation_id, title, CAST(workspace_id AS TEXT) AS workspace_id, context, created_at, updated_at
+    const rows = db.query<DiscoveryRow>(
+      `SELECT conversation_id, title, CAST(workspace_id AS TEXT) AS workspace_id
        FROM conversations
        WHERE context IS NOT NULL`,
     )

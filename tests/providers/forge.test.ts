@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'fs/promises'
+import { mkdtemp, readFile, rm } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { createRequire } from 'node:module'
@@ -154,6 +154,16 @@ describe('forge provider', () => {
 
     const duplicates = await collect(provider.createSessionParser(sources[0]!, seenKeys))
     expect(duplicates).toEqual([])
+  })
+
+  it('does not select conversation context while discovering sessions', async () => {
+    const source = await readFile(new URL('../../src/providers/forge.ts', import.meta.url), 'utf8')
+    const discoverySql = source.match(/async function discoverFromDb[\s\S]*?db\.query<[^>]+>\(\s*`([\s\S]*?)`/)?.[1]
+    const selectedColumns = discoverySql?.split('FROM conversations')[0] ?? ''
+
+    expect(discoverySql).toContain('WHERE context IS NOT NULL')
+    expect(selectedColumns).not.toMatch(/\bcontext\b/)
+    expect(selectedColumns).not.toMatch(/\bcreated_at\b|\bupdated_at\b/)
   })
 
   it('returns no sessions when the database is missing', async () => {
