@@ -45,6 +45,21 @@ async function loadWarp(): Promise<Provider | null> {
   }
 }
 
+let forgeProvider: Provider | null = null
+let forgeLoadAttempted = false
+
+async function loadForge(): Promise<Provider | null> {
+  if (forgeLoadAttempted) return forgeProvider
+  forgeLoadAttempted = true
+  try {
+    const { forge } = await import('./forge.js')
+    forgeProvider = forge
+    return forge
+  } catch {
+    return null
+  }
+}
+
 let gooseProvider: Provider | null = null
 let gooseLoadAttempted = false
 
@@ -123,9 +138,10 @@ async function loadCrush(): Promise<Provider | null> {
 const coreProviders: Provider[] = [claude, cline, codebuff, codex, copilot, droid, gemini, ibmBob, kiloCode, kiro, kimi, mistralVibe, openclaw, pi, omp, qwen, rooCode]
 
 export async function getAllProviders(): Promise<Provider[]> {
-  const [ag, gs, cursor, opencode, cursorAgent, crush, warp] = await Promise.all([loadAntigravity(), loadGoose(), loadCursor(), loadOpenCode(), loadCursorAgent(), loadCrush(), loadWarp()])
+  const [ag, forge, gs, cursor, opencode, cursorAgent, crush, warp] = await Promise.all([loadAntigravity(), loadForge(), loadGoose(), loadCursor(), loadOpenCode(), loadCursorAgent(), loadCrush(), loadWarp()])
   const all = [...coreProviders]
   if (ag) all.push(ag)
+  if (forge) all.push(forge)
   if (gs) all.push(gs)
   if (cursor) all.push(cursor)
   if (opencode) all.push(opencode)
@@ -154,6 +170,10 @@ export async function getProvider(name: string): Promise<Provider | undefined> {
   if (name === 'antigravity') {
     const ag = await loadAntigravity()
     return ag ?? undefined
+  }
+  if (name === 'forge') {
+    const forge = await loadForge()
+    return forge ?? undefined
   }
   if (name === 'goose') {
     const gs = await loadGoose()

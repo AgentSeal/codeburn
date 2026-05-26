@@ -29,8 +29,15 @@ describe('provider registry', () => {
     const names = all.map(p => p.name)
     expect(names).toContain('claude')
     expect(names).toContain('codex')
+    expect(names).toContain('forge')
     expect(names).toContain('warp')
     expect(names.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('forge is available through async provider loading', async () => {
+    const forge = await getProvider('forge')
+    expect(forge).toBeDefined()
+    expect(forge!.name).toBe('forge')
   })
 
   it('warp model and tool display names are normalized', async () => {
