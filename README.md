@@ -94,33 +94,33 @@ Arrow keys switch between Today, 7 Days, 30 Days, Month, and 6 Months (use `--fr
 
 ## Supported Providers
 
-| | Provider | Supported | Doc |
-|---|----------|-----------|-----|
-| <img src="assets/providers/claude.jpg" width="28" /> | Claude Code | Yes | [claude.md](docs/providers/claude.md) |
-| <img src="assets/providers/claude.jpg" width="28" /> | Claude Desktop | Yes | [claude.md](docs/providers/claude.md) |
-| <img src="assets/providers/cline.svg" width="28" /> | Cline | Yes | [cline.md](docs/providers/cline.md) |
-| <img src="assets/providers/codex.png" width="28" /> | Codex (OpenAI) | Yes | [codex.md](docs/providers/codex.md) |
-| <img src="assets/providers/cursor.jpg" width="28" /> | Cursor | Yes | [cursor.md](docs/providers/cursor.md) |
-| <img src="assets/providers/cursor-agent.jpg" width="28" /> | cursor-agent | Yes | [cursor-agent.md](docs/providers/cursor-agent.md) |
-|  | Forge | Yes |  |
-| <img src="assets/providers/gemini.png" width="28" /> | Gemini CLI | Yes | [gemini.md](docs/providers/gemini.md) |
-| <img src="assets/providers/mistral-vibe.svg" width="28" /> | Mistral Vibe | Yes | [mistral-vibe.md](docs/providers/mistral-vibe.md) |
-| <img src="assets/providers/copilot.jpg" width="28" /> | GitHub Copilot | Yes | [copilot.md](docs/providers/copilot.md) |
-| <img src="assets/providers/ibm-bob.svg" width="28" /> | IBM Bob | Yes | [ibm-bob.md](docs/providers/ibm-bob.md) |
-| <img src="assets/providers/kiro.png" width="28" /> | Kiro | Yes | [kiro.md](docs/providers/kiro.md) |
-| <img src="assets/providers/opencode.png" width="28" /> | OpenCode | Yes | [opencode.md](docs/providers/opencode.md) |
-| <img src="assets/providers/openclaw.jpg" width="28" /> | OpenClaw | Yes | [openclaw.md](docs/providers/openclaw.md) |
-| <img src="assets/providers/pi.png" width="28" /> | Pi | Yes | [pi.md](docs/providers/pi.md) |
-| <img src="assets/providers/omp.svg" width="28" /> | OMP (Oh My Pi) | Yes | [omp.md](docs/providers/omp.md) |
-| <img src="assets/providers/droid.png" width="28" /> | Droid | Yes | [droid.md](docs/providers/droid.md) |
-| <img src="assets/providers/roo-code.png" width="28" /> | Roo Code | Yes | [roo-code.md](docs/providers/roo-code.md) |
-| <img src="assets/providers/kilo-code.png" width="28" /> | KiloCode | Yes | [kilo-code.md](docs/providers/kilo-code.md) |
-| <img src="assets/providers/qwen.png" width="28" /> | Qwen | Yes | [qwen.md](docs/providers/qwen.md) |
-| <img src="assets/providers/kimi.svg" width="28" /> | Kimi Code CLI | Yes | [kimi.md](docs/providers/kimi.md) |
-| <img src="assets/providers/goose.png" width="28" /> | Goose | Yes | [goose.md](docs/providers/goose.md) |
-| <img src="assets/providers/antigravity.png" width="28" /> | Antigravity | Yes | [antigravity.md](docs/providers/antigravity.md) |
-| <img src="assets/providers/crush.png" width="28" /> | Crush | Yes | [crush.md](docs/providers/crush.md) |
-|  | Warp | Yes | [warp.md](docs/providers/warp.md) |
+|                                                            | Provider       | Supported | Doc                                               |
+|------------------------------------------------------------|----------------|-----------|---------------------------------------------------|
+| <img src="assets/providers/claude.jpg" width="28" />       | Claude Code    | Yes       | [claude.md](docs/providers/claude.md)             |
+| <img src="assets/providers/claude.jpg" width="28" />       | Claude Desktop | Yes       | [claude.md](docs/providers/claude.md)             |
+| <img src="assets/providers/cline.svg" width="28" />        | Cline          | Yes       | [cline.md](docs/providers/cline.md)               |
+| <img src="assets/providers/codex.png" width="28" />        | Codex (OpenAI) | Yes       | [codex.md](docs/providers/codex.md)               |
+| <img src="assets/providers/cursor.jpg" width="28" />       | Cursor         | Yes       | [cursor.md](docs/providers/cursor.md)             |
+| <img src="assets/providers/cursor-agent.jpg" width="28" /> | cursor-agent   | Yes       | [cursor-agent.md](docs/providers/cursor-agent.md) |
+| <img src="assets/providers/forge.png" width="28" />        | Forge          | Yes       | [forge.md](docs/providers/forge.md)               |
+| <img src="assets/providers/gemini.png" width="28" />       | Gemini CLI     | Yes       | [gemini.md](docs/providers/gemini.md)             |
+| <img src="assets/providers/mistral-vibe.svg" width="28" /> | Mistral Vibe   | Yes       | [mistral-vibe.md](docs/providers/mistral-vibe.md) |
+| <img src="assets/providers/copilot.jpg" width="28" />      | GitHub Copilot | Yes       | [copilot.md](docs/providers/copilot.md)           |
+| <img src="assets/providers/ibm-bob.svg" width="28" />      | IBM Bob        | Yes       | [ibm-bob.md](docs/providers/ibm-bob.md)           |
+| <img src="assets/providers/kiro.png" width="28" />         | Kiro           | Yes       | [kiro.md](docs/providers/kiro.md)                 |
+| <img src="assets/providers/opencode.png" width="28" />     | OpenCode       | Yes       | [opencode.md](docs/providers/opencode.md)         |
+| <img src="assets/providers/openclaw.jpg" width="28" />     | OpenClaw       | Yes       | [openclaw.md](docs/providers/openclaw.md)         |
+| <img src="assets/providers/pi.png" width="28" />           | Pi             | Yes       | [pi.md](docs/providers/pi.md)                     |
+| <img src="assets/providers/omp.svg" width="28" />          | OMP (Oh My Pi) | Yes       | [omp.md](docs/providers/omp.md)                   |
+| <img src="assets/providers/droid.png" width="28" />        | Droid          | Yes       | [droid.md](docs/providers/droid.md)               |
+| <img src="assets/providers/roo-code.png" width="28" />     | Roo Code       | Yes       | [roo-code.md](docs/providers/roo-code.md)         |
+| <img src="assets/providers/kilo-code.png" width="28" />    | KiloCode       | Yes       | [kilo-code.md](docs/providers/kilo-code.md)       |
+| <img src="assets/providers/qwen.png" width="28" />         | Qwen           | Yes       | [qwen.md](docs/providers/qwen.md)                 |
+| <img src="assets/providers/kimi.svg" width="28" />         | Kimi Code CLI  | Yes       | [kimi.md](docs/providers/kimi.md)                 |
+| <img src="assets/providers/goose.png" width="28" />        | Goose          | Yes       | [goose.md](docs/providers/goose.md)               |
+| <img src="assets/providers/antigravity.png" width="28" />  | Antigravity    | Yes       | [antigravity.md](docs/providers/antigravity.md)   |
+| <img src="assets/providers/crush.png" width="28" />        | Crush          | Yes       | [crush.md](docs/providers/crush.md)               |
+|                                                            | Warp           | Yes       | [warp.md](docs/providers/warp.md)                 |
 
 Each provider doc lists the exact data location, storage format, and known quirks. Linux and Windows paths are detected automatically. If a path has changed or is wrong, please [open an issue](https://github.com/getagentseal/codeburn/issues).
 
