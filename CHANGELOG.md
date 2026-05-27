@@ -31,11 +31,41 @@
 - **Claude toolSequence missing from session cache.** `apiCallToCachedCall` was
   not forwarding the `toolSequence` field, so all cached Claude sessions lost
   their tool ordering data.
+- **Forge dedup key instability.** The fallback deduplication key used the raw
+  message array index, which shifts when messages are deleted between scans.
+  Now uses a composite of model name and token counts. Also fixed a variable
+  reference before its declaration that would crash at runtime when no tool
+  call ID was present.
+- **Session cache rejected `subagentTypes` field.** The cache validator did not
+  recognize the `subagentTypes` array, causing entries with this field to be
+  silently dropped and reparsed on every run.
+- **Conflicting date flags on `status` accepted silently.** Passing `--day`
+  with `--from`/`--to`, or `--days` with any other date flag, produced
+  undefined behavior. Now exits with a clear error message.
+
+### Changed (CLI)
+- **OpenCode provider uses shared SQLite parser.** Delegates to
+  `sqlite-session-parser.ts` (same module KiloCode uses), reducing the
+  provider from 498 to 66 lines with no behavior change.
 
 ### Added (macOS menubar)
 - **Configurable menubar status period.** The menubar dropdown now lets you
   choose which period (Today, 7 Days, Month, All Time) is shown in the status
   bar. Persisted via UserDefaults. Thanks @ozymandiashh. (#302)
+
+### Fixed (macOS menubar)
+- **Loading watchdog killed healthy CLI fetches.** The recovery loop ran every
+  8 seconds with no backoff. Each attempt reset the generation counter,
+  discarding in-flight CLI responses (45s timeout) before they could finish.
+  Replaced with exponential backoff (8s to 60s, 6 attempts max) that skips
+  recovery when a fetch is already in flight. Shows an error overlay with a
+  Retry button after all attempts are exhausted.
+- **Multi-day cache key mismatch.** `selectedDay` returned the earliest date
+  instead of nil when multiple days were selected, and
+  `startInteractiveSelectionRefresh` did not pass the day set to the cache key
+  constructor. Both now match `PayloadCacheKey` normalization rules.
+- **Dead code cleanup.** Removed `RefreshBackoff.swift`, its test file, and a
+  broken test that called methods deleted in #393.
 
 ## 0.9.10 - 2026-05-20
 

@@ -13,7 +13,7 @@
     <a href="https://github.com/sponsors/iamtoruk"><img src="https://img.shields.io/badge/sponsor-♥-ea4aaa?logo=github" alt="Sponsor" /></a>                                                  
   </p> 
 
-CodeBurn tracks token usage, cost, and performance across **21 AI coding tools**. It breaks down spending by task type, model, tool, project, and provider so you can see exactly where your budget goes.
+CodeBurn tracks token usage, cost, and performance across **25 AI coding tools**. It breaks down spending by task type, model, tool, project, and provider so you can see exactly where your budget goes.
 
 Everything runs locally. No wrapper, no proxy, no API keys. CodeBurn reads session data directly from disk and prices every call using [LiteLLM](https://github.com/BerriAI/litellm).
 
