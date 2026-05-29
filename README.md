@@ -13,7 +13,7 @@
     <a href="https://github.com/sponsors/iamtoruk"><img src="https://img.shields.io/badge/sponsor-♥-ea4aaa?logo=github" alt="Sponsor" /></a>                                                  
   </p> 
 
-CodeBurn tracks token usage, cost, and performance across **25 AI coding tools**. It breaks down spending by task type, model, tool, project, and provider so you can see exactly where your budget goes.
+CodeBurn tracks token usage, cost, and performance across **20 AI coding tools**. It breaks down spending by task type, model, tool, project, and provider so you can see exactly where your budget goes.
 
 Everything runs locally. No wrapper, no proxy, no API keys. CodeBurn reads session data directly from disk and prices every call using [LiteLLM](https://github.com/BerriAI/litellm).
 
@@ -24,7 +24,7 @@ Everything runs locally. No wrapper, no proxy, no API keys. CodeBurn reads sessi
 </tr>
 <tr>
 <td><img src="https://raw.githubusercontent.com/getagentseal/codeburn/main/assets/dashboard.jpg" alt="CodeBurn TUI dashboard" width="440" /></td>
-<td><img src="https://raw.githubusercontent.com/getagentseal/codeburn/main/assets/menubar-0.9.11.png" alt="CodeBurn macOS menubar" width="440" /></td>
+<td><img src="https://cdn.jsdelivr.net/gh/getagentseal/codeburn@main/assets/menubar-0.8.0.png" alt="CodeBurn macOS menubar" width="440" /></td>
 </tr>
 <tr>
 <td align="center"><strong>Optimize</strong></td>
@@ -66,6 +66,7 @@ dx codeburn
 
 ```bash
 codeburn                        # interactive dashboard (default: 7 days)
+codeburn -p lifetime            # full history dashboard (uncapped)
 codeburn today                  # today's usage
 codeburn month                  # this month's usage
 codeburn report -p 30days       # rolling 30-day window
@@ -90,37 +91,36 @@ codeburn models --task feature         # filter to feature-development work
 codeburn models --provider claude      # filter to one provider
 ```
 
-Arrow keys switch between Today, 7 Days, 30 Days, Month, and 6 Months (use `--from` / `--to` for an exact historical window). Press `q` to quit, `1` `2` `3` `4` `5` as shortcuts, `c` to open model comparison, `o` to open optimize. The dashboard auto-refreshes every 30 seconds by default (`--refresh 0` to disable). It also shows average cost per session and the five most expensive sessions across all projects.
+Arrow keys switch between Today, 7 Days, 30 Days, Month, 6 Months, and Lifetime (use `--from` / `--to` for an exact historical window). Press `q` to quit, `1` `2` `3` `4` `5` `6` as shortcuts, `c` to open model comparison, `o` to open optimize. The dashboard auto-refreshes every 30 seconds by default (`--refresh 0` to disable). It also shows average cost per session and the five most expensive sessions across all projects.
 
 ## Supported Providers
 
-|                                                            | Provider       | Supported | Doc                                               |
-|------------------------------------------------------------|----------------|-----------|---------------------------------------------------|
-| <img src="assets/providers/claude.jpg" width="28" />       | Claude Code    | Yes       | [claude.md](docs/providers/claude.md)             |
-| <img src="assets/providers/claude.jpg" width="28" />       | Claude Desktop | Yes       | [claude.md](docs/providers/claude.md)             |
-| <img src="assets/providers/cline.svg" width="28" />        | Cline          | Yes       | [cline.md](docs/providers/cline.md)               |
-| <img src="assets/providers/codex.png" width="28" />        | Codex (OpenAI) | Yes       | [codex.md](docs/providers/codex.md)               |
-| <img src="assets/providers/cursor.jpg" width="28" />       | Cursor         | Yes       | [cursor.md](docs/providers/cursor.md)             |
-| <img src="assets/providers/cursor-agent.jpg" width="28" /> | cursor-agent   | Yes       | [cursor-agent.md](docs/providers/cursor-agent.md) |
-| <img src="assets/providers/forge.png" width="28" />        | Forge          | Yes       | [forge.md](docs/providers/forge.md)               |
-| <img src="assets/providers/gemini.png" width="28" />       | Gemini CLI     | Yes       | [gemini.md](docs/providers/gemini.md)             |
-| <img src="assets/providers/mistral-vibe.svg" width="28" /> | Mistral Vibe   | Yes       | [mistral-vibe.md](docs/providers/mistral-vibe.md) |
-| <img src="assets/providers/copilot.jpg" width="28" />      | GitHub Copilot | Yes       | [copilot.md](docs/providers/copilot.md)           |
-| <img src="assets/providers/ibm-bob.svg" width="28" />      | IBM Bob        | Yes       | [ibm-bob.md](docs/providers/ibm-bob.md)           |
-| <img src="assets/providers/kiro.png" width="28" />         | Kiro           | Yes       | [kiro.md](docs/providers/kiro.md)                 |
-| <img src="assets/providers/opencode.png" width="28" />     | OpenCode       | Yes       | [opencode.md](docs/providers/opencode.md)         |
-| <img src="assets/providers/openclaw.jpg" width="28" />     | OpenClaw       | Yes       | [openclaw.md](docs/providers/openclaw.md)         |
-| <img src="assets/providers/pi.png" width="28" />           | Pi             | Yes       | [pi.md](docs/providers/pi.md)                     |
-| <img src="assets/providers/omp.svg" width="28" />          | OMP (Oh My Pi) | Yes       | [omp.md](docs/providers/omp.md)                   |
-| <img src="assets/providers/droid.png" width="28" />        | Droid          | Yes       | [droid.md](docs/providers/droid.md)               |
-| <img src="assets/providers/roo-code.png" width="28" />     | Roo Code       | Yes       | [roo-code.md](docs/providers/roo-code.md)         |
-| <img src="assets/providers/kilo-code.png" width="28" />    | KiloCode       | Yes       | [kilo-code.md](docs/providers/kilo-code.md)       |
-| <img src="assets/providers/qwen.png" width="28" />         | Qwen           | Yes       | [qwen.md](docs/providers/qwen.md)                 |
-| <img src="assets/providers/kimi.svg" width="28" />         | Kimi Code CLI  | Yes       | [kimi.md](docs/providers/kimi.md)                 |
-| <img src="assets/providers/goose.png" width="28" />        | Goose          | Yes       | [goose.md](docs/providers/goose.md)               |
-| <img src="assets/providers/antigravity.png" width="28" />  | Antigravity    | Yes       | [antigravity.md](docs/providers/antigravity.md)   |
-| <img src="assets/providers/crush.png" width="28" />        | Crush          | Yes       | [crush.md](docs/providers/crush.md)               |
-|                                                            | Warp           | Yes       | [warp.md](docs/providers/warp.md)                 |
+| | Provider | Supported | Doc |
+|---|----------|-----------|-----|
+| <img src="assets/providers/claude.jpg" width="28" /> | Claude Code | Yes | [claude.md](docs/providers/claude.md) |
+| <img src="assets/providers/claude.jpg" width="28" /> | Claude Desktop | Yes | [claude.md](docs/providers/claude.md) |
+| <img src="assets/providers/cline.svg" width="28" /> | Cline | Yes | [cline.md](docs/providers/cline.md) |
+| <img src="assets/providers/codex.png" width="28" /> | Codex (OpenAI) | Yes | [codex.md](docs/providers/codex.md) |
+| <img src="assets/providers/cursor.jpg" width="28" /> | Cursor | Yes | [cursor.md](docs/providers/cursor.md) |
+| <img src="assets/providers/cursor-agent.jpg" width="28" /> | cursor-agent | Yes | [cursor-agent.md](docs/providers/cursor-agent.md) |
+| <img src="assets/providers/gemini.png" width="28" /> | Gemini CLI | Yes | [gemini.md](docs/providers/gemini.md) |
+| <img src="assets/providers/mistral-vibe.svg" width="28" /> | Mistral Vibe | Yes | [mistral-vibe.md](docs/providers/mistral-vibe.md) |
+| <img src="assets/providers/copilot.jpg" width="28" /> | GitHub Copilot | Yes | [copilot.md](docs/providers/copilot.md) |
+| <img src="assets/providers/ibm-bob.svg" width="28" /> | IBM Bob | Yes | [ibm-bob.md](docs/providers/ibm-bob.md) |
+| <img src="assets/providers/kiro.png" width="28" /> | Kiro | Yes | [kiro.md](docs/providers/kiro.md) |
+| <img src="assets/providers/opencode.png" width="28" /> | OpenCode | Yes | [opencode.md](docs/providers/opencode.md) |
+| <img src="assets/providers/openclaw.jpg" width="28" /> | OpenClaw | Yes | [openclaw.md](docs/providers/openclaw.md) |
+| <img src="assets/providers/pi.png" width="28" /> | Pi | Yes | [pi.md](docs/providers/pi.md) |
+| <img src="assets/providers/omp.svg" width="28" /> | OMP (Oh My Pi) | Yes | [omp.md](docs/providers/omp.md) |
+| <img src="assets/providers/droid.png" width="28" /> | Droid | Yes | [droid.md](docs/providers/droid.md) |
+| <img src="assets/providers/roo-code.png" width="28" /> | Roo Code | Yes | [roo-code.md](docs/providers/roo-code.md) |
+| <img src="assets/providers/kilo-code.png" width="28" /> | KiloCode | Yes | [kilo-code.md](docs/providers/kilo-code.md) |
+| <img src="assets/providers/qwen.png" width="28" /> | Qwen | Yes | [qwen.md](docs/providers/qwen.md) |
+| <img src="assets/providers/kimi.svg" width="28" /> | Kimi Code CLI | Yes | [kimi.md](docs/providers/kimi.md) |
+| <img src="assets/providers/goose.png" width="28" /> | Goose | Yes | [goose.md](docs/providers/goose.md) |
+| <img src="assets/providers/antigravity.png" width="28" /> | Antigravity | Yes | [antigravity.md](docs/providers/antigravity.md) |
+| <img src="assets/providers/crush.png" width="28" /> | Crush | Yes | [crush.md](docs/providers/crush.md) |
+|  | Warp | Yes | [warp.md](docs/providers/warp.md) |
 
 Each provider doc lists the exact data location, storage format, and known quirks. Linux and Windows paths are detected automatically. If a path has changed or is wrong, please [open an issue](https://github.com/getagentseal/codeburn/issues).
 
@@ -128,7 +128,7 @@ Provider logos are trademarks of their respective owners. The icon set was sourc
 
 CodeBurn auto-detects which AI coding tools you use. If multiple providers have session data on disk, press `p` in the dashboard to toggle between them.
 
-The `--provider` flag filters any command to a single provider: `codeburn report --provider claude`, `codeburn today --provider codex`, `codeburn export --provider cursor`. Works on all commands: `report`, `today`, `month`, `status`, `export`, `optimize`, `compare`, `yield`.
+The `--provider` flag filters any command to a single provider: `codeburn report --provider claude`, `codeburn today --provider codex`, `codeburn export --provider cursor`. Works on all supported usage commands: `report`, `today`, `month`, `status`, `export`, `optimize`, `compare`, `yield`, `models`.
 
 ### Provider Notes
 
@@ -147,8 +147,6 @@ The `--provider` flag filters any command to a single provider: `codeburn report
 **OpenClaw** reads JSONL agent logs from `~/.openclaw/agents/` and also checks legacy paths (`.clawdbot`, `.moltbot`, `.moldbot`).
 
 **Warp** reads Oz agent sessions from Warp's local `warp.sqlite`. Exchange-level token attribution is estimated from prompt-size weighting normalized to conversation totals, and `run_command` blocks are attached to the nearest preceding exchange by timestamp.
-
-**Forge** reads conversations from `~/.forge/.forge.db`. Assistant usage entries provide prompt, completion, and cached token counts; CodeBurn emits one call per assistant message with usage and normalizes tool calls for breakdowns.
 
 **Roo Code and KiloCode** are Cline-family VS Code extensions. CodeBurn reads `ui_messages.json` from each task directory and extracts token usage from `api_req_started` entries.
 
@@ -349,7 +347,7 @@ codeburn menubar
 
 One command: downloads the latest `.app`, installs into `~/Applications`, and launches it. Re-run with `--force` to reinstall. Native Swift and SwiftUI app lives in `mac/` (see `mac/README.md` for build details).
 
-The menubar icon shows the spend period selected in Settings (Today by default; Week, Month, and 6 Months are also available). Non-today periods add a short suffix such as `$42 / mo` so the menu bar value stays clear. Click to open a popover with agent tabs, period switcher (Today, 7 Days, 30 Days, Month, All), Trend, Forecast, Pulse, Stats, and Plan insights, activity and model breakdowns, optimize findings, and CSV/JSON export. Refreshes every 30 seconds.
+The menubar icon shows the spend period selected in Settings (Today by default; Week, Month, 6 Months, and Lifetime are also available). Non-today periods add a short suffix such as `$42 / mo` so the menu bar value stays clear. Click to open a popover with agent tabs, period switcher (Today, 7 Days, 30 Days, Month, 6 Months, Lifetime), Trend, Forecast, Pulse, Stats, and Plan insights, activity and model breakdowns, optimize findings, and CSV/JSON export. Refreshes every 30 seconds.
 
 You can also set the menubar status period from Terminal:
 
@@ -357,7 +355,7 @@ You can also set the menubar status period from Terminal:
 defaults write org.agentseal.codeburn-menubar CodeBurnMenubarPeriod -string month
 ```
 
-Allowed values are `today`, `week`, `month`, and `sixMonths`. Relaunch the app to apply external defaults changes.
+Allowed values are `today`, `week`, `month`, `sixMonths`, and `lifetime`. Relaunch the app to apply external defaults changes.
 
 **Compact mode** shrinks the menubar item to fit the text, dropping decimals (e.g. `$110` instead of `$110.20`):
 
@@ -395,8 +393,6 @@ These are starting points, not verdicts. A 60% cache hit on a single experimenta
 **OpenCode** stores sessions in SQLite databases at `~/.local/share/opencode/opencode*.db`. CodeBurn queries the `session`, `message`, and `part` tables read-only, extracts token counts and tool usage, and recalculates cost using the LiteLLM pricing engine. Falls back to OpenCode's own cost field for models not in our pricing data. Subtask sessions (`parent_id IS NOT NULL`) are excluded to avoid double counting. Supports multiple channel databases and respects `XDG_DATA_HOME`.
 
 **Warp** stores Oz agent data in `~/Library/Group Containers/2BBY89MBSN.dev.warp/Library/Application Support/dev.warp.Warp-Stable/warp.sqlite` (with Preview fallback). CodeBurn reads `agent_conversations`, `ai_queries`, and `blocks`, emits one call per finalized exchange, estimates exchange token share from prompt-size weighting against conversation totals, and attributes `run_command` blocks to the nearest prior exchange.
-
-**Forge** stores conversations in SQLite at `~/.forge/.forge.db`. CodeBurn queries `conversations` read-only, parses `context.messages`, subtracts cached tokens from prompt tokens for input pricing, and extracts tool calls plus shell commands from assistant messages.
 
 **Pi / OMP** stores sessions as JSONL at `~/.pi/agent/sessions/<sanitized-cwd>/*.jsonl` (Pi) and `~/.omp/agent/sessions/<sanitized-cwd>/*.jsonl` (OMP). Each assistant message carries token usage (input, output, cacheRead, cacheWrite) plus inline `toolCall` content blocks. CodeBurn extracts token counts, normalizes tool names to the standard set (`bash` to `Bash`, `dispatch_agent` to `Agent`), and pulls bash commands from `toolCall.arguments.command` for the shell breakdown.
 
