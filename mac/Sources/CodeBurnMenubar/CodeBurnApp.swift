@@ -85,6 +85,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         startRefreshLoop()
         setupWakeObservers()
         setupDistributedNotificationListener()
+        regenerateRefreshScriptIfNeeded()
         installLaunchAgentIfNeeded()
         registerLoginItemIfNeeded()
         observeSubscriptionDisconnect()
@@ -204,6 +205,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             startRefreshLoop(forceQuotaOnStart: false)
         } else {
             runRefreshLoopTick(reason: reason, forcePayload: true, forceQuota: false)
+        }
+    }
+
+    private var lastScriptPeriod: Period?
+
+    private func regenerateRefreshScriptIfNeeded() {
+        let period = store.menubarPeriod
+        guard lastScriptPeriod != period else { return }
+        do {
+            try MenubarStatusCache.standard().writeRefreshScript(period: period)
+            lastScriptPeriod = period
+        } catch {
+            NSLog("CodeBurn: failed to write menubar-refresh.sh: \(error)")
         }
     }
 
@@ -654,6 +668,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 self.pendingRefreshWork?.cancel()
                 let work = DispatchWorkItem { [weak self] in
                     self?.refreshStatusButton()
+                    self?.regenerateRefreshScriptIfNeeded()
                     self?.observeStore()
                 }
                 self.pendingRefreshWork = work
